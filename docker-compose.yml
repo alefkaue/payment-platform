@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    # Sem volume de banco de dados por enquanto (dados em memória).
+    # Quando migrar para Azure SQL/Cosmos DB, adicionar aqui as variáveis
+    # de ambiente de conexão (ex: AZURE_SQL_CONNECTION_STRING).

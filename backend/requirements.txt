@@ -1,0 +1,11 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+
+# MFA - liveness + reconhecimento facial (ver services/biometria_service.py)
+# "[tensorflow]" é explícito de propósito: o deepface avisa que parar de instalar
+# um backend por padrão em breve, então fixamos o backend em vez de confiar no default.
+deepface[tensorflow]>=0.0.93
+tf-keras>=2.15.0
+opencv-python>=4.8.0
+numpy>=1.24.0
