@@ -9,6 +9,7 @@ Nada aqui mexe no backend nem no `frontend/index.html` atual — é referência 
 |---|---|---|
 | v1 · Fluxo Mono (escolhida) | `v1-fluxo-mono-2026-09-28/PayFlow 1f Fluxo Mono.dc.html` | [abrir](https://claude.ai/design/p/4c53e7b8-3387-4cb3-9af4-42c3cacc3591?file=PayFlow+1f+Fluxo+Mono.dc.html) |
 | v2 · + Biometria | `v2-biometria-2026-09-29/PayFlow 1g Fluxo Mono + Biometria.dc.html` | [abrir](https://claude.ai/design/p/4c53e7b8-3387-4cb3-9af4-42c3cacc3591?file=PayFlow+1g+Fluxo+Mono+%2B+Biometria.dc.html) |
+| v3 · Site (página web) | `v3-site-2026-09-29/PayFlow Site.dc.html` | [abrir](https://claude.ai/design/p/4c53e7b8-3387-4cb3-9af4-42c3cacc3591?file=PayFlow+Site.dc.html) |
 
 **Sem acesso ao Claude Design?** Os arquivos abrem direto no navegador: clone o repo e dê duplo clique no `.dc.html`
 (o `support.js` ao lado é o runtime do protótipo e precisa ficar na mesma pasta). Precisa de internet por causa das fontes.
