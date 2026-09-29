@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#dcd9cf;font-family:'Instrument Sans',system-ui,sans-serif;color:#141414;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#141414}a:hover{color:#000}
+input,button{font-family:inherit}
+*::-webkit-scrollbar{display:none}
+@keyframes pfIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+@keyframes pfToast{0%{opacity:0;transform:translate(-50%,-8px)}12%,88%{opacity:1;transform:translate(-50%,0)}100%{opacity:0}}
+@keyframes pfPulse{0%,100%{opacity:1}50%{opacity:0.3}}
+.pf-light{--page:#e4e1d8;--bg:#fbfaf7;--card:#fff;--ink:#141414;--ink2:#000;--ink3:#2e2d2a;--onp:#fff;--onsoft:rgba(255,255,255,0.16);--mut:#6d6a62;--mut2:#57554f;--mut3:#a3a098;--tint:#ecebe5;--line:#e6e4dd;--line2:#dcd9cf;--hover:rgba(255,255,255,0.6);--taxt:oklch(0.53 0.12 75);--taxt2:oklch(0.42 0.09 75);--taxbg:oklch(0.96 0.04 85);--taxbg2:oklch(0.93 0.05 85);--errbg:oklch(0.95 0.035 25);--errt:oklch(0.45 0.15 25)}
+.pf-dark{--page:#1c1c1a;--bg:#262624;--card:#32322f;--ink:#f4f3ee;--ink2:#fff;--ink3:#e2e0d8;--onp:#1f1f1d;--onsoft:rgba(0,0,0,0.08);--mut:#c2bfb6;--mut2:#d2cfc6;--mut3:#a19e95;--tint:#3a3a36;--line:#42423d;--line2:#54534d;--hover:rgba(255,255,255,0.08);--taxt:oklch(0.84 0.12 84);--taxt2:oklch(0.9 0.08 86);--taxbg:oklch(0.36 0.05 80);--taxbg2:oklch(0.42 0.06 80);--errbg:oklch(0.38 0.07 25);--errt:oklch(0.88 0.08 25)}
+.pf-light,.pf-dark{transition:background-color .25s}
+.pf-dark input::placeholder{color:#a19e95}.pf-dark input{caret-color:#f4f3ee}
+.pf-field{display:flex;flex-direction:column;gap:6px;font-size:12.5px;font-weight:600;color:var(--mut);padding-left:4px}
+.pf-input{border:1.5px solid transparent;background:var(--card);border-radius:16px;padding:14px 16px;font-size:15px;font-weight:500;color:var(--ink);outline:0}
+.pf-mono{font-family:'JetBrains Mono',monospace}
+.pf-cta{border:0;background:var(--ink);color:var(--onp);border-radius:14px;padding:17px;font-size:15px;font-weight:600;cursor:pointer}
+.pf-err{padding:11px 16px;border-radius:16px;background:var(--errbg);color:var(--errt);font-size:13px;font-weight:500;line-height:1.45}
+.pf-back{width:38px;height:38px;border-radius:50%;border:0;background:var(--card);font-size:16px;cursor:pointer;color:var(--ink)}
+</style>
+</helmet>
+<div class="{{ themeClass }}" style="background:var(--page);color:var(--ink);min-height:100vh;display:flex;align-items:center;justify-content:center;gap:48px;padding:32px 24px;flex-wrap:wrap">
+
+  <div style="display:flex;flex-direction:column;gap:18px;width:220px">
+    <div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:20px;font-weight:600;letter-spacing:-0.03em;color:var(--ink)">PayFlow · Biometria</span><span style="font-size:13px;color:var(--mut2);line-height:1.5">Fluxo Mono + login, selfie e revisão de pagamento</span></div>
+    <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--mut);padding:0 10px 6px">Direção</span><a href="PayFlow%201f%20Fluxo%20Mono.dc.html" style="display:flex;gap:8px;align-items:baseline;text-decoration:none;border-radius:10px;padding:8px 10px;font-size:13.5px;font-weight:500;color:var(--ink3);background:transparent"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;opacity:0.7">1f</span>Fluxo Mono</a><a href="PayFlow%201g%20Fluxo%20Mono%20%2B%20Biometria.dc.html" style="display:flex;gap:8px;align-items:baseline;text-decoration:none;border-radius:10px;padding:8px 10px;font-size:13.5px;font-weight:600;color:var(--ink);background:var(--card)"><span style="font-family:'JetBrains Mono',monospace;font-size:11px;opacity:0.7">1g</span>+ Biometria</a></div>
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <span style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--mut);padding:0 10px 6px">Ir para tela</span>
+      <sc-for list="{{ mapa }}" as="m" hint-placeholder-count="11">
+        <button onClick="{{ m.go }}" style="text-align:left;border:0;border-radius:10px;padding:9px 10px;font-size:13.5px;font-weight:500;cursor:pointer;background:{{ m.bg }};color:{{ m.fg }}" style-hover="background:var(--hover)">{{ m.label }}</button>
+      </sc-for>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--mut);padding:0 10px">Modo</span><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--tint);border-radius:12px"><sc-for list="{{ temas }}" as="tm" hint-placeholder-count="2"><button onClick="{{ tm.set }}" style="border:0;border-radius:9px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;background:{{ tm.bg }};color:{{ tm.fg }}">{{ tm.label }}</button></sc-for></div></div>
+    <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:11px;font-weight:600;letter-spacing:0.08em;text-transform:uppercase;color:var(--mut);padding:0 10px">Selfie (demo)</span><div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--tint);border-radius:12px"><sc-for list="{{ falhas }}" as="fl" hint-placeholder-count="2"><button onClick="{{ fl.set }}" style="border:0;border-radius:9px;padding:8px;font-size:13px;font-weight:600;cursor:pointer;background:{{ fl.bg }};color:{{ fl.fg }}">{{ fl.label }}</button></sc-for></div></div>
+    <button onClick="{{ reset }}" style="align-self:flex-start;border:1px solid var(--line2);background:transparent;border-radius:14px;padding:8px 14px;font-size:12.5px;font-weight:500;cursor:pointer;color:var(--ink)">Reiniciar dados</button>
+  </div>
+
+  <div style="width:390px;height:824px;border-radius:54px;background:#141414;padding:10px;flex:none;box-shadow:0 30px 60px -20px rgba(30,30,20,0.25)">
+    <div style="position:relative;width:100%;height:100%;border-radius:44px;background:var(--bg);overflow:hidden;display:flex;flex-direction:column">
+      <div style="height:48px;display:flex;align-items:center;justify-content:space-between;padding:0 30px;font-size:14px;font-weight:600;flex:none;background:{{ statusBg }};color:{{ statusFg }}"><span>9:41</span><span style="width:96px;height:26px;border-radius:14px;background:#141414"></span><span style="display:flex;gap:4px;align-items:center"><span style="width:15px;height:9px;border-radius:2px;background:currentColor"></span><span style="width:22px;height:10px;border-radius:3px;border:1.5px solid currentColor"></span></span></div>
+
+      <sc-if value="{{ toast }}">
+        <div style="position:absolute;top:58px;left:50%;z-index:30;background:var(--ink);color:var(--onp);font-size:13px;font-weight:500;padding:10px 16px;border-radius:14px;white-space:nowrap;animation:pfToast 2.6s ease forwards">{{ toast }}</div>
+      </sc-if>
+
+      <!-- LANDING -->
+      <sc-if value="{{ is.landing }}">
+        <div data-screen-label="Landing" style="flex:1;display:flex;flex-direction:column;padding:20px 26px 26px;gap:24px;animation:pfIn .35s ease;background:var(--bg);color:var(--ink)">
+          <span style="font-size:20px;font-weight:600;letter-spacing:-0.03em">PayFlow</span>
+          <div style="display:flex;flex-direction:column;gap:14px;margin-top:24px;padding:22px;border-radius:18px;background:var(--card);box-shadow:0 1px 2px rgba(20,20,20,0.04),0 12px 32px -12px rgba(20,20,20,0.12)"><div style="display:flex;justify-content:space-between;font-size:13px;color:var(--mut)"><span>Venda de R$ 100,00</span><span>2026</span></div><div style="display:flex;height:12px;gap:4px"><div style="flex:99;border-radius:6px;background:var(--ink)"></div><div style="flex:1;min-width:12px;border-radius:6px;background:oklch(0.72 0.14 80)"></div></div><div style="display:flex;justify-content:space-between;font-size:14px;font-weight:600"><span>R$ 99,00 à empresa</span><span style="color:var(--taxt)">R$ 1,00 imposto</span></div></div>
+          <div style="display:flex;flex-direction:column;gap:12px;margin-top:auto">
+            <span style="font-size:34px;font-weight:600;letter-spacing:-0.035em;line-height:1.05;text-wrap:balance">Pagamentos que já chegam com o imposto certo.</span>
+            <span style="font-size:15px;line-height:1.5;color:var(--mut2);text-wrap:pretty">Split payment automático de IBS e CBS. Pix, cartão ou boleto: a empresa recebe o líquido, sem guia pra pagar depois.</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <button onClick="{{ goCriar }}" class="pf-cta" style-active="transform:scale(0.98)">Abrir minha conta</button>
+            <button onClick="{{ goEntrar }}" style="border:1.5px solid var(--line2);background:transparent;color:var(--ink);border-radius:14px;padding:15px;font-size:15px;font-weight:600;cursor:pointer" style-active="transform:scale(0.98)">Entrar</button>
+            <button onClick="{{ entrarDemo }}" style="border:0;background:transparent;color:var(--mut);padding:6px;font-size:13.5px;font-weight:600;cursor:pointer">Entrar como Alice (demo)</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ENTRAR (LOGIN) -->
+      <sc-if value="{{ is.entrar }}">
+        <div data-screen-label="Entrar" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:18px;padding:8px 20px 24px;animation:pfIn .3s ease">
+          <div style="display:flex;justify-content:space-between;align-items:center"><button onClick="{{ back }}" class="pf-back">←</button><span style="font-size:15px;font-weight:600">Entrar</span><span style="width:38px"></span></div>
+          <div style="display:flex;flex-direction:column;gap:4px;padding:10px 4px 0"><span style="font-size:26px;font-weight:600;letter-spacing:-0.03em">Bem-vindo de volta</span><span style="font-size:13.5px;color:var(--mut);line-height:1.45">Entre com CPF, e-mail ou telefone. Depois, uma selfie rápida confirma que é você.</span></div>
+          <div style="display:flex;gap:4px;padding:4px;background:var(--card);border-radius:14px">
+            <sc-for list="{{ lg.opcoes }}" as="o" hint-placeholder-count="3">
+              <button onClick="{{ o.set }}" style="flex:1;border:0;border-radius:11px;padding:9px 6px;font-size:12.5px;font-weight:600;cursor:pointer;background:{{ o.bg }};color:{{ o.fg }}">{{ o.label }}</button>
+            </sc-for>
+          </div>
+          <label class="pf-field">{{ lg.label }}
+            <input value="{{ lg.id }}" onChange="{{ onLoginId }}" placeholder="{{ lg.ph }}" inputmode="{{ lg.im }}" class="pf-input" style-focus="border-color:var(--ink)">
+          </label>
+          <label class="pf-field">Senha
+            <input type="password" value="{{ lg.senha }}" onChange="{{ onLoginSenha }}" placeholder="Sua senha" class="pf-input" style-focus="border-color:var(--ink)">
+          </label>
+          <sc-if value="{{ loginErro }}"><div class="pf-err">{{ loginErro }}</div></sc-if>
+          <span class="pf-mono" style="font-size:11px;color:var(--mut3);line-height:1.6;padding:0 4px">demo · 123.456.789-00 · alice@exemplo.com · (11) 98765-4321 · qualquer senha com 6+ caracteres</span>
+          <div style="margin-top:auto;display:flex;flex-direction:column;gap:6px">
+            <button onClick="{{ entrar }}" class="pf-cta" style-active="transform:scale(0.98)">Continuar</button>
+            <button onClick="{{ goCriar }}" style="border:0;background:transparent;padding:10px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer">Não tenho conta</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- SELFIE (cadastro · login · transferência) -->
+      <sc-if value="{{ is.selfie }}">
+        <div data-screen-label="Selfie" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding:8px 20px 24px;animation:pfIn .3s ease">
+          <div style="display:flex;justify-content:space-between;align-items:center"><button onClick="{{ back }}" class="pf-back">←</button><span style="font-size:15px;font-weight:600">{{ sf.passo }}</span><span style="width:38px"></span></div>
+          <div style="display:flex;flex-direction:column;gap:4px;padding:0 4px"><span style="font-size:24px;font-weight:600;letter-spacing:-0.03em;line-height:1.1">{{ sf.titulo }}</span><span style="font-size:13.5px;color:var(--mut);line-height:1.45;text-wrap:pretty">{{ sf.sub }}</span></div>
+          <sc-if value="{{ sf.contexto }}"><div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:var(--card);border-radius:16px;font-size:13px"><span style="color:var(--mut)">{{ sf.contextoLabel }}</span><span style="font-weight:600">{{ sf.contexto }}</span></div></sc-if>
+          <div style="position:relative;flex:none;height:280px;border-radius:28px;overflow:hidden;background:repeating-linear-gradient(135deg,var(--tint) 0 10px,var(--card) 10px 20px);display:grid;place-items:center">
+            <div style="width:164px;height:212px;margin-bottom:14px;border-radius:50%;border:2.5px solid {{ sf.ovalCor }};animation:{{ sf.ovalAnim }};display:grid;place-items:center">
+              <sc-if value="{{ sf.ok }}"><div style="width:56px;height:56px;border-radius:50%;background:var(--ink);display:grid;place-items:center;color:var(--onp);font-size:24px;font-weight:700;animation:pfIn .25s ease">✓</div></sc-if>
+            </div>
+            <span class="pf-mono" style="position:absolute;left:0;right:0;bottom:14px;text-align:center;font-size:11px;color:var(--mut)">{{ sf.legenda }}</span>
+          </div>
+          <sc-if value="{{ sf.erro }}"><div class="pf-err">Não conseguimos confirmar seu rosto. Tente de novo, de frente e num lugar mais iluminado.</div></sc-if>
+          <sc-if value="{{ sf.dicas }}">
+            <div style="display:flex;flex-direction:column;gap:8px;padding:4px 6px">
+              <sc-for list="{{ sf.listaDicas }}" as="dc" hint-placeholder-count="3">
+                <span style="display:flex;align-items:center;gap:10px;font-size:13px;color:var(--mut2)"><span style="width:6px;height:6px;border-radius:50%;background:var(--ink);flex:none"></span>{{ dc.txt }}</span>
+              </sc-for>
+            </div>
+          </sc-if>
+          <div style="margin-top:auto;display:flex;flex-direction:column;gap:10px">
+            <span class="pf-mono" style="font-size:11px;color:var(--mut3);text-align:center;line-height:1.5">guardamos só uma assinatura matemática do rosto, nunca a foto</span>
+            <button onClick="{{ sf.acao }}" class="pf-cta" style="opacity:{{ sf.ctaOp }}" style-active="transform:scale(0.98)">{{ sf.cta }}</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- HOME -->
+      <sc-if value="{{ is.home }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="Início" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:18px;padding:10px 20px 20px;animation:pfIn .3s ease">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <button onClick="{{ goContas }}" style="border:0;background:transparent;padding:0;display:flex;align-items:center;gap:10px;cursor:pointer;color:var(--ink);text-align:left">
+              <span style="width:38px;height:38px;border-radius:50%;background:{{ ativa.avBg }};display:grid;place-items:center;font-size:13px;font-weight:600;color:{{ ativa.avFg }}">{{ ativa.iniciais }}</span>
+              <span style="display:flex;flex-direction:column"><span style="font-size:12px;color:var(--mut)">Olá,</span><span style="font-size:15px;font-weight:600;white-space:nowrap">{{ ativa.primeiro }}&nbsp;▾</span></span>
+            </button>
+            <div style="display:flex;gap:6px"><button onClick="{{ toggleTema }}" style="border:0;background:var(--card);border-radius:14px;padding:8px 12px;font-size:12px;font-weight:600;color:var(--mut);cursor:pointer">{{ temaLabel }}</button><button onClick="{{ goLanding }}" style="border:0;background:var(--card);border-radius:14px;padding:8px 12px;font-size:12px;font-weight:600;color:var(--mut);cursor:pointer">Sair</button></div>
+          </div>
+          <div style="background:var(--ink);color:var(--onp);border-radius:22px;padding:24px 22px;display:flex;flex-direction:column;gap:20px">
+            <div style="display:flex;justify-content:space-between;font-size:13px;opacity:0.82"><span>{{ ativa.tipoLong }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:12px">{{ ativa.docCurto }}</span></div>
+            <span style="font-size:40px;font-weight:600;letter-spacing:-0.035em;line-height:1">{{ ativa.saldoFmt }}</span>
+            <div style="display:flex;gap:8px">
+              <button onClick="{{ goTransferir }}" style="flex:1;border:0;padding:12px;border-radius:14px;background:var(--card);color:var(--ink);font-size:13.5px;font-weight:600;cursor:pointer" style-active="transform:scale(0.97)">Transferir</button>
+              <button onClick="{{ goExtrato }}" style="flex:1;border:0;padding:12px;border-radius:14px;background:var(--onsoft);color:var(--onp);font-size:13.5px;font-weight:600;cursor:pointer" style-active="transform:scale(0.97)">Extrato</button>
+            </div>
+          </div>
+          <button onClick="{{ goExtrato }}" style="border:0;cursor:pointer;display:flex;align-items:center;gap:16px;background:var(--card);border-radius:18px;padding:16px;text-align:left;color:var(--ink)">
+            <span style="width:56px;flex:none;display:flex;height:10px;gap:2px"><span style="width:{{ homeSplit.pctLiq }};background:var(--ink);border-radius:5px"></span><span style="flex:1;display:{{ homeSplit.taxShow }};background:oklch(0.72 0.14 80);border-radius:5px"></span></span>
+          <span style="display:flex;flex-direction:column;gap:3px"><span style="font-size:14px;font-weight:600">{{ homeSplit.titulo }}</span><span style="font-size:12px;color:var(--mut);line-height:1.4">{{ homeSplit.sub }}</span></span>
+          </button>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px"><span style="font-size:14px;font-weight:600">Recentes</span><button onClick="{{ goExtrato }}" style="border:0;background:transparent;font-size:13px;font-weight:600;color:var(--ink);cursor:pointer">Ver tudo</button></div>
+            <sc-for list="{{ recentes }}" as="t" hint-placeholder-count="3">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 14px;background:var(--card);border-radius:18px;gap:10px">
+                <div style="display:flex;align-items:center;gap:10px;min-width:0"><span style="width:34px;height:34px;border-radius:50%;background:{{ t.dot }};flex:none;display:grid;place-items:center;font-size:10px;font-weight:600;color:var(--onp)">{{ t.outroTipo }}</span><div style="display:flex;flex-direction:column;gap:1px;min-width:0"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.outro }}</span><span style="font-size:11.5px;color:var(--mut)">{{ t.sub }}</span></div></div>
+                <span style="font-size:14px;font-weight:600;white-space:nowrap;color:{{ t.cor }}">{{ t.valor }}</span>
+              </div>
+            </sc-for>
+            <sc-if value="{{ semRecentes }}"><div style="padding:22px;background:var(--card);border-radius:18px;font-size:13.5px;color:var(--mut);text-align:center">Nenhuma movimentação ainda. Que tal a primeira transferência?</div></sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- TRANSFERIR -->
+      <sc-if value="{{ is.transferir }}">
+        <div data-screen-label="Transferir" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding:8px 20px 22px;animation:pfIn .3s ease">
+          <div style="display:flex;justify-content:space-between;align-items:center"><button onClick="{{ goHome }}" class="pf-back">←</button><span style="font-size:15px;font-weight:600">Transferir</span><span style="width:38px"></span></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:12px;font-weight:600;color:var(--mut);padding-left:4px">Para quem</span>
+            <div style="display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;margin:0 -20px;padding-left:20px;padding-right:20px">
+              <sc-for list="{{ destinos }}" as="d" hint-placeholder-count="3">
+                <button onClick="{{ d.pick }}" style="flex:none;border:0;border-radius:14px;padding:7px 14px 7px 7px;cursor:pointer;background:{{ d.bg }};color:{{ d.fg }};display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;white-space:nowrap">
+                  <span style="width:26px;height:26px;border-radius:50%;background:{{ d.dot }};display:grid;place-items:center;font-size:9.5px;color:var(--onp)">{{ d.tipo }}</span>{{ d.curto }}
+                </button>
+              </sc-for>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px;padding:20px;background:var(--card);border-radius:18px"><span style="font-size:34px;font-weight:600;letter-spacing:-0.035em;line-height:1">{{ sp.liq }}</span><div style="display:flex;height:12px;gap:3px"><div style="width:{{ sp.pctLiq }};background:var(--ink);border-radius:6px;transition:width .35s"></div><div style="flex:1;display:{{ sp.taxShow }};background:oklch(0.72 0.14 80);border-radius:6px"></div></div><div style="display:flex;justify-content:space-between;font-size:12px;color:var(--mut)"><span>{{ sp.recebeLabel }}</span><sc-if value="{{ sp.aplicado }}"><span style="color:var(--taxt);font-weight:600">{{ sp.tax }} ao Governo</span></sc-if><sc-if value="{{ sp.pf }}"><span>sem retenção</span></sc-if></div></div>
+          <div style="display:flex;align-items:center;gap:4px;background:var(--card);border-radius:14px;padding:4px 6px 4px 22px">
+            <span style="font-size:16px;color:var(--mut)">R$</span>
+            <input value="{{ valorStr }}" onChange="{{ onValor }}" inputmode="numeric" style="border:0;outline:0;background:transparent;font-size:24px;font-weight:600;width:100%;color:var(--ink);padding:10px 4px">
+          </div>
+          <div style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap">
+            <sc-for list="{{ quick }}" as="q" hint-placeholder-count="4">
+              <button onClick="{{ q.set }}" style="border:0;background:{{ q.bg }};color:{{ q.fg }};border-radius:14px;padding:8px 12px;font-size:12.5px;font-weight:600;cursor:pointer;white-space:nowrap">{{ q.label }}</button>
+            </sc-for>
+          </div>
+          <sc-if value="{{ erro }}"><div class="pf-err">{{ erro }}</div></sc-if>
+          <div style="margin-top:auto;display:flex;flex-direction:column;gap:6px">
+            <span style="font-size:12px;color:var(--mut);text-align:center">Saldo disponível {{ ativa.saldoFmt }}</span>
+            <button onClick="{{ irRevisar }}" class="pf-cta" style-active="transform:scale(0.98)">Continuar</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- REVISAR PAGAMENTO -->
+      <sc-if value="{{ is.revisar }}">
+        <div data-screen-label="Revisar pagamento" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding:8px 20px 22px;animation:pfIn .3s ease">
+          <div style="display:flex;justify-content:space-between;align-items:center"><button onClick="{{ back }}" class="pf-back">←</button><span style="font-size:15px;font-weight:600">Revisar</span><span style="width:38px"></span></div>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;padding:14px 0 4px;text-align:center">
+            <span style="width:48px;height:48px;border-radius:50%;background:{{ rv.dot }};display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--onp)">{{ rv.tipo }}</span>
+            <span style="font-size:14px;color:var(--mut)">Você vai pagar</span>
+            <span style="font-size:38px;font-weight:600;letter-spacing:-0.035em;line-height:1">{{ rv.bruto }}</span>
+            <span style="font-size:14px;font-weight:500">para {{ rv.destino }}</span>
+          </div>
+          <div style="background:var(--card);border-radius:20px;padding:4px 16px;display:flex;flex-direction:column;font-size:13px">
+            <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--tint)"><span style="color:var(--mut)">Você paga</span><span style="font-weight:600">{{ rv.bruto }}</span></div>
+            <sc-if value="{{ rv.aplicado }}"><div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--tint)"><span style="color:var(--mut);display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:oklch(0.72 0.14 80)"></span>CBS {{ rv.cbsPct }} + IBS {{ rv.ibsPct }}</span><span style="font-weight:600;color:var(--taxt)">− {{ rv.tax }}</span></div></sc-if>
+            <div style="display:flex;justify-content:space-between;padding:10px 0"><span style="color:var(--mut);display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:var(--ink)"></span>{{ rv.chegaLabel }}</span><span style="font-weight:600">{{ rv.liq }}</span></div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border-radius:18px;background:var(--tint)">
+            <span style="width:30px;height:30px;border-radius:50%;flex:none;display:grid;place-items:center;background:var(--ink);color:var(--onp);font-size:12px;font-weight:700">{{ rv.authIcone }}</span>
+            <span style="display:flex;flex-direction:column;gap:2px"><span style="font-size:13.5px;font-weight:600">{{ rv.authTitulo }}</span><span style="font-size:12.5px;color:var(--mut2);line-height:1.45">{{ rv.authSub }}</span></span>
+          </div>
+          <div style="margin-top:auto;display:flex;flex-direction:column;gap:6px">
+            <span style="font-size:12px;color:var(--mut);text-align:center">Saldo disponível {{ ativa.saldoFmt }}</span>
+            <button onClick="{{ confirmarPagamento }}" class="pf-cta" style-active="transform:scale(0.98)">{{ rv.cta }}</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- COMPROVANTE -->
+      <sc-if value="{{ is.comprovante }}">
+        <div data-screen-label="Comprovante" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:20px;padding:26px 20px 24px;align-items:center;text-align:center;animation:pfIn .35s ease">
+          <div style="width:84px;height:84px;border-radius:50%;background:var(--tint);display:grid;place-items:center"><div style="width:56px;height:56px;border-radius:50%;background:var(--ink);display:grid;place-items:center;color:var(--onp);font-size:24px;font-weight:700">✓</div></div>
+          <div style="display:flex;flex-direction:column;gap:6px"><span style="font-size:14px;color:var(--mut)">Transferência enviada</span><span style="font-size:36px;font-weight:600;letter-spacing:-0.035em">{{ rc.bruto }}</span><span style="font-size:14px;font-weight:500">para {{ rc.destino }}</span></div>
+          <div style="width:100%;background:var(--card);border-radius:20px;padding:6px 18px;display:flex;flex-direction:column;text-align:left;font-size:13.5px">
+            <div style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--tint)"><span style="color:var(--mut)">Bruto</span><span style="font-weight:600">{{ rc.bruto }}</span></div>
+            <sc-if value="{{ rc.aplicado }}">
+              <div style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--tint)"><span style="color:var(--mut)">CBS {{ rc.cbsPct }} → Governo</span><span style="font-weight:600;color:var(--taxt)">− {{ rc.cbs }}</span></div>
+              <div style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--tint)"><span style="color:var(--mut)">IBS {{ rc.ibsPct }} → Governo</span><span style="font-weight:600;color:var(--taxt)">− {{ rc.ibs }}</span></div>
+            </sc-if>
+            <div style="display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--tint)"><span style="font-weight:600">Líquido recebido</span><span style="font-weight:600;color:var(--ink)">{{ rc.liq }}</span></div>
+            <div style="display:flex;justify-content:space-between;padding:12px 0"><span style="color:var(--mut)">Autorizado por</span><span style="font-weight:600">{{ rc.auth }}</span></div>
+          </div>
+          <span style="font-size:12.5px;color:var(--mut);line-height:1.5;text-wrap:pretty">{{ rc.nota }}</span>
+          <span style="font-size:12px;color:var(--mut);font-family:'JetBrains Mono',monospace">{{ rc.codigo }} · {{ rc.data }}</span>
+          <div style="margin-top:auto;width:100%;display:flex;flex-direction:column;gap:6px">
+            <button onClick="{{ goHome }}" style="border:0;background:var(--ink);color:var(--onp);border-radius:14px;padding:16px;font-size:15px;font-weight:600;cursor:pointer" style-active="transform:scale(0.98)">Concluir</button>
+            <button onClick="{{ goTransferir }}" style="border:0;background:transparent;padding:10px;font-size:14px;font-weight:600;color:var(--ink);cursor:pointer">Nova transferência</button>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- EXTRATO -->
+      <sc-if value="{{ is.extrato }}">
+        <div data-screen-label="Extrato" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:14px;padding:8px 20px 20px;animation:pfIn .3s ease">
+          <div style="display:flex;flex-direction:column;gap:2px;padding:4px 4px 0"><span style="font-size:26px;font-weight:600;letter-spacing:-0.03em">Extrato</span><span style="font-size:13px;color:var(--mut)">{{ ativa.nome }}</span></div>
+          <div style="display:flex;gap:4px;padding:4px;background:var(--card);border-radius:14px">
+            <sc-for list="{{ filtros }}" as="f" hint-placeholder-count="3">
+              <button onClick="{{ f.set }}" style="flex:1;border:0;border-radius:14px;padding:9px 6px;font-size:12.5px;font-weight:600;cursor:pointer;background:{{ f.bg }};color:{{ f.fg }}">{{ f.label }}</button>
+            </sc-for>
+          </div>
+          <sc-for list="{{ extrato }}" as="t" hint-placeholder-count="4">
+            <div style="background:var(--card);border-radius:20px;overflow:hidden">
+              <button onClick="{{ t.toggle }}" style="all:unset;box-sizing:border-box;width:100%;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 14px;cursor:pointer">
+                <span style="display:flex;align-items:center;gap:10px;min-width:0"><span style="width:34px;height:34px;border-radius:50%;background:{{ t.dot }};flex:none;display:grid;place-items:center;font-size:10px;font-weight:600;color:var(--onp)">{{ t.outroTipo }}</span><span style="display:flex;flex-direction:column;gap:1px;min-width:0"><span style="font-size:14px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ t.outro }}</span><span style="font-size:11.5px;color:var(--mut)">{{ t.sub }}</span></span></span>
+                <span style="font-size:14px;font-weight:600;white-space:nowrap;color:{{ t.cor }}">{{ t.valor }}</span>
+              </button>
+              <sc-if value="{{ t.open }}">
+                <div style="padding:0 14px 14px 58px;display:flex;flex-direction:column;gap:7px;font-size:12.5px;animation:pfIn .2s ease">
+                  <div style="display:flex;height:6px;border-radius:14px;overflow:hidden;gap:2px;background:var(--tint)"><span style="width:{{ t.pctLiq }};background:var(--ink)"></span><span style="flex:1;display:{{ t.taxDisplay }};min-width:5px;background:oklch(0.72 0.14 80)"></span></div>
+                  <div style="display:flex;justify-content:space-between"><span style="color:var(--mut)">Bruto</span><span>{{ t.bruto }}</span></div>
+                  <div style="display:{{ t.taxDisplay }};justify-content:space-between"><span style="color:var(--mut)">CBS + IBS</span><span style="color:var(--taxt)">− {{ t.tax }}</span></div>
+                  <div style="display:flex;justify-content:space-between"><span style="color:var(--mut)">Líquido</span><span style="font-weight:600">{{ t.liq }}</span></div>
+                  <div style="display:flex;justify-content:space-between"><span style="color:var(--mut)">Autorizado por</span><span>{{ t.auth }}</span></div>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mut3)">{{ t.codigo }}</span>
+                </div>
+              </sc-if>
+            </div>
+          </sc-for>
+          <sc-if value="{{ extratoVazio }}"><div style="padding:26px;background:var(--card);border-radius:20px;font-size:13.5px;color:var(--mut);text-align:center">Nada por aqui neste filtro.</div></sc-if>
+        </div>
+      </sc-if>
+
+      <!-- CONTAS -->
+      <sc-if value="{{ is.contas }}">
+        <div data-screen-label="Contas" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding:8px 20px 20px;animation:pfIn .3s ease">
+          <div style="display:flex;justify-content:space-between;align-items:flex-end;padding:4px 4px 4px">
+            <div style="display:flex;flex-direction:column;gap:2px"><span style="font-size:26px;font-weight:600;letter-spacing:-0.03em">Contas</span><span style="font-size:13px;color:var(--mut)">{{ contasResumo }}</span></div>
+            <button onClick="{{ goCriar }}" style="border:0;background:var(--ink);color:var(--onp);border-radius:14px;padding:10px 14px;font-size:13px;font-weight:600;cursor:pointer">+ Nova</button>
+          </div>
+          <sc-for list="{{ contasList }}" as="c" hint-placeholder-count="5">
+            <div style="display:flex;align-items:center;gap:12px;padding:14px;background:var(--card);border-radius:20px;border:1.5px solid {{ c.border }}">
+              <span style="width:40px;height:40px;border-radius:50%;background:{{ c.avBg }};color:{{ c.avFg }};display:grid;place-items:center;font-size:12.5px;font-weight:600;flex:none">{{ c.iniciais }}</span>
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">
+                <span style="font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ c.nome }}</span>
+                <span style="font-size:11.5px;color:var(--mut);font-family:'JetBrains Mono',monospace">{{ c.tipo }} · {{ c.documento }}</span>
+              </div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:5px">
+                <span style="font-size:14px;font-weight:600">{{ c.saldoFmt }}</span>
+                <sc-if value="{{ c.podeUsar }}"><button onClick="{{ c.usar }}" style="border:0;background:var(--tint);color:var(--ink);border-radius:14px;padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer">Usar</button></sc-if>
+                <sc-if value="{{ c.emUso }}"><span style="font-size:11.5px;font-weight:600;color:var(--ink)">Em uso</span></sc-if>
+                <sc-if value="{{ c.isGov }}"><button onClick="{{ goGoverno }}" style="border:0;background:var(--taxbg);color:var(--taxt);border-radius:14px;padding:5px 10px;font-size:11.5px;font-weight:600;cursor:pointer">Ver painel</button></sc-if>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <!-- CRIAR CONTA -->
+      <sc-if value="{{ is.criar }}">
+        <div data-screen-label="Criar conta" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding:8px 20px 24px;animation:pfIn .3s ease">
+          <div style="display:flex;justify-content:space-between;align-items:center"><button onClick="{{ back }}" class="pf-back">←</button><span style="font-size:15px;font-weight:600">Nova conta · 1 de 2</span><span style="width:38px"></span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <sc-for list="{{ tipos }}" as="tp" hint-placeholder-count="2">
+              <button onClick="{{ tp.set }}" style="text-align:left;border:1.5px solid {{ tp.border }};background:var(--card);border-radius:20px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:8px;color:var(--ink)">
+                <span style="width:30px;height:30px;border-radius:50%;background:{{ tp.dot }};display:grid;place-items:center;font-size:10px;font-weight:600;color:var(--onp)">{{ tp.tipo }}</span>
+                <span style="font-size:14px;font-weight:600">{{ tp.label }}</span>
+                <span style="font-size:11.5px;color:var(--mut);line-height:1.35">{{ tp.desc }}</span>
+              </button>
+            </sc-for>
+          </div>
+          <label class="pf-field">{{ labelNome }}
+            <input value="{{ nova.nome }}" onChange="{{ onNome }}" placeholder="{{ phNome }}" class="pf-input" style-focus="border-color:var(--ink)">
+          </label>
+          <label class="pf-field">{{ labelDoc }}
+            <input value="{{ nova.documento }}" onChange="{{ onDoc }}" inputmode="numeric" placeholder="{{ phDoc }}" class="pf-input pf-mono" style-focus="border-color:var(--ink)">
+          </label>
+          <label class="pf-field">E-mail
+            <input value="{{ nova.email }}" onChange="{{ onEmail }}" inputmode="email" placeholder="voce@exemplo.com" class="pf-input" style-focus="border-color:var(--ink)">
+          </label>
+          <label class="pf-field">Telefone
+            <input value="{{ nova.telefone }}" onChange="{{ onTel }}" inputmode="tel" placeholder="(11) 90000-0000" class="pf-input pf-mono" style-focus="border-color:var(--ink)">
+          </label>
+          <label class="pf-field">Senha
+            <input type="password" value="{{ nova.senha }}" onChange="{{ onSenha }}" placeholder="Pelo menos 6 caracteres" class="pf-input" style-focus="border-color:var(--ink)">
+          </label>
+          <label class="pf-field">Saldo inicial · demo (R$)
+            <input value="{{ novaSaldoStr }}" onChange="{{ onSaldo }}" inputmode="numeric" class="pf-input" style-focus="border-color:var(--ink)">
+          </label>
+          <sc-if value="{{ novaErro }}"><div class="pf-err">{{ novaErro }}</div></sc-if>
+          <button onClick="{{ criarConta }}" class="pf-cta" style="margin-top:auto" style-active="transform:scale(0.98)">Continuar para a selfie</button>
+        </div>
+      </sc-if>
+
+      <!-- GOVERNO -->
+      <sc-if value="{{ is.governo }}">
+        <div data-screen-label="Governo" style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:16px;padding:8px 20px 20px;animation:pfIn .3s ease">
+          <div style="display:flex;flex-direction:column;gap:2px;padding:4px 4px 0"><span style="font-size:26px;font-weight:600;letter-spacing:-0.03em">Governo</span><span style="font-size:13px;color:var(--mut)">Conta IBS/CBS · acumulado do split</span></div>
+          <div style="background:var(--card);border-radius:22px;padding:22px;display:flex;flex-direction:column;align-items:center;gap:18px">
+            <div style="width:100%;display:flex;flex-direction:column;gap:6px"><span style="font-size:12px;color:var(--mut)">total retido · {{ gov.qtd }}</span><span style="font-size:36px;font-weight:600;letter-spacing:-0.035em;line-height:1">{{ gov.total }}</span></div><div style="width:100%;display:flex;height:12px;gap:3px"><div style="width:{{ gov.pctLiq }};background:oklch(0.72 0.14 80);border-radius:6px"></div><div style="flex:1;display:{{ gov.taxShow }};background:var(--ink);border-radius:6px"></div></div>
+          <div style="width:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+              <div style="background:var(--bg);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:oklch(0.72 0.14 80)"></span>CBS · federal</span><span style="font-size:17px;font-weight:600">{{ gov.cbs }}</span></div>
+              <div style="background:var(--bg);border-radius:18px;padding:14px;display:flex;flex-direction:column;gap:4px"><span style="font-size:12px;color:var(--mut);display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--ink)"></span>IBS · estados/mun.</span><span style="font-size:17px;font-weight:600">{{ gov.ibs }}</span></div>
+            </div>
+          </div>
+          <span style="font-size:14px;font-weight:600;padding:0 4px">Por empresa recebedora</span>
+          <sc-for list="{{ gov.porEmpresa }}" as="e" hint-placeholder-count="2">
+            <div style="display:flex;flex-direction:column;gap:9px;padding:14px;background:var(--card);border-radius:20px">
+              <div style="display:flex;justify-content:space-between;font-size:14px"><span style="font-weight:600">{{ e.nome }}</span><span style="font-weight:600;color:var(--taxt)">{{ e.tax }}</span></div>
+              <div style="height:6px;border-radius:14px;background:var(--tint);overflow:hidden"><div style="height:100%;width:{{ e.pct }};background:oklch(0.72 0.14 80);border-radius:14px"></div></div>
+              <span style="font-size:11.5px;color:var(--mut)">{{ e.sub }}</span>
+            </div>
+          </sc-for>
+          <div style="padding:14px 16px;border-radius:20px;background:var(--taxbg);color:var(--taxt2);font-size:12.5px;line-height:1.5;text-wrap:pretty">{{ gov.nota }}</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showTabs }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:none;display:flex;justify-content:space-around;align-items:center;padding:10px 12px 26px;background:var(--bg);border-top:1px solid var(--line)">
+          <sc-for list="{{ tabs }}" as="tb" hint-placeholder-count="5">
+            <button onClick="{{ tb.go }}" style="border:0;background:{{ tb.bg }};color:{{ tb.fg }};border-radius:14px;padding:{{ tb.pad }};font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:6px">
+              <span style="width:{{ tb.dotW }};height:6px;border-radius:14px;background:currentColor"></span>{{ tb.label }}
+            </button>
+          </sc-for>
+        </div>
+      </sc-if>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;tema&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Claro&quot;,&quot;Escuro&quot;],&quot;default&quot;:&quot;Claro&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;aliquota&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;2026 · teste 1%&quot;,&quot;Simulação 2027 · 26,5%&quot;],&quot;default&quot;:&quot;2026 · teste 1%&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;limiteFacial&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:500,&quot;min&quot;:0,&quot;max&quot;:100000,&quot;step&quot;:50,&quot;tsType&quot;:&quot;number&quot;},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;landing&quot;,&quot;entrar&quot;,&quot;criar&quot;,&quot;selfie&quot;,&quot;home&quot;,&quot;transferir&quot;,&quot;revisar&quot;,&quot;extrato&quot;,&quot;contas&quot;,&quot;governo&quot;],&quot;default&quot;:&quot;landing&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+const BRL = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
+const fmt = c => BRL.format(c / 100);
+const num = c => (c / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const MES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const p2 = n => String(n).padStart(2, '0');
+const quando = d => {
+  const dias = Math.floor((Date.now() - d) / 864e5);
+  const h = p2(d.getHours()) + ':' + p2(d.getMinutes());
+  return dias < 1 ? 'Hoje, ' + h : dias < 2 ? 'Ontem, ' + h : d.getDate() + ' ' + MES[d.getMonth()];
+};
+const VIOLET = 'var(--ink)', CORAL = 'oklch(0.72 0.14 80)', INK = 'var(--ink)', CARD = 'var(--card)', ONP = 'var(--onp)';
+const RATES = { '2026': { cbs: 0.009, ibs: 0.001, cbsPct: '0,9%', ibsPct: '0,1%' }, '2027': { cbs: 0.088, ibs: 0.177, cbsPct: '8,8%', ibsPct: '17,7%' } };
+const ini = n => n.replace(/\(.*\)/, '').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
+const AV = { PF: ['var(--tint)', 'var(--ink)'], PJ: ['var(--taxbg2)', 'var(--taxt)'], GOV: [INK, ONP] };
+const TIPO_LONG = { PF: 'Conta pessoal · PF', PJ: 'Conta empresa · PJ', GOV: 'Conta Governo' };
+const maskDoc = (v, tipo) => {
+  const d = v.replace(/\D/g, '').slice(0, tipo === 'PJ' ? 14 : 11);
+  return tipo === 'PJ'
+    ? d.replace(/^(\d{2})(\d)/, '$1.$2').replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d)/, '.$1/$2').replace(/(\d{4})(\d)/, '$1-$2')
+    : d.replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+};
+const maskTel = v => {
+  const d = v.replace(/\D/g, '').slice(0, 11);
+  if (d.length <= 2) return d;
+  if (d.length <= 6) return '(' + d.slice(0, 2) + ') ' + d.slice(2);
+  if (d.length <= 10) return '(' + d.slice(0, 2) + ') ' + d.slice(2, 6) + '-' + d.slice(6);
+  return '(' + d.slice(0, 2) + ') ' + d.slice(2, 7) + '-' + d.slice(7);
+};
+const digits = v => String(v || '').replace(/\D/g, '');
+// CPF e celular têm 11 dígitos cada — por isso o login pede para escolher o tipo em vez de adivinhar.
+const LOGIN = {
+  cpf: { label: 'CPF', ph: '000.000.000-00', im: 'numeric', mask: v => maskDoc(v, 'PF') },
+  email: { label: 'E-mail', ph: 'voce@exemplo.com', im: 'email', mask: v => v.trim() },
+  tel: { label: 'Telefone', ph: '(11) 90000-0000', im: 'tel', mask: maskTel },
+};
+const DICAS = ['Rosto de frente, sem óculos escuros', 'Lugar bem iluminado', 'Só você na foto'];
+
+class Component extends DCLogic {
+  state = this.seed();
+
+  dark() { return (this.state.tema ?? (String(this.props.tema ?? '') === 'Escuro' ? 'dark' : 'light')) === 'dark'; }
+  rate() { return RATES[String(this.props.aliquota ?? '').startsWith('Sim') ? '2027' : '2026']; }
+  // LIMITE_FACIAL no backend: acima dele, a transferência exige selfie.
+  limite() { return Math.max(0, Number(this.props.limiteFacial ?? 500) || 0) * 100; }
+
+  // services/split_payment_service.py
+  split(v, tipo) {
+    if (tipo !== 'PJ') return { cbs: 0, ibs: 0, liq: v, aplicado: false };
+    const r = this.rate(), cbs = Math.round(v * r.cbs), ibs = Math.round(v * r.ibs);
+    return { cbs, ibs, liq: v - cbs - ibs, aplicado: true };
+  }
+
+  // services/pagamento_service.py
+  mover(contas, txs, o, d, v, data, auth = 'sessao') {
+    const A = contas.find(c => c.id === o), B = contas.find(c => c.id === d), G = contas.find(c => c.tipo === 'GOV');
+    const s = this.split(v, B.tipo);
+    A.saldo -= v; B.saldo += s.liq; G.saldo += s.cbs + s.ibs;
+    const tx = { id: 120 + txs.length + 1, origem_id: o, destino_id: d, valor: v, ...s, data, auth };
+    txs.unshift(tx);
+    return tx;
+  }
+
+  seed() {
+    const contas = [
+      { id: 1, nome: 'Alice Souza', documento: '123.456.789-00', email: 'alice@exemplo.com', telefone: '(11) 98765-4321', tipo: 'PF', saldo: 100000 },
+      { id: 2, nome: 'Loja Exemplo Ltda', documento: '12.345.678/0001-90', email: 'contato@lojaexemplo.com.br', telefone: '(11) 3333-4444', tipo: 'PJ', saldo: 0 },
+      { id: 3, nome: 'Governo (IBS/CBS)', documento: '—', email: '', telefone: '', tipo: 'GOV', saldo: 0 },
+      { id: 4, nome: 'Bruno Lima', documento: '987.654.321-00', email: 'bruno@exemplo.com', telefone: '(11) 91234-5678', tipo: 'PF', saldo: 45000 },
+      { id: 5, nome: 'Café Aurora ME', documento: '45.678.912/0001-33', email: 'ola@cafeaurora.com.br', telefone: '(11) 95555-0101', tipo: 'PJ', saldo: 0 },
+    ];
+    const txs = [], now = Date.now();
+    [[1, 2, 18990, 60, 'sessao'], [4, 5, 3250, 34, 'sessao'], [4, 1, 5000, 26, 'sessao'], [1, 5, 1450, 3, 'sessao']]
+      .forEach(([o, d, v, h, a]) => this.mover(contas, txs, o, d, v, new Date(now - h * 36e5), a));
+    const start = this.props.startScreen ?? 'landing';
+    return {
+      contas, txs, screen: start, hist: [], ativaId: 1,
+      destId: 5, valor: start === 'revisar' ? 80000 : 5000, erro: '', recibo: null, filtro: 'todas', openTx: null,
+      nova: { nome: '', documento: '', email: '', telefone: '', senha: '', tipo: 'PJ', saldo: 50000 }, novaErro: '', toast: '', toastKey: 0, tema: null,
+      login: { modo: 'cpf', id: '', senha: '' }, loginErro: '', loginAlvo: 1,
+      selfie: { modo: 'login', fase: 'pronto' }, falhaSim: false, falhou: false,
+    };
+  }
+
+  go = screen => this.setState(s => ({ screen, hist: [...s.hist, s.screen].slice(-10), erro: '', novaErro: '', loginErro: '' }));
+  back = () => { clearTimeout(this._f); this.setState(s => ({ screen: s.hist[s.hist.length - 1] || 'home', hist: s.hist.slice(0, -1) })); };
+  showToast(msg) {
+    clearTimeout(this._t);
+    this.setState({ toast: msg });
+    this._t = setTimeout(() => this.setState({ toast: '' }), 2600);
+  }
+  componentWillUnmount() { clearTimeout(this._t); clearTimeout(this._f); }
+
+  // ---------- Selfie (um componente só para cadastro, login e transferência) ----------
+  abrirSelfie(modo) {
+    clearTimeout(this._f);
+    this.setState(s => ({ selfie: { modo, fase: 'pronto' }, falhou: false, screen: 'selfie', hist: [...s.hist, s.screen].slice(-10) }));
+  }
+  tirarFoto = () => {
+    if (this.state.selfie.fase === 'verificando' || this.state.selfie.fase === 'ok') return;
+    clearTimeout(this._f);
+    this.setState(s => ({ selfie: { ...s.selfie, fase: 'verificando' } }));
+    // No backend isso é liveness + comparação de embedding (~3-6 s).
+    this._f = setTimeout(() => {
+      if (this.state.falhaSim && !this.state.falhou) {
+        this.setState(s => ({ selfie: { ...s.selfie, fase: 'erro' }, falhou: true }));
+        return;
+      }
+      this.setState(s => ({ selfie: { ...s.selfie, fase: 'ok' } }));
+      this._f = setTimeout(this.concluirSelfie, 800);
+    }, 1800);
+  };
+  concluirSelfie = () => {
+    const s = this.state, modo = s.selfie.modo;
+    if (modo === 'cadastro') return this.finalizarCadastro();
+    if (modo === 'login') {
+      const c = s.contas.find(x => x.id === s.loginAlvo) || s.contas[0];
+      this.setState({ ativaId: c.id, destId: null, screen: 'home', hist: [], login: { ...s.login, senha: '' } });
+      return this.showToast('Bem-vindo(a), ' + c.nome.split(' ')[0]);
+    }
+    this.executar('selfie');
+  };
+
+  // ---------- Login ----------
+  entrar = () => {
+    const { login, contas } = this.state;
+    let erro = '';
+    if (!login.id.trim()) erro = 'Digite seu CPF, e-mail ou telefone.';
+    else if (login.modo === 'cpf' && digits(login.id).length !== 11) erro = 'CPF incompleto.';
+    else if (login.modo === 'email' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(login.id.trim())) erro = 'E-mail inválido.';
+    else if (login.modo === 'tel' && digits(login.id).length < 10) erro = 'Telefone incompleto.';
+    else if (login.senha.length < 6) erro = 'A senha tem pelo menos 6 caracteres.';
+    if (erro) return this.setState({ loginErro: erro });
+    const achou = contas.find(c => c.tipo !== 'GOV' && (
+      login.modo === 'cpf' ? digits(c.documento) === digits(login.id)
+        : login.modo === 'email' ? c.email.toLowerCase() === login.id.trim().toLowerCase()
+          : digits(c.telefone) === digits(login.id)));
+    // Mensagem genérica de propósito: não revela se a conta existe ou se a senha está errada.
+    if (!achou) return this.setState({ loginErro: 'Não foi possível entrar. Confira os dados e a senha.' });
+    this.setState({ loginAlvo: achou.id, loginErro: '' });
+    this.abrirSelfie('login');
+  };
+
+  // ---------- Transferência ----------
+  validarTransfer() {
+    const s = this.state, A = s.contas.find(c => c.id === s.ativaId);
+    if (!s.destId || s.destId === s.ativaId) return 'Escolha para quem enviar.';
+    if (s.valor <= 0) return 'Digite um valor maior que zero.';
+    if (s.valor > A.saldo) return 'Saldo insuficiente — você tem ' + fmt(A.saldo) + '.';
+    return '';
+  }
+  irRevisar = () => {
+    const erro = this.validarTransfer();
+    if (erro) return this.setState({ erro });
+    this.go('revisar');
+  };
+  confirmarPagamento = () => {
+    const erro = this.validarTransfer();
+    if (erro) return this.setState({ erro, screen: 'transferir' });
+    if (this.state.valor > this.limite()) return this.abrirSelfie('transferencia');
+    this.executar('sessao');
+  };
+  executar(auth) {
+    const s = this.state;
+    const contas = s.contas.map(c => ({ ...c })), txs = [...s.txs];
+    const tx = this.mover(contas, txs, s.ativaId, s.destId, s.valor, new Date(), auth);
+    this.setState({ contas, txs, recibo: tx.id, screen: 'comprovante', hist: [] });
+  }
+
+  // ---------- Cadastro ----------
+  criarConta = () => {
+    const { nova } = this.state;
+    const dig = digits(nova.documento).length;
+    if (nova.nome.trim().length < 3) return this.setState({ novaErro: 'Digite o nome completo.' });
+    if (dig !== (nova.tipo === 'PJ' ? 14 : 11)) return this.setState({ novaErro: (nova.tipo === 'PJ' ? 'CNPJ' : 'CPF') + ' incompleto.' });
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(nova.email.trim())) return this.setState({ novaErro: 'E-mail inválido.' });
+    if (digits(nova.telefone).length < 10) return this.setState({ novaErro: 'Telefone incompleto.' });
+    if (nova.senha.length < 6) return this.setState({ novaErro: 'A senha precisa ter pelo menos 6 caracteres.' });
+    this.abrirSelfie('cadastro');
+  };
+  finalizarCadastro() {
+    const { nova, contas } = this.state;
+    const id = Math.max(...contas.map(c => c.id)) + 1;
+    this.setState({
+      contas: [...contas, { id, nome: nova.nome.trim(), documento: nova.documento, email: nova.email.trim(), telefone: nova.telefone, tipo: nova.tipo, saldo: nova.saldo }],
+      ativaId: id, destId: null, nova: { nome: '', documento: '', email: '', telefone: '', senha: '', tipo: 'PJ', saldo: 50000 }, screen: 'home', hist: [],
+    });
+    this.showToast('Conta criada · rosto cadastrado');
+  }
+
+  authLabel(auth) {
+    const lim = fmt(this.limite());
+    return auth === 'selfie' ? 'Selfie · acima de ' + lim : 'Sessão · até ' + lim;
+  }
+
+  txView(t, byId, me) {
+    const out = t.origem_id === me;
+    const other = byId(out ? t.destino_id : t.origem_id);
+    const tax = t.cbs + t.ibs;
+    return {
+      outro: other.nome, outroTipo: other.tipo,
+      dot: other.tipo === 'PJ' ? CORAL : VIOLET,
+      sub: quando(t.data) + (t.aplicado ? (out ? ' · split ' + fmt(tax) : ' · líquido pós-split') : ' · sem retenção'),
+      valor: (out ? '− ' : '+ ') + fmt(out ? t.valor : t.liq),
+      cor: out ? INK : VIOLET,
+      bruto: fmt(t.valor), tax: fmt(tax), liq: fmt(t.liq), auth: this.authLabel(t.auth),
+      pctLiq: t.aplicado ? (100 - (tax / t.valor) * 100) + '%' : '100%', taxDisplay: t.aplicado ? 'flex' : 'none',
+      codigo: 'TX-' + p2(t.id).padStart(6, '0') + ' · ' + t.data.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }),
+      open: this.state.openTx === t.id,
+      toggle: () => this.setState(s => ({ openTx: s.openTx === t.id ? null : t.id })),
+    };
+  }
+
+  renderVals() {
+    const s = this.state, r = this.rate();
+    const byId = id => s.contas.find(c => c.id === id);
+    const A = byId(s.ativaId);
+    const gC = s.contas.find(c => c.tipo === 'GOV');
+    const limFmt = fmt(this.limite());
+    const ring = (frac, a = CORAL, b = VIOLET) => { const d = frac > 0 ? Math.max(6, frac * 360) : 0; return d ? `conic-gradient(${a} 0 ${d}deg, ${b} ${d}deg 360deg)` : b; };
+    const vz = (frac, a = CORAL, b = VIOLET) => { const f = Math.max(0, Math.min(1, frac)); const p = f > 0 ? Math.max(2, f * 100) : 0; const tn = f > 0 ? Math.max(1, Math.round(f * 100)) : 0; const kn = f > 0 ? Math.max(1, Math.round(f * 40)) : 0; return { donut: ring(f, a, b), pctTax: p + '%', pctLiq: (100 - p) + '%', taxShow: f > 0 ? 'flex' : 'none', liqFlex: String(Math.max(0.2, 1 - f) * 10), taxFlex: String(Math.max(0.12, f) * 10), cells: Array.from({ length: 100 }, (_, i) => ({ c: i >= 100 - tn ? a : b })), ticks: Array.from({ length: 40 }, (_, i) => ({ c: i >= 40 - kn ? a : b })) }; };
+    const is = {}; ['landing', 'entrar', 'selfie', 'home', 'transferir', 'revisar', 'comprovante', 'extrato', 'contas', 'criar', 'governo'].forEach(k => is[k] = s.screen === k);
+
+    const ativa = {
+      nome: A.nome, primeiro: A.nome.split(' ')[0], iniciais: ini(A.nome), saldoFmt: fmt(A.saldo),
+      tipoLong: TIPO_LONG[A.tipo], docCurto: A.documento.length > 14 ? '•• ' + A.documento.slice(-7) : '•••' + A.documento.slice(7),
+      avBg: AV[A.tipo][0], avFg: AV[A.tipo][1],
+    };
+    const mine = s.txs.filter(t => t.origem_id === s.ativaId || t.destino_id === s.ativaId);
+    let homeSplit;
+    if (A.tipo === 'PJ') {
+      const rec = mine.filter(t => t.destino_id === s.ativaId), bruto = rec.reduce((a, t) => a + t.valor, 0), tax = rec.reduce((a, t) => a + t.cbs + t.ibs, 0);
+      homeSplit = { ...vz(bruto ? tax / bruto : 0), titulo: fmt(tax) + ' já recolhidos por você', sub: 'De ' + fmt(bruto) + ' em vendas, o imposto saiu na hora. Nenhuma guia pendente.' };
+    } else {
+      const env = mine.filter(t => t.origem_id === s.ativaId && t.aplicado), bruto = env.reduce((a, t) => a + t.valor, 0), tax = env.reduce((a, t) => a + t.cbs + t.ibs, 0);
+      homeSplit = { ...vz(bruto ? tax / bruto : 0), titulo: fmt(tax) + ' foram ao Governo', sub: 'Split IBS/CBS nos ' + fmt(bruto) + ' que você pagou a empresas.' };
+    }
+
+    const D = s.destId ? byId(s.destId) : null;
+    const spv = D ? this.split(s.valor, D.tipo) : { cbs: 0, ibs: 0, liq: s.valor, aplicado: false };
+    const tax = spv.cbs + spv.ibs;
+    const sp = {
+      bruto: fmt(s.valor), liq: fmt(spv.liq), tax: fmt(tax), cbsPct: r.cbsPct, ibsPct: r.ibsPct,
+      aplicado: spv.aplicado, pf: !!D && !spv.aplicado,
+      recebeLabel: D ? D.nome.split(' ')[0] + ' recebe' : 'escolha o destino',
+      ...vz(s.valor ? tax / s.valor : 0),
+    };
+    const destinos = s.contas.filter(c => c.id !== s.ativaId && c.tipo !== 'GOV').map(c => {
+      const on = c.id === s.destId;
+      return { tipo: c.tipo, curto: c.nome.replace(/ (Ltda|ME|S\.?A\.?)$/i, ''), pick: () => this.setState({ destId: c.id, erro: '' }), bg: on ? INK : CARD, fg: on ? ONP : INK, dot: c.tipo === 'PJ' ? CORAL : VIOLET };
+    });
+    const quick = [2000, 5000, 18990, 80000].map(v => ({ label: v % 100 ? num(v) : 'R$ ' + v / 100, set: () => this.setState({ valor: v, erro: '' }), bg: v === s.valor ? VIOLET : CARD, fg: v === s.valor ? ONP : INK }));
+
+    const precisa = s.valor > this.limite();
+    const rv = {
+      destino: D ? D.nome : '—', tipo: D ? D.tipo : '', dot: D && D.tipo === 'PJ' ? CORAL : VIOLET,
+      bruto: sp.bruto, liq: sp.liq, tax: sp.tax, aplicado: sp.aplicado, cbsPct: r.cbsPct, ibsPct: r.ibsPct,
+      chegaLabel: D && D.tipo === 'PJ' ? 'Chega à empresa' : 'Chega a ' + (D ? D.nome.split(' ')[0] : ''),
+      authIcone: precisa ? '◉' : '✓',
+      authTitulo: precisa ? 'Vamos pedir uma selfie' : 'Autorizado pela sua sessão',
+      authSub: precisa ? 'Pagamentos acima de ' + limFmt + ' precisam de confirmação facial.' : 'Até ' + limFmt + ' não pedimos selfie — você já confirmou seu rosto ao entrar.',
+      cta: precisa ? 'Confirmar com selfie' : 'Confirmar pagamento',
+    };
+
+    const fase = s.selfie.fase, modoSf = s.selfie.modo;
+    const alvo = byId(s.loginAlvo) || A;
+    const SF = {
+      cadastro: { passo: 'Nova conta · 2 de 2', titulo: 'Cadastre seu rosto', sub: 'Ele confirma que é você ao entrar e em pagamentos acima de ' + limFmt + '.' },
+      login: { passo: 'Entrar', titulo: 'Confirme que é você', sub: 'Uma selfie rápida para entrar na conta de ' + alvo.nome.split(' ')[0] + '.' },
+      transferencia: { passo: 'Autorizar pagamento', titulo: 'Autorize com uma selfie', sub: 'Pagamentos acima de ' + limFmt + ' pedem confirmação facial.' },
+    }[modoSf];
+    const sf = {
+      ...SF,
+      contexto: modoSf === 'transferencia' ? sp.bruto + ' → ' + (D ? D.nome.split(' ')[0] : '') : '',
+      contextoLabel: 'Pagamento',
+      pronto: fase === 'pronto', verificando: fase === 'verificando', ok: fase === 'ok', erro: fase === 'erro',
+      dicas: fase === 'pronto', listaDicas: DICAS.map(txt => ({ txt })),
+      ovalCor: fase === 'erro' ? 'var(--errt)' : fase === 'pronto' ? 'var(--mut3)' : 'var(--ink)',
+      ovalAnim: fase === 'verificando' ? 'pfPulse 1s ease-in-out infinite' : 'none',
+      legenda: { pronto: 'prévia da câmera frontal', verificando: 'verificando rosto…', ok: 'rosto confirmado', erro: 'rosto não confirmado' }[fase],
+      cta: { pronto: 'Tirar foto', verificando: 'Verificando…', ok: 'Pronto', erro: 'Tentar de novo' }[fase],
+      ctaOp: fase === 'verificando' || fase === 'ok' ? '0.55' : '1',
+      acao: fase === 'erro' ? () => this.setState(st => ({ selfie: { ...st.selfie, fase: 'pronto' } })) : this.tirarFoto,
+    };
+
+    const LM = LOGIN[s.login.modo];
+    const lg = {
+      id: s.login.id, senha: s.login.senha, label: LM.label, ph: LM.ph, im: LM.im,
+      opcoes: Object.keys(LOGIN).map(k => ({ label: LOGIN[k].label, set: () => this.setState(st => ({ login: { ...st.login, modo: k, id: '' }, loginErro: '' })), bg: s.login.modo === k ? INK : 'transparent', fg: s.login.modo === k ? ONP : 'var(--mut)' })),
+    };
+
+    const R = s.txs.find(t => t.id === s.recibo);
+    const rc = R ? {
+      bruto: fmt(R.valor), destino: byId(R.destino_id).nome, cbs: fmt(R.cbs), ibs: fmt(R.ibs), liq: fmt(R.liq), aplicado: R.aplicado, cbsPct: r.cbsPct, ibsPct: r.ibsPct,
+      auth: this.authLabel(R.auth),
+      codigo: 'TX-' + String(R.id).padStart(6, '0'), data: R.data.toLocaleString('pt-BR', { dateStyle: 'medium', timeStyle: 'short' }),
+      nota: R.aplicado ? 'Destino PJ: o split payment reteve IBS e CBS no momento do pagamento. A empresa recebe o líquido.' : 'Entre pessoas físicas não há retenção — o valor chegou integral.',
+    } : {};
+
+    const FL = { todas: 'Todas', split: 'Com split', sem: 'Sem split' };
+    const filtros = Object.keys(FL).map(k => ({ label: FL[k], set: () => this.setState({ filtro: k }), bg: s.filtro === k ? INK : 'transparent', fg: s.filtro === k ? ONP : 'var(--mut)' }));
+    const ext = mine.filter(t => s.filtro === 'todas' || (s.filtro === 'split' ? t.aplicado : !t.aplicado)).map(t => this.txView(t, byId, s.ativaId));
+
+    const contasList = [...s.contas].sort((a, b) => (a.tipo === 'GOV') - (b.tipo === 'GOV')).map(c => ({
+      ...c, iniciais: c.tipo === 'GOV' ? 'GOV' : ini(c.nome), saldoFmt: fmt(c.saldo), avBg: AV[c.tipo][0], avFg: AV[c.tipo][1],
+      isGov: c.tipo === 'GOV', emUso: c.id === s.ativaId, podeUsar: c.tipo !== 'GOV' && c.id !== s.ativaId,
+      border: c.id === s.ativaId ? VIOLET : 'transparent',
+      usar: () => { this.setState({ ativaId: c.id, destId: null, screen: 'home', hist: [] }); this.showToast('Agora usando ' + c.nome.split(' ')[0]); },
+    }));
+    const nPF = s.contas.filter(c => c.tipo === 'PF').length, nPJ = s.contas.filter(c => c.tipo === 'PJ').length;
+
+    const splits = s.txs.filter(t => t.aplicado);
+    const gCbs = splits.reduce((a, t) => a + t.cbs, 0), gIbs = splits.reduce((a, t) => a + t.ibs, 0);
+    const porEmp = {};
+    splits.forEach(t => { const e = porEmp[t.destino_id] ||= { tax: 0, bruto: 0, n: 0 }; e.tax += t.cbs + t.ibs; e.bruto += t.valor; e.n++; });
+    const maxTax = Math.max(1, ...Object.values(porEmp).map(e => e.tax));
+    const gov = {
+      total: fmt(gC.saldo), cbs: fmt(gCbs), ibs: fmt(gIbs), qtd: splits.length + (splits.length === 1 ? ' pagamento' : ' pagamentos'),
+      ...vz(gCbs + gIbs ? gIbs / (gCbs + gIbs) : 0, VIOLET, CORAL),
+      porEmpresa: Object.entries(porEmp).sort((a, b) => b[1].tax - a[1].tax).map(([id, e]) => ({ nome: byId(+id).nome, tax: fmt(e.tax), pct: (e.tax / maxTax * 100) + '%', sub: e.n + (e.n === 1 ? ' venda' : ' vendas') + ' · ' + fmt(e.bruto) + ' bruto' })),
+      nota: String(this.props.aliquota ?? '').startsWith('Sim')
+        ? 'Simulação com alíquota de referência estimada (26,5%). Valores oficiais ainda serão definidos.'
+        : '2026 é o ano de teste: CBS 0,9% + IBS 0,1%. A cobrança com alíquotas reais começa em 2027.',
+    };
+
+    const TABS = [['home', 'Início'], ['transferir', 'Pagar'], ['extrato', 'Extrato'], ['contas', 'Contas'], ['governo', 'Gov']];
+    const tabs = TABS.map(([k, l]) => { const on = s.screen === k; return { label: l, go: () => this.setState({ screen: k, hist: [] }), bg: on ? 'var(--tint)' : 'transparent', fg: on ? 'var(--ink)' : 'var(--mut3)', pad: on ? '8px 12px' : '8px 6px', dotW: on ? '14px' : '6px' }; });
+
+    const MAPA = [['landing', 'Landing / boas-vindas'], ['entrar', 'Entrar (login)'], ['criar', 'Criar conta'], ['selfie', 'Selfie (câmera)'], ['home', 'Início'], ['transferir', 'Transferir + split'], ['revisar', 'Revisar pagamento'], ['comprovante', 'Comprovante'], ['extrato', 'Extrato'], ['contas', 'Contas (admin)'], ['governo', 'Painel do Governo']];
+    const mapa = MAPA.map(([k, l]) => ({
+      label: l, bg: s.screen === k ? CARD : 'transparent', fg: s.screen === k ? 'var(--ink)' : 'var(--ink3)',
+      go: () => {
+        clearTimeout(this._f);
+        if (k === 'comprovante' && !s.recibo) this.setState({ recibo: s.txs[0].id });
+        if (k === 'revisar') this.setState(st => ({ destId: st.destId && st.destId !== st.ativaId ? st.destId : 5, valor: st.valor > 0 ? st.valor : 80000 }));
+        if (k === 'selfie') this.setState({ selfie: { modo: 'login', fase: 'pronto' }, falhou: false, loginAlvo: 1 });
+        this.setState({ screen: k, hist: k === 'landing' ? [] : ['landing'] });
+      },
+    }));
+
+    const pj = s.nova.tipo === 'PJ';
+    return {
+      is, ativa, homeSplit, sp, rv, sf, lg, destinos, quick, rc, filtros, contasList, gov, tabs, mapa,
+      toast: s.toast, erro: s.erro, novaErro: s.novaErro, loginErro: s.loginErro, nova: s.nova,
+      statusBg: 'var(--bg)', statusFg: INK,
+      showTabs: ['home', 'extrato', 'contas', 'governo'].includes(s.screen),
+      recentes: mine.slice(0, 4).map(t => this.txView(t, byId, s.ativaId)), semRecentes: mine.length === 0,
+      extrato: ext, extratoVazio: ext.length === 0,
+      contasResumo: nPF + ' PF · ' + nPJ + ' PJ · 1 Governo',
+      valorStr: num(s.valor),
+      onValor: e => this.setState({ valor: Math.min(parseInt(String(e.target.value).replace(/\D/g, '') || '0', 10), 99999999), erro: '' }),
+      tipos: [['PJ', 'Empresa', 'Recebe com split IBS/CBS automático'], ['PF', 'Pessoa', 'Transferências sem retenção entre PFs']].map(([t, l, d]) => ({
+        tipo: t, label: l, desc: d, dot: t === 'PJ' ? CORAL : VIOLET, border: s.nova.tipo === t ? VIOLET : 'transparent',
+        set: () => this.setState(st => ({ nova: { ...st.nova, tipo: t, documento: maskDoc(st.nova.documento, t) }, novaErro: '' })),
+      })),
+      labelNome: pj ? 'Razão social' : 'Nome completo', labelDoc: pj ? 'CNPJ' : 'CPF',
+      phNome: pj ? 'Ex.: Padaria Sol Ltda' : 'Ex.: Maria Oliveira', phDoc: pj ? '00.000.000/0000-00' : '000.000.000-00',
+      novaSaldoStr: num(s.nova.saldo),
+      onNome: e => this.setState({ nova: { ...s.nova, nome: e.target.value }, novaErro: '' }),
+      onDoc: e => this.setState({ nova: { ...s.nova, documento: maskDoc(e.target.value, s.nova.tipo) }, novaErro: '' }),
+      onEmail: e => this.setState({ nova: { ...s.nova, email: e.target.value }, novaErro: '' }),
+      onTel: e => this.setState({ nova: { ...s.nova, telefone: maskTel(e.target.value) }, novaErro: '' }),
+      onSenha: e => this.setState({ nova: { ...s.nova, senha: e.target.value }, novaErro: '' }),
+      onSaldo: e => this.setState({ nova: { ...s.nova, saldo: Math.min(parseInt(String(e.target.value).replace(/\D/g, '') || '0', 10), 99999999) } }),
+      onLoginId: e => this.setState({ login: { ...s.login, id: LOGIN[s.login.modo].mask(e.target.value) }, loginErro: '' }),
+      onLoginSenha: e => this.setState({ login: { ...s.login, senha: e.target.value }, loginErro: '' }),
+      goHome: () => this.setState({ screen: 'home', hist: [] }), goTransferir: () => this.go('transferir'), goExtrato: () => this.go('extrato'),
+      goContas: () => this.go('contas'), goCriar: () => this.go('criar'), goGoverno: () => this.go('governo'), goEntrar: () => this.go('entrar'),
+      goLanding: () => this.setState({ screen: 'landing', hist: [] }),
+      back: this.back, criarConta: this.criarConta, entrar: this.entrar, irRevisar: this.irRevisar, confirmarPagamento: this.confirmarPagamento,
+      entrarDemo: () => this.setState({ ativaId: 1, screen: 'home', hist: [] }),
+      themeClass: this.dark() ? 'pf-dark' : 'pf-light', temaLabel: this.dark() ? '☀ Claro' : '☾ Escuro',
+      toggleTema: () => this.setState({ tema: this.dark() ? 'light' : 'dark' }),
+      temas: [['light', 'Claro'], ['dark', 'Escuro']].map(([k, l]) => { const on = (this.dark() ? 'dark' : 'light') === k; return { label: l, set: () => this.setState({ tema: k }), bg: on ? 'var(--card)' : 'transparent', fg: on ? 'var(--ink)' : 'var(--mut)' }; }),
+      falhas: [[false, 'Passa'], [true, 'Falha 1x']].map(([v, l]) => { const on = s.falhaSim === v; return { label: l, set: () => this.setState({ falhaSim: v, falhou: false }), bg: on ? 'var(--card)' : 'transparent', fg: on ? 'var(--ink)' : 'var(--mut)' }; }),
+      reset: () => { clearTimeout(this._f); this.setState({ ...this.seed(), tema: this.state.tema }); this.showToast('Dados reiniciados'); },
+    };
+  }
+}
+</script>
+</body>
+</html>
