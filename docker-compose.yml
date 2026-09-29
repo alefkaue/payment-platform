@@ -5,6 +5,36 @@ services:
     build: ./backend
     ports:
       - "8000:8000"
-    # Sem volume de banco de dados por enquanto (dados em memória).
-    # Quando migrar para Azure SQL/Cosmos DB, adicionar aqui as variáveis
-    # de ambiente de conexão (ex: AZURE_SQL_CONNECTION_STRING).
+    environment:
+      # Aponta pro serviço "db" abaixo pelo nome (resolução de DNS interna do
+      # Docker Compose) -- não é "localhost", já que backend e db são
+      # containers diferentes. Pra rodar sem Postgres (repositório em
+      # memória), comente esta linha inteira.
+      DATABASE_URL: postgresql+psycopg2://payflow:payflow@db:5432/payflow
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: payflow
+      POSTGRES_PASSWORD: payflow
+      POSTGRES_DB: payflow
+    volumes:
+      # Persiste os dados entre "docker compose down/up". Pra zerar o banco
+      # de propósito, "docker compose down -v" remove o volume também.
+      - payflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U payflow -d payflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Não expõe a porta 5432 pro host de propósito -- só o container "backend"
+    # precisa alcançar o banco. Se quiser inspecionar com um client local
+    # (DBeaver, psql), descomente:
+    # ports:
+    #   - "5432:5432"
+
+volumes:
+  payflow_db_data:

@@ -4,19 +4,21 @@ Regras de negócio para criação e consulta de usuários/carteiras.
 
 from fastapi import HTTPException
 
-from app.repositories.memoria_repository import MemoriaRepository
+from app.repositories import Repositorio
 from app.services import biometria_service
 
 
 def criar_usuario(
-    repo: MemoriaRepository,
+    repo: Repositorio,
     carteira_id: int,
     nome: str,
     foto_rosto_base64: str,
     saldo_inicial: float = 0.0,
 ) -> dict:
     # 1) Validações baratas primeiro -- rejeita antes de gastar ~5s processando a
-    # foto com o DeepFace (liveness + extração do rosto).
+    # foto com o DeepFace (liveness + extração do rosto). Isso NÃO garante
+    # sozinho que o ID está livre (ver comentário no try/except abaixo) --
+    # é só pra sair rápido no caso comum de ID já existente.
     if repo.carteira_existe(carteira_id):
         raise HTTPException(
             status_code=409,
@@ -32,23 +34,39 @@ def criar_usuario(
     # Levanta HTTPException (400/401) se liveness ou detecção falharem.
     embedding = biometria_service.cadastrar_biometria(foto_rosto_base64)
 
-    # TODO[AZURE - Persistencia]: quando o MemoriaRepository for trocado por um
-    # repositório real (Azure Cosmos DB / Azure SQL Database), este service não
+    # 3) Cria a conta. Os dois repositórios protegem o ID duplicado de novo aqui
+    # dentro (lock em memória / constraint UNIQUE no Postgres) -- fecha a janela
+    # entre o "carteira_existe" do passo 1 e agora, onde dois cadastros
+    # simultâneos com o mesmo ID poderiam os dois passar pela checagem barata.
+    # TODO[AZURE - Persistencia]: quando este projeto for para Azure de verdade
+    # (Cosmos DB / Azure Database for PostgreSQL gerenciado), este service não
     # muda -- só a implementação injetada via `get_repository()`. O embedding
-    # facial deveria ir para um datastore separado dos dados da conta (ver
-    # comentário em `memoria_repository.py`), idealmente com o vetor criptografado
-    # em repouso -- é dado biométrico, "dado sensível" pela LGPD (art. 5º, XIII).
-    usuario = repo.criar_usuario(carteira_id=carteira_id, nome=nome, saldo_inicial=saldo_inicial)
+    # facial deveria ir para um datastore separado dos dados da conta, com o
+    # vetor criptografado em repouso -- é dado biométrico, "dado sensível" pela
+    # LGPD (art. 5º, XIII).
+    #
+    # TODO[ATOMICIDADE]: criar_usuario + salvar_embedding_facial ainda são 2
+    # escritas separadas no Postgres (2 transações). Numa falha entre as duas,
+    # sobra uma conta sem biometria (toda transferência dela falharia com 400
+    # "sem biometria cadastrada", nunca com saldo indo pro lugar errado -- por
+    # isso não tratei isso com a mesma urgência do lock de transferência).
+    try:
+        usuario = repo.criar_usuario(
+            carteira_id=carteira_id, nome=nome, saldo_inicial=saldo_inicial
+        )
+    except ValueError as erro:
+        raise HTTPException(status_code=409, detail=str(erro))
+
     repo.salvar_embedding_facial(carteira_id, embedding)
     return usuario
 
 
-def obter_usuario_ou_404(repo: MemoriaRepository, carteira_id: int) -> dict:
+def obter_usuario_ou_404(repo: Repositorio, carteira_id: int) -> dict:
     usuario = repo.obter_usuario(carteira_id)
     if not usuario:
         raise HTTPException(status_code=404, detail="Carteira não encontrada.")
     return usuario
 
 
-def listar_usuarios(repo: MemoriaRepository) -> list[dict]:
+def listar_usuarios(repo: Repositorio) -> list[dict]:
     return repo.listar_usuarios()

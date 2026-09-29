@@ -3,9 +3,19 @@ uvicorn[standard]==0.30.6
 pydantic==2.9.2
 
 # MFA - liveness + reconhecimento facial (ver services/biometria_service.py)
-# "[tensorflow]" é explícito de propósito: o deepface avisa que parar de instalar
-# um backend por padrão em breve, então fixamos o backend em vez de confiar no default.
+# "[tensorflow]" é explícito de propósito: o deepface avisa que vai parar de
+# instalar um backend por padrão, então fixamos o backend em vez de confiar
+# no default.
 deepface[tensorflow]>=0.0.93
 tf-keras>=2.15.0
-opencv-python>=4.8.0
+# Pinado (não >=) e SEM "-headless": esse é o fix do conflito opencv-python x
+# opencv-python-headless x opencv-contrib-python que resolvemos na venv. Não
+# precisa de headless porque libgl1/libglib2.0-0 já estão instalados no host
+# (ver README) -- só não pode ter os dois pacotes juntos.
+opencv-python==4.10.0.84
 numpy>=1.24.0
+
+# Persistência - Postgres (ver app/db/ e app/repositories/postgres_repository.py)
+sqlalchemy>=2.0.30
+psycopg2-binary>=2.9.9
+python-dotenv>=1.0.1
