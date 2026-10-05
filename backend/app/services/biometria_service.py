@@ -133,9 +133,16 @@ def _extrair_embedding(imagem) -> list[float]:
     return representacoes[0]["embedding"]
 
 
+# Embedding fixo usado no modo de teste (BIOMETRIA_STUB) -- 128 dims, como o Facenet.
+_EMBEDDING_STUB = [0.0] * 128
+
+
 def cadastrar_biometria(imagem_base64: str) -> list[float]:
     """CRIAÇÃO DE CONTA: valida liveness e devolve o embedding em texto puro para
     o service cifrar e persistir. Nunca devolve/guarda a imagem."""
+    if get_settings().biometria_stub:
+        logger.warning("BIOMETRIA_STUB ligado -- cadastro NÃO verifica o rosto (modo de teste).")
+        return list(_EMBEDDING_STUB)
     imagem = _decodificar_imagem(imagem_base64)
     _checar_liveness(imagem)
     return _extrair_embedding(imagem)
@@ -146,6 +153,9 @@ def verificar_biometria(imagem_base64: str, embedding_cadastrado: list[float]) -
     cadastrado. Retorna {verificado, distancia, limite, confianca, modelo} em caso
     de sucesso; levanta HTTPException(401) genérica se não bater (o detalhe numérico
     vai só pro log/auditoria, não pro cliente -- item #3)."""
+    if get_settings().biometria_stub:
+        logger.warning("BIOMETRIA_STUB ligado -- transferência aprovada SEM conferir o rosto (modo de teste).")
+        return {"verificado": True, "distancia": 0.0, "limite": 0.4, "confianca": 100.0, "modelo": "stub"}
     _, verification = _carregar_deepface()
     imagem = _decodificar_imagem(imagem_base64)
     _checar_liveness(imagem)

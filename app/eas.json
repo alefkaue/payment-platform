@@ -4,14 +4,12 @@
   },
   "build": {
     "preview": {
-      "comment": "Perfil que gera um APK instalável direto no celular (sideload).",
       "android": {
         "buildType": "apk"
       },
       "distribution": "internal"
     },
     "production": {
-      "comment": "AAB para publicar na Play Store.",
       "android": {
         "buildType": "app-bundle"
       }

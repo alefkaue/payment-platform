@@ -2,6 +2,7 @@
   "expo": {
     "name": "PayFlow",
     "slug": "payflow",
+    "owner": "akstn",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "payflow",
@@ -10,7 +11,9 @@
       "backgroundColor": "#fbfaf7",
       "resizeMode": "contain"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.payflow.app",
@@ -20,7 +23,10 @@
     },
     "android": {
       "package": "com.payflow.app",
-      "permissions": ["CAMERA"],
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
       "adaptiveIcon": {
         "backgroundColor": "#f2d03b"
       }
@@ -34,8 +40,10 @@
       ]
     ],
     "extra": {
-      "apiUrl": "http://192.168.0.10:8000",
-      "eas": { "projectId": "" }
+      "apiUrl": "https://indices-mathematics-discussions-tobago.trycloudflare.com",
+      "eas": {
+        "projectId": "ef6e94df-3a23-4e8a-a902-12d36e5ccdeb"
+      }
     }
   }
 }

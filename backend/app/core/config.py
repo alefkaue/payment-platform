@@ -80,6 +80,13 @@ class Settings(BaseSettings):
     # ---------- Ambiente ----------
     ambiente: str = Field(default="desenvolvimento", alias="AMBIENTE")
 
+    # ---------- Modo de teste da biometria ----------
+    # Quando True, o DeepFace NÃO é chamado: o cadastro usa um embedding fixo e a
+    # verificação sempre aprova. Serve para rodar o backend num host leve (sem
+    # TensorFlow) e testar todo o resto do fluxo. É REFUSADO em produção (ver
+    # validação abaixo) -- nunca liga biometria falsa num ambiente real.
+    biometria_stub: bool = Field(default=False, alias="BIOMETRIA_STUB")
+
     @property
     def cors_origins_lista(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
@@ -91,4 +98,10 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    if s.biometria_stub and s.em_producao:
+        raise RuntimeError(
+            "BIOMETRIA_STUB não pode ser usado em produção -- é um modo de teste "
+            "que aprova qualquer rosto. Desligue-o (BIOMETRIA_STUB=0)."
+        )
+    return s
