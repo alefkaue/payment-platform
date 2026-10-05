@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "PayFlow",
+    "slug": "payflow",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "payflow",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#fbfaf7",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.payflow.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "O PayFlow usa a câmera para a verificação facial (selfie de segurança)."
+      }
+    },
+    "android": {
+      "package": "com.payflow.app",
+      "permissions": ["CAMERA"],
+      "adaptiveIcon": {
+        "backgroundColor": "#f2d03b"
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "O PayFlow usa a câmera para a verificação facial (selfie de segurança)."
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "http://192.168.0.10:8000",
+      "eas": { "projectId": "" }
+    }
+  }
+}

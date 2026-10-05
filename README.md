@@ -1,233 +1,223 @@
-# PayFlow - MVP (v5)
+# PayFlow — plataforma de pagamentos com Split de IBS/CBS (v6)
 
-Backend organizado para rodar de dois jeitos, escolhido só por uma variável de
-ambiente, sem trocar nenhum código:
-- **Sem `DATABASE_URL` configurada**: repositório em memória (como nas versões
-  anteriores) -- bom pra um teste rápido sem precisar subir banco nenhum.
-- **Com `DATABASE_URL` configurada**: Postgres de verdade, com as 8 tabelas do
-  DER que vocês definiram, criadas automaticamente no primeiro boot.
+Plataforma de pagamentos brasileira com **split automático de IBS/CBS** (Reforma
+Tributária): toda transferência para uma conta **PJ** é dividida no ato — o imposto
+vai para a conta do **Governo** e a empresa recebe o líquido. Transferências para
+PF não têm retenção.
 
-## O que mudou na v5: persistência em PostgreSQL (DER completo)
+Monorepo:
 
-Implementei as 8 entidades do DER: `Usuarios/Empresas`, `Carteiras`,
-`Transacoes`, `Sessoes/MFA`, `Historico`, `Logs_Auditoria`, `Split_Regras`,
-`Split_Liquidacao` (nomes de tabela em `app/db/models.py`: `usuarios`,
-`carteiras`, `transacoes`, `sessoes_mfa`, `historico_saldo`, `logs_auditoria`,
-`split_regras`, `split_liquidacoes`).
+```
+backend/   API FastAPI + DeepFace (biometria) + Postgres/SQLite + JWT + Split
+app/       App mobile (Expo / React Native) — gera APK instalável via EAS
+site/      Site institucional (Next.js) — hero, calculadora de split, etc.
+frontend/  [LEGADO] MVP web de página única da v5 — superado por app/ + site/
+```
 
-**Não tenho o diagrama DER de vocês, só os nomes das entidades** -- modelei os
-campos com base em tudo que já construímos + no que cada nome sugere. Onde
-assumi algo que pode divergir do diagrama de vocês, tem um comentário
-`ASSUNCAO` no topo de `app/db/models.py`. Os pontos mais prováveis de
-divergir:
-- `Historico` virou um livro-razão de saldo (saldo antes/depois a cada
-  transação) -- se no DER de vocês for outra coisa (histórico de login,
-  de dispositivo, etc.), é só eu remodelar.
-- `Usuarios/Empresas` virou 1 tabela com campo `tipo` (PF/PJ), não 2 tabelas.
-- `Split_Regras`/`Split_Liquidacao`: schema pronto, mas a LÓGICA do motor de
-  split ainda não está implementada -- fica pro próximo passo (Loja/Viagens).
+---
 
-### Dois bugs que fechei aproveitando que já estava mexendo nisso
+## O que mudou na v6 (esta entrega)
 
-1. **Dinheiro agora é `Numeric`, não `float`, em todas as colunas de valor.**
-   Já tinha sinalizado isso antes como problema (float perde precisão em
-   centavos) -- resolvido na migração.
-2. **Condição de corrida na transferência, fechada e testada de verdade.**
-   Também já tinha sinalizado: duas transferências simultâneas da mesma
-   carteira podiam as duas passar no "saldo suficiente" antes de qualquer
-   uma debitar, e estourar o saldo. Testei com 5 requisições disparadas ao
-   mesmo tempo numa carteira com saldo pra exatamente 4 -- resultado: 4
-   sucessos, 1 falha limpa de "saldo insuficiente", saldo final bateu exato
-   (sem overdraft). No Postgres isso é `SELECT ... FOR UPDATE` (trava as
-   linhas até o commit); no repositório em memória é um `threading.Lock`.
-   Os dois protegem a mesma coisa, dá pra usar qualquer um com confiança.
+Esta rodada **finalizou o núcleo de produto e fechou as falhas de segurança** da
+auditoria. Mapa do que foi feito, por severidade:
 
-### O que NÃO fiz nesta rodada (de propósito, escopo já estava grande)
+### 🔴 Crítico (bloqueava virar produto) — resolvido
+1. **Autenticação JWT + refresh token.** Login com e-mail/senha (bcrypt), access
+   token curto (15 min) e refresh longo (7 dias) com **rotação** e **detecção de
+   reuso** (um refresh roubado e reapresentado derruba todas as sessões). Todos os
+   endpoints sensíveis agora exigem login. `GET /usuarios` é só admin; o histórico
+   de transações é filtrado por usuário.
+2. **Fim do saldo grátis.** Conta nasce com saldo **zero**. Dinheiro só entra por
+   **depósito** feito por admin a partir da **conta Governo** (`POST /admin/depositar`).
+3. **Rate-limit** nas tentativas de login e de verificação facial (por janela de
+   tempo), e as mensagens de erro **não vazam mais** distância/limite da biometria.
+4. **Limite de tamanho de foto** (5 MB) validado no schema, no service e por
+   middleware de borda — foto gigante não derruba mais o servidor.
 
-- **Motor de Split Payment**: as tabelas existem, o cálculo não. Combina com
-  a Loja/Viagens que vocês querem fazer depois.
-- **Deploy na Azure VM**: o schema/app já está pronto pra apontar pra
-  qualquer Postgres (local, Azure Database for PostgreSQL, RDS, o que for) --
-  só troca a `DATABASE_URL`. Mas eu não configurei a VM em si, isso depende
-  de vocês terem a assinatura Azure em mãos.
-- **3º container (biometria separada)**: fiquei em 2 containers (`backend` +
-  `db`). Separar a biometria em outro serviço significa o container da API
-  chamar outro container por HTTP toda vez que precisar verificar um rosto --
-  mais latência de rede, mais complexidade de deploy, sem um ganho claro
-  agora (não tem necessidade de escalar isso independente ainda). Fica fácil
-  de fazer depois se aparecer uma razão concreta (ex: rodar o DeepFace numa
-  máquina com GPU separada da API).
-- **Alembic** (migrações versionadas): hoje o schema é criado com
-  `Base.metadata.create_all()` no boot -- perfeito pra criar as tabelas do
-  zero, mas não sabe fazer `ALTER TABLE` em cima de dados que já existem.
-  Enquanto for só desenvolvimento, sem dado real pra perder, isso é
-  suficiente. No dia que o schema mudar com dado de produção já dentro,
-  Alembic vira necessário -- não é grande de adicionar depois.
-- **JWT / sessão de login**: a tabela `sessoes_mfa` existe e registra cada
-  tentativa de biometria (sucesso ou falha), mas isso não é a mesma coisa que
-  autenticação de usuário (login com senha, token JWT, `GET /usuarios/{id}`
-  protegido). Esse é o "Fluxo de autenticação" que está nos diagramas C4 de
-  vocês como componente separado do Core de Pagamentos -- ainda não construído.
+### 🟠 README dizia que existia, mas não existia — agora existe
+5. **`sessoes_mfa` e `logs_auditoria` são gravadas** de verdade (login, cadastro,
+   transferência, depósito — sucesso e falha).
+6. **Saldo inicial/depósito entra no `historico_saldo`** (ledger completo).
+7. **`.env` é carregado automaticamente** (pydantic-settings) — sem `source .env`.
 
-## Como rodar localmente
+### 🟡 Dinheiro e dados
+8. **Valores validados** (`Decimal`, 2 casas, teto) — `0,001` é rejeitado (422),
+   valor gigante não estoura a coluna.
+9. O método perigoso `atualizar_saldo` (mudava saldo sem trava/histórico) **foi
+   removido** — todo movimento passa pelo caminho atômico com histórico.
+10. **Cadastro + biometria numa transação só** (atomicidade) — não sobra conta sem
+    biometria.
+11. **Idempotência**: `idempotency_key` por transferência; double-click não duplica.
+12. **Embedding facial cifrado** em repouso (Fernet) — LGPD, dado sensível.
 
-### Opção A -- sem Postgres (mais rápido pra testar algo pontual)
+### 🔵 Funcionalidades e infra
+13. **Motor de Split Payment implementado** (`services/split_service.py`): CBS/IBS
+    por vigência (2026 teste / 2027 cheia), com invariante testado `cbs+ibs+liq==bruto`.
+14. **Testes** (pytest): 31 testes cobrindo auth, split, transferência, depósito,
+    idempotência, autorização e validação.
+15. **Alembic** para migrações versionadas (`backend/alembic/`).
+16. **Paginação** nas listagens (`limite`/`offset`).
+17. **Docker/segurança/logs**: container roda como **usuário não-root**, segredos do
+    compose vêm de `.env` (não hardcoded), **CORS restrito** à lista configurada,
+    **logging** ativo, migração aplicada no start do container.
+
+---
+
+## Arquitetura do backend (resumo)
+
+Mudança estrutural desta versão: **um único repositório** (`repositories/repository.py`,
+sobre SQLAlchemy) roda tanto em **Postgres** (produção) quanto em **SQLite**
+(dev/testes) — antes havia um repositório em memória (dict) paralelo que
+reimplementava tudo à mão e divergia. Agora a lógica relacional é a mesma nos dois.
+
+```
+backend/app/
+  core/
+    config.py          # Settings via .env (pydantic-settings)
+    security.py        # bcrypt, JWT (access+refresh), cifra Fernet do embedding
+  db/
+    base.py            # engine Postgres OU SQLite (fallback), create_all (dev)
+    models.py          # 9 tabelas (usuarios, carteiras, transacoes, refresh_tokens,
+                       #  sessoes_mfa, historico_saldo, logs_auditoria,
+                       #  split_regras, split_liquidacoes)
+  repositories/
+    repository.py      # repositório único: transfer atômico + split, idempotência,
+                       #  refresh tokens, auditoria, rate-limit
+  services/
+    auth_service.py    # login, emissão/rotação de tokens, detecção de reuso
+    usuario_service.py # cadastro (senha + biometria cifrada), saldo zero
+    pagamento_service.py # transferência: dono da carteira, split, MFA por valor
+    split_service.py   # motor IBS/CBS (puro, testado)
+    deposito_service.py# depósito admin a partir da conta Governo
+    biometria_service.py # DeepFace: liveness + reconhecimento (imports lazy)
+  deps.py              # usuario_atual / admin_atual (JWT), ip_cliente
+  routers/
+    auth.py usuarios.py pagamentos.py admin.py
+  main.py              # CORS, middleware de tamanho, lifespan (seed + conta Governo)
+  alembic/             # migrações versionadas
+  tests/               # pytest (SQLite in-memory, DeepFace falsificado)
+```
+
+---
+
+## Rodando o backend
+
+### Dev rápido (SQLite, sem Postgres)
 
 ```bash
 cd backend
-python -m venv venv
-source venv/bin/activate
+py -3.12 -m venv .venv && .venv/Scripts/activate   # Windows
+# python3.12 -m venv .venv && source .venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Sem `DATABASE_URL` no ambiente, cai automaticamente no repositório em
-memória -- reiniciar o `uvicorn` zera tudo, igual antes.
+Sem `DATABASE_URL`, usa SQLite em `backend/payflow.db`. Swagger em
+http://127.0.0.1:8000/docs. No boot é criada a conta **admin/Governo**
+(`admin@payflow.com.br` / senha de dev — veja o aviso no log).
 
-### Opção B -- com Postgres (recomendado a partir de agora)
+> A instalação inclui `deepface` + `tensorflow` (~1-2 GB) para a biometria. Os
+> imports são **lazy**: a API sobe e o resto funciona mesmo antes dos pesos
+> baixarem; o download acontece na 1ª foto processada. `opencv-python` precisa de
+> `libgl1`/`libglib2.0-0` no Linux.
+
+### Testes
 
 ```bash
-sudo apt install -y postgresql
-sudo -u postgres psql -c "CREATE USER payflow WITH PASSWORD 'payflow';"
-sudo -u postgres psql -c "CREATE DATABASE payflow OWNER payflow;"
-
 cd backend
-cp ../.env.example .env
-# .env já vem com DATABASE_URL=postgresql+psycopg2://payflow:payflow@localhost:5432/payflow
-# ajuste usuário/senha/host se for diferente
-
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-set -a; source .env; set +a     # carrega o .env nesta sessão do shell
-uvicorn app.main:app --reload
+pip install pytest httpx
+pytest           # 31 passam (não precisam de TensorFlow nem Postgres)
 ```
 
-No log de boot, confirme `INFO: Application startup complete.` sem erro de
-conexão -- as 8 tabelas são criadas automaticamente na primeira subida.
-`curl http://127.0.0.1:8000/` deve responder com `"repositorio": "postgres"`
-(se vier `"memoria"`, o `.env` não foi carregado nessa sessão do shell).
-
-> A instalação inclui `deepface` + `tensorflow` + `tf-keras` -- pesada
-> (alguns minutos, ~1-2GB), e a **primeira** requisição com foto baixa os
-> pesos dos modelos (precisa de internet nessa hora, depois funciona offline).
-> `opencv-python` precisa de `libgl1`/`libglib2.0-0` no sistema (Ubuntu
-> Server não traz por padrão): `sudo apt install -y libgl1 libglib2.0-0`.
-> E o pacote tem que ser só `opencv-python` -- nada de instalar também
-> `opencv-python-headless` ou `opencv-contrib-python` junto, os três
-> conflitam entre si e corrompem o `cv2/data/` (foi exatamente isso que
-> aconteceu na v4).
-
-A API sobe em http://127.0.0.1:8000 -- Swagger em http://127.0.0.1:8000/docs
-
-Depois, abra `frontend/index.html` direto no navegador (duplo clique). No
-celular, o campo de foto abre a câmera frontal (`capture="user"`); no
-desktop, abre o seletor de arquivo.
-
-## Como rodar em Ubuntu Server sem Docker
-
-Mesmo tutorial de sempre (venv + `uvicorn --host 0.0.0.0` + `ufw allow` +
-servir o `frontend/` com `python -m http.server` se for acessar de outra
-máquina). Se for usar Postgres, ele só precisa estar acessível pelo host que
-roda a API -- rodando local na mesma VM funciona igual ao exemplo acima.
-
-## Como rodar com Docker
+### Produção / Docker (Postgres)
 
 ```bash
+cp .env.docker.example .env   # preencha JWT_SECRET, EMBEDDING_KEY, ADMIN_SENHA, senha do Postgres
 docker compose up --build
 ```
 
-Agora são 2 containers: `backend` (API) e `db` (Postgres 16, com volume
-nomeado `payflow_db_data` -- sobrevive a `docker compose down`, só some com
-`docker compose down -v`). O `backend` já sobe apontando `DATABASE_URL` pro
-serviço `db` pelo nome (`db:5432`, resolvido pela rede interna do Compose).
-Pra rodar em memória mesmo dentro do Docker, comente a linha `DATABASE_URL`
-do serviço `backend` no `docker-compose.yml`.
-
-## Roteiro de teste (fluxo livre + MFA)
-
-1. Abra `frontend/index.html`.
-2. Em **Criar Conta**: `Nome: Alef` / `ID: 101` / `Saldo: 500` + uma foto do
-   rosto -> **Criar**.
-3. Repita simulando outra pessoa: `Nome: Bianca` / `ID: 202` / `Saldo: 50` +
-   uma foto -> **Criar**.
-4. Em **Transferir**: `Meu ID: 101` / `Destino: 202` / `Valor: 100` + uma
-   **nova** foto sua -> **Transferir**.
-5. Teste o bloqueio: tente de novo com a foto de outra pessoa -> 401.
-6. Se estiver com Postgres, dá pra inspecionar direto:
-   `sudo -u postgres psql -d payflow -c "SELECT * FROM carteiras;"`.
-
-Casos de erro já tratados: ID de carteira duplicado (409), carteira de
-origem/destino inexistente (404), rosto não corresponde (401), liveness
-falhou (401), nenhum ou mais de 1 rosto na foto (400), saldo insuficiente
-(400), valor <= 0 (400/422), transferência para si mesmo (400).
-
-## Estrutura
-
-```
-backend/
-  app/
-    main.py                       # FastAPI ("PayFlow"), CORS, cria tabelas no boot
-    db/
-      base.py                     # engine/sessão SQLAlchemy via DATABASE_URL
-      models.py                   # as 8 tabelas do DER
-    repositories/
-      __init__.py                 # escolhe MemoriaRepository x PostgresRepository
-      memoria_repository.py       # repositório em memória, com lock
-      postgres_repository.py      # repositório Postgres, com SELECT...FOR UPDATE
-      exceptions.py                # SaldoInsuficienteError (comum aos dois repos)
-    schemas/
-      usuario.py                  # UsuarioCreate: + foto_rosto_base64
-      transacao.py                # TransacaoCreate: + foto_verificacao_base64
-    services/
-      usuario_service.py          # cria conta: ID duplicado, cadastra biometria
-      pagamento_service.py        # transfere: valida IDs, MFA facial, chama repo
-      biometria_service.py        # liveness + embedding + comparação (DeepFace)
-    routers/
-      usuarios.py
-      pagamentos.py
-  Dockerfile
-  requirements.txt                # + sqlalchemy, psycopg2-binary, python-dotenv
-.env.example                      # template de DATABASE_URL
-docker-compose.yml                # backend + db (Postgres 16)
-frontend/
-  index.html
+Gere os segredos:
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"              # JWT_SECRET
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"  # EMBEDDING_KEY
 ```
 
-## Ganchos que ainda são só TODO
+O container aplica as migrações Alembic (`alembic upgrade head`) antes de subir a
+API e roda como usuário não-root.
 
-Para localizar: `grep -rn "TODO\[" backend/`
+---
 
-| Gancho | Arquivo | Onde |
-|---|---|---|
-| Split Payment (CNPJ) | `services/pagamento_service.py` | Antes do débito/crédito |
-| Idempotência (double-click) | `services/pagamento_service.py` | Ao redor de `executar_transferencia` |
-| Atomicidade cadastro+biometria | `services/usuario_service.py` | 2 escritas separadas no Postgres |
+## App mobile (`app/`) — Expo / React Native
 
-Liveness, Reconhecimento Facial, MFA, persistência do DER e a condição de
-corrida na transferência **saíram da lista** -- código de verdade, testado.
+Fluxos: Landing → Criar conta (com selfie) → Entrar → Início (saldo + transações)
+→ Transferir (prévia do split em tempo real) → Comprovante → Extrato → Governo.
+Transferências acima de **R$ 500** exigem selfie (MFA facial).
 
-## O que falta para virar produto real
+### Rodar em desenvolvimento (Expo Go)
 
-- **Login/sessão -- ainda não existe.** O MFA facial autoriza a
-  *transferência*, mas `GET /usuarios/{id}` e a criação de conta continuam
-  sem autenticação nenhuma.
-- Motor de Split Payment (schema pronto, cálculo não).
-- Deploy de verdade numa VM Azure (o app já é agnóstico de onde o Postgres
-  está rodando).
-- Alembic para migrações versionadas (ver nota acima).
-- Restringir `allow_origins` do CORS ao domínio do front publicado.
-- Segredos (senha do banco, etc.) via Azure Key Vault em vez de `.env`.
-- Latência de ~3-6s por chamada facial é síncrona. Pra volume real, filas
-  ou processamento assíncrono.
-- Liveness passiva tem falso-rejeite conhecido (documentado desde a v4) --
-  considerar liveness ativa (vídeo/desafio) se isso incomodar na prática.
+```bash
+cd app
+npm install
+# Edite app.json -> expo.extra.apiUrl para o IP da máquina que roda o backend
+# (ex: http://192.168.0.10:8000 — não use 127.0.0.1, o celular não alcança)
+npx expo start          # leia o QR code com o app Expo Go
+```
 
-## Endpoints
+### Gerar o APK instalável (o ".exe do celular")
 
-- `POST /usuarios` — `{ "nome": "Alef", "carteira_id": 101, "saldo_inicial": 500.0, "foto_rosto_base64": "..." }` -> 201
-- `GET /usuarios` — lista carteiras e saldos (sem dado biométrico)
-- `GET /usuarios/{carteira_id}` — consulta uma carteira
-- `POST /pagamentos/transferir` — `{ "origem_carteira_id": 101, "destino_carteira_id": 202, "valor": 100.0, "foto_verificacao_base64": "..." }` -> inclui `verificacao_facial`
-- `GET /pagamentos/transacoes` — histórico
-- `GET /` — `{"status": "ok", "servico": "payflow", "repositorio": "postgres"|"memoria"}` -- útil pra confirmar qual modo está ativo
+Precisa de uma conta Expo (gratuita) — o build roda na nuvem (EAS), sem Android
+SDK local:
+
+```bash
+cd app
+npm install
+npx expo login                         # sua conta Expo
+npx eas-cli build -p android --profile preview
+```
+
+Ao final, o EAS devolve um **link do `.apk`** — baixe no celular e instale
+(permita "instalar de fontes desconhecidas"). O perfil `preview` em `eas.json` já
+está configurado para gerar APK (não AAB).
+
+---
+
+## Site institucional (`site/`) — Next.js
+
+```bash
+cd site
+npm install
+npm run dev        # http://localhost:3000
+npm run build      # build de produção (testado ✓)
+```
+
+Hero, recursos, **calculadora de split interativa** (mesmo cálculo do backend),
+seção de segurança, como começar, FAQ e CTA, com animações ao rolar.
+
+---
+
+## Endpoints principais
+
+| Método | Rota | Auth | Descrição |
+|---|---|---|---|
+| POST | `/usuarios` | público | Cadastro (saldo 0, biometria) |
+| POST | `/auth/login` | público | Login → access + refresh |
+| POST | `/auth/refresh` | público | Rotaciona o refresh token |
+| POST | `/auth/logout` | público | Revoga o refresh |
+| GET | `/usuarios/eu` | usuário | Minha conta (com saldo) |
+| GET | `/usuarios/{id}` | usuário | Consulta carteira (saldo só p/ dono/admin) |
+| GET | `/usuarios` | admin | Lista contas (paginado) |
+| POST | `/pagamentos/transferir` | usuário | Transfere (split + MFA por valor) |
+| GET | `/pagamentos/transacoes` | usuário | Histórico (próprio; admin vê tudo) |
+| GET | `/pagamentos/split/simular` | público | Prévia do split (calculadora) |
+| POST | `/admin/depositar` | admin | Deposita a partir da conta Governo |
+| GET | `/admin/governo/retencoes` | admin | Total de IBS/CBS retido |
+
+---
+
+## O que ainda fica para depois
+
+- Build do APK: precisa de uma conta Expo (passo manual acima).
+- Pixel-perfect de todas as 11 telas do handoff — esta v6 cobre o fluxo completo
+  com os tokens do design; o refino fino de cada tela continua.
+- Deploy em VM Azure (o backend já é agnóstico de onde o Postgres roda).
+- Liveness ativa (vídeo/desafio) — hoje é passiva por foto única.

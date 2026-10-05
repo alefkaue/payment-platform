@@ -3,44 +3,45 @@ Serviço de biometria facial: liveness detection + reconhecimento facial via Dee
 (https://github.com/serengil/deepface).
 
 Por que DeepFace e não os outros repositórios enviados:
-- Os projetos "Face-Recognition-System-using-DeepFace" e "Face-Recognition-Authentication"
-  são, eles mesmos, aplicações de exemplo construídas sobre o DeepFace (ou sobre a lib
-  `face_recognition`, baseada em dlib) -- ou seja, já apontam para o mesmo motor.
-- O "Face-Liveness-Detection" e o pacote `liveness-detector` fariam SÓ a parte de
-  liveness (geralmente por vídeo/blink detection), exigindo depois integrar uma segunda
-  lib só para o reconhecimento facial em si.
-- O DeepFace entrega os dois no mesmo lugar: reconhecimento facial (`represent`/`verify`)
-  e anti-spoofing/liveness (`extract_faces(..., anti_spoofing=True)`), com um único
-  modelo leve (MiniFASNet, ~4MB) para a parte de liveness. Para uma PLATAFORMA DE
-  PAGAMENTO (não um banco), isso é o suficiente: 1 dependência, sem exigir vídeo/captura
-  contínua, liveness por foto única (passiva).
+- "Face-Recognition-System-using-DeepFace" e "Face-Recognition-Authentication" são
+  aplicações de exemplo construídas SOBRE o DeepFace (ou sobre `face_recognition`/dlib)
+  -- apontam para o mesmo motor.
+- "Face-Liveness-Detection" e o pacote `liveness-detector` fariam SÓ a parte de
+  liveness, exigindo integrar uma segunda lib para o reconhecimento.
+- O DeepFace entrega os dois: reconhecimento (`represent`/`verify`) e
+  anti-spoofing/liveness (`extract_faces(..., anti_spoofing=True)`, modelo MiniFASNet
+  ~4MB). Uma dependência, liveness por foto única (passiva).
 
-Arquitetura de dados: guardamos o EMBEDDING do rosto (vetor de floats), nunca a foto de
-cadastro em si. Assim, se o repositório em memória (ou, no futuro, o banco) for exposto,
-não há uma foto para vazar -- só um vetor que não é reversível para uma imagem.
+Arquitetura de dados: este módulo trabalha só com o EMBEDDING em texto puro (vetor
+de floats). Quem cifra/decifra para o banco é a camada de service (usuario_service /
+pagamento_service) via core/security.py -- aqui não há cripto, de propósito, pra
+manter a responsabilidade única.
 
-Trade-offs assumidos (documentados aqui para não ficarem escondidos):
-- model_name="Facenet": ~92MB, embedding de 128 dimensões, roda bem em CPU. Troque para
-  "Facenet512" ou "ArcFace" se precisar de mais acurácia (mais lento); para "SFace" ou
-  "GhostFaceNet" se precisar de menos latência (menos acurácia).
-- detector_backend="opencv": o detector mais rápido/leve (Haar Cascade, já vem no
-  próprio opencv-python, sem download extra). Menos robusto a ângulo/iluminação ruins
-  que "retinaface" ou "mtcnn" -- troque se isso for um problema real no seu ambiente.
-- Cada chamada com um rosto custa ~3-6s em CPU (medido em teste local). Isso é
-  aceitável para uma ação pontual (criar conta, autorizar 1 transferência), mas é
-  bloqueante: o request FastAPI fica parado esperando o modelo rodar. Para volume
-  maior, isso pediria fila/async (fora de escopo do MVP de sexta).
+Mudanças de segurança desta versão (auditoria):
+- Limite de tamanho da imagem decodificada (item #4: foto gigante travava o servidor).
+- As mensagens de erro de "rosto não bateu" NÃO expõem mais distância/limite (item #3:
+  isso ajudava um atacante a calibrar a foto). O detalhe numérico continua sendo
+  gravado na auditoria interna, só não volta pro cliente.
+- O RATE-LIMIT de tentativas não fica aqui: ele depende do usuário/sessão e é
+  aplicado nos services (que têm acesso ao repositório). Ver usuario_service e
+  pagamento_service.
 """
 
 import base64
 import binascii
+import logging
 import re
 
-import cv2
-import numpy as np
-from deepface import DeepFace
-from deepface.modules import verification
 from fastapi import HTTPException
+
+from app.core.config import get_settings
+
+# cv2/numpy/deepface/tensorflow são pesados (~1-2GB) e só são necessários quando
+# uma foto é de fato processada. Importamos de forma PREGUIÇOSA dentro das funções
+# para a app subir (e os testes que não tocam biometria rodarem) sem TensorFlow
+# instalado -- ver _carregar_cv2 / _carregar_deepface.
+
+logger = logging.getLogger("payflow.biometria")
 
 MODEL_NAME = "Facenet"
 DETECTOR_BACKEND = "opencv"
@@ -49,9 +50,21 @@ DISTANCE_METRIC = "cosine"
 _DATA_URI_RE = re.compile(r"^data:image/\w+;base64,")
 
 
-def _decodificar_imagem(imagem_base64: str) -> np.ndarray:
-    """Converte a string base64 vinda do front (com ou sem prefixo `data:image/...`)
-    em uma imagem BGR (formato que o OpenCV/DeepFace esperam)."""
+def _carregar_cv2():
+    import cv2
+    import numpy as np
+    return cv2, np
+
+
+def _carregar_deepface():
+    from deepface import DeepFace
+    from deepface.modules import verification
+    return DeepFace, verification
+
+
+def _decodificar_imagem(imagem_base64: str):
+    """base64 (com ou sem prefixo data:image/...) -> imagem BGR (OpenCV/DeepFace).
+    Rejeita cedo foto vazia, base64 corrompido ou acima do tamanho máximo."""
     if not imagem_base64 or not imagem_base64.strip():
         raise HTTPException(status_code=400, detail="Nenhuma foto foi enviada.")
 
@@ -61,25 +74,29 @@ def _decodificar_imagem(imagem_base64: str) -> np.ndarray:
     except (binascii.Error, ValueError):
         raise HTTPException(status_code=400, detail="Foto inválida: base64 corrompido.")
 
+    limite = get_settings().foto_max_bytes
+    if len(bytes_imagem) > limite:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Foto muito grande (máximo {limite // (1024 * 1024)}MB). Tire outra foto.",
+        )
+
+    cv2, np = _carregar_cv2()
     array = np.frombuffer(bytes_imagem, dtype=np.uint8)
     imagem = cv2.imdecode(array, cv2.IMREAD_COLOR)
     if imagem is None:
-        raise HTTPException(
-            status_code=400, detail="Foto inválida: não foi possível decodificar a imagem."
-        )
+        raise HTTPException(status_code=400, detail="Foto inválida: não foi possível decodificar a imagem.")
     return imagem
 
 
-def _checar_liveness(imagem: np.ndarray) -> None:
-    """Levanta HTTPException se não houver exatamente 1 rosto real na imagem.
-    'Real' = passou no anti-spoofing (não é foto de foto, nem de tela)."""
+def _checar_liveness(imagem) -> None:
+    """Levanta HTTPException se não houver exatamente 1 rosto REAL (anti-spoofing)."""
+    DeepFace, _ = _carregar_deepface()
     try:
         rostos = DeepFace.extract_faces(
             img_path=imagem, anti_spoofing=True, detector_backend=DETECTOR_BACKEND
         )
     except ValueError as erro:
-        # DeepFace usa ValueError tanto para "nenhum rosto encontrado" quanto para
-        # outros problemas de decodificação -- todos viram 400 aqui.
         raise HTTPException(status_code=400, detail=f"Não foi possível processar a foto: {erro}")
 
     if len(rostos) == 0:
@@ -89,9 +106,7 @@ def _checar_liveness(imagem: np.ndarray) -> None:
             status_code=400,
             detail=f"A foto deve ter apenas 1 rosto (foram detectados {len(rostos)}).",
         )
-
-    rosto = rostos[0]
-    if not rosto.get("is_real", False):
+    if not rostos[0].get("is_real", False):
         raise HTTPException(
             status_code=401,
             detail=(
@@ -101,7 +116,8 @@ def _checar_liveness(imagem: np.ndarray) -> None:
         )
 
 
-def _extrair_embedding(imagem: np.ndarray) -> list[float]:
+def _extrair_embedding(imagem) -> list[float]:
+    DeepFace, _ = _carregar_deepface()
     try:
         representacoes = DeepFace.represent(
             img_path=imagem, model_name=MODEL_NAME, detector_backend=DETECTOR_BACKEND
@@ -118,44 +134,39 @@ def _extrair_embedding(imagem: np.ndarray) -> list[float]:
 
 
 def cadastrar_biometria(imagem_base64: str) -> list[float]:
-    """Usado na CRIAÇÃO DE CONTA. Valida liveness e devolve o embedding facial para o
-    service de usuário persistir junto com a carteira."""
+    """CRIAÇÃO DE CONTA: valida liveness e devolve o embedding em texto puro para
+    o service cifrar e persistir. Nunca devolve/guarda a imagem."""
     imagem = _decodificar_imagem(imagem_base64)
     _checar_liveness(imagem)
     return _extrair_embedding(imagem)
 
 
 def verificar_biometria(imagem_base64: str, embedding_cadastrado: list[float]) -> dict:
-    """Usado na TRANSFERÊNCIA (MFA). Valida liveness da foto tirada agora e compara o
-    rosto com o embedding cadastrado na carteira de origem.
-
-    Retorna um dict {verificado, distancia, limite, confianca, modelo} -- levanta
-    HTTPException (401) se liveness falhar ou o rosto não corresponder.
-    """
+    """TRANSFERÊNCIA (MFA): valida liveness da foto de agora e compara com o rosto
+    cadastrado. Retorna {verificado, distancia, limite, confianca, modelo} em caso
+    de sucesso; levanta HTTPException(401) genérica se não bater (o detalhe numérico
+    vai só pro log/auditoria, não pro cliente -- item #3)."""
+    _, verification = _carregar_deepface()
     imagem = _decodificar_imagem(imagem_base64)
     _checar_liveness(imagem)
     embedding_atual = _extrair_embedding(imagem)
 
     limite = verification.find_threshold(model_name=MODEL_NAME, distance_metric=DISTANCE_METRIC)
-    distancia = float(
-        verification.find_distance(embedding_atual, embedding_cadastrado, DISTANCE_METRIC)
-    )
+    distancia = float(verification.find_distance(embedding_atual, embedding_cadastrado, DISTANCE_METRIC))
     verificado = distancia <= limite
     confianca = verification.find_confidence(distancia, MODEL_NAME, verificado, DISTANCE_METRIC)
 
     if not verificado:
+        logger.info("MFA facial reprovado (distancia=%.4f limite=%.4f)", distancia, limite)
         raise HTTPException(
             status_code=401,
-            detail=(
-                "Rosto não corresponde ao titular da carteira de origem "
-                f"(distância {distancia:.3f}, limite {limite})."
-            ),
+            detail="Rosto não corresponde ao titular da carteira de origem.",
         )
 
     return {
         "verificado": verificado,
         "distancia": round(distancia, 4),
-        "limite": limite,
-        "confianca": confianca,
+        "limite": round(float(limite), 4),
+        "confianca": round(float(confianca), 2),
         "modelo": MODEL_NAME,
     }

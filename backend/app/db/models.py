@@ -1,62 +1,78 @@
 """
-Modelos ORM para as 8 entidades do DER que vocês definiram:
-Usuarios/Empresas, Carteiras, Transacoes, Sessoes/MFA, Historico, Logs_Auditoria,
-Split_Regras, Split_Liquidacao.
+Modelos ORM do PayFlow. Esta é a v6: o schema ficou "mais concreto" em cima do
+DER da v5, incorporando autenticação (login/JWT), split payment de IBS/CBS e as
+correções de segurança da auditoria.
 
-IMPORTANTE -- não tenho o diagrama DER em si (só os nomes das entidades), então
-modelei os campos com base em tudo que já construímos juntos + no que faz sentido
-pra cada nome. Pontos que exigem confirmação de vocês, marcados como ASSUNCAO
-nos comentários abaixo:
+Mudanças desta versão em relação à v5 (todas endereçando itens da auditoria):
 
-- Usuarios/Empresas: interpretei como UMA tabela (`usuarios`) com um campo
-  `tipo` (PF/PJ), já que o motor de Split Payment que vocês descreveram fala
-  em "empresa destino" -- não duas tabelas separadas. Ainda não é usado por
-  nenhuma lógica hoje (toda conta criada é PF), só deixei o campo pronto.
-- Usuarios x Carteiras são tabelas SEPARADAS (1 usuário -> N carteiras),
-  batendo com o DER ter as duas como entidades distintas -- mesmo a lógica de
-  hoje só criando 1 carteira por usuário no cadastro. Deixa a porta aberta
-  pra multi-carteira sem precisar migrar de novo depois.
-- `carteiras.chave`: guardada como STRING (não int), pensando na migração
-  futura pra chave estilo PIX que vocês pediram. Hoje continua recebendo o
-  número que o usuário digita (convertido pra string na gravação) -- a API
-  não muda ainda, só o tipo da coluna já fica pronto pra não precisar de
-  outra migração quando isso for implementado.
-- `Historico` interpretei como um livro-razão de mudança de saldo por
-  carteira (saldo_anterior/saldo_novo a cada transação) -- serve pra
-  reconciliação/auditoria financeira. Se no DER de vocês "Historico" for
-  outra coisa (ex: histórico de login, histórico de dispositivos), me fala
-  que eu ajusto.
-- `Logs_Auditoria` modelei como log genérico do sistema (ator + ação +
-  detalhe em JSON) -- mais amplo que só MFA, cobre qualquer ação
-  administrativa futura.
-- `Split_Regras` e `Split_Liquidacao`: schema pronto pro motor de split
-  (percentuais, natureza do produto, e o registro de cada perna da divisão),
-  mas a LÓGICA de calcular/aplicar split ainda não está implementada -- só a
-  tabela. Isso fica pro próximo passo que vocês escolherem (loja/viagens).
-- Dinheiro: Numeric(14, 2) em vez de float, em TODAS as colunas de valor --
-  fecha um problema que eu já tinha sinalizado antes (float perde precisão
-  em centavos). Isso muda o tipo devolvido pelo repositório Postgres de
-  float para Decimal -- documentado em postgres_repository.py.
+- `usuarios` agora é uma CONTA DE VERDADE, com credencial de login: `email`
+  (único), `senha_hash` (bcrypt, nunca texto puro), `papel` (user/admin) e
+  `documento` (CPF/CNPJ) único. `tipo` ganhou o valor GOV (conta Governo/Tesouro
+  que recebe o imposto retido no split). Fecha o item #1 (sem autenticação).
+- `embedding_facial` virou `embedding_facial_cifrado` (LargeBinary, cifrado com
+  Fernet -- ver core/security.py). Antes era um ARRAY(Float) em texto puro. Fecha
+  o item #12 (biometria sem criptografia / LGPD).
+- `transacoes` ganhou as colunas do split: `valor_bruto`, `cbs`, `ibs`,
+  `liquido`, `tipo_destino`, `aplicou_split`, `auth_metodo` e `idempotency_key`
+  (único) -- fecha os itens #11 (idempotência) e #13 (split sem cálculo).
+- `refresh_tokens`: tabela nova pra rotação/revogação de refresh tokens (guarda só
+  o HASH do token, nunca o token em si).
+- `split_liquidacoes` agora guarda a `natureza` de cada perna (CBS/IBS/LIQUIDO) e
+  tem FK pra transação -- o motor em services/split_service.py grava uma linha por
+  perna, tornando a auditoria fiscal reconstruível.
+- `historico_saldo` passa a receber TAMBÉM o depósito/saldo inicial (fecha o item
+  #6: antes o histórico começava incompleto).
+
+O que continua igual (e por quê): `carteiras` separada de `usuarios` (1 usuário ->
+N carteiras, hoje 1), dinheiro em Numeric(14,2) (nunca float), `sessoes_mfa` como
+registro de CADA tentativa (agora de fato gravado -- item #5), `logs_auditoria`
+como log genérico (agora de fato gravado).
 """
 
 import enum
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Numeric, String, func
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    LargeBinary,
+    Numeric,
+    String,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
+# Tipo JSON cross-dialect: JSONB no Postgres (indexável, binário), JSON genérico
+# no SQLite (dev/testes). Assim o MESMO modelo roda nos dois bancos sem mudança.
+JSONTipo = JSON().with_variant(JSONB(), "postgresql")
+
 
 class TipoPessoa(str, enum.Enum):
-    PF = "PF"
-    PJ = "PJ"
+    PF = "PF"   # pessoa física
+    PJ = "PJ"   # pessoa jurídica (sofre retenção de IBS/CBS no recebimento)
+    GOV = "GOV"  # conta Governo/Tesouro -- destino do imposto retido
+
+
+class Papel(str, enum.Enum):
+    USUARIO = "usuario"
+    ADMIN = "admin"
+
+
+class AuthMetodo(str, enum.Enum):
+    SENHA = "senha"    # transferência abaixo do limite: só o JWT (login) autoriza
+    SELFIE = "selfie"  # transferência acima do limite: exigiu MFA facial
 
 
 class Usuario(Base):
-    """Usuarios/Empresas no DER."""
+    """Usuarios/Empresas no DER -- agora com credencial de login."""
 
     __tablename__ = "usuarios"
 
@@ -65,9 +81,17 @@ class Usuario(Base):
     tipo: Mapped[TipoPessoa] = mapped_column(
         Enum(TipoPessoa, name="tipo_pessoa"), nullable=False, default=TipoPessoa.PF
     )
-    documento: Mapped[str | None] = mapped_column(String(20), nullable=True)  # CPF/CNPJ -- ainda não exigido
-    # Embedding facial (MFA) -- vetor, nunca a foto. Ver services/biometria_service.py.
-    embedding_facial: Mapped[list[float] | None] = mapped_column(ARRAY(Float), nullable=True)
+    # CPF (PF) ou CNPJ (PJ). Único quando presente; GOV pode usar o documento
+    # sintético de config (CONTA_GOVERNO_DOCUMENTO).
+    documento: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
+    email: Mapped[str] = mapped_column(String(180), unique=True, nullable=False, index=True)
+    senha_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    papel: Mapped[Papel] = mapped_column(
+        Enum(Papel, name="papel_usuario"), nullable=False, default=Papel.USUARIO
+    )
+    # Template biométrico CIFRADO (Fernet). Nunca a foto, nunca o vetor em texto puro.
+    embedding_facial_cifrado: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     carteiras: Mapped[list["Carteira"]] = relationship(back_populates="usuario")
@@ -78,8 +102,8 @@ class Carteira(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
-    # "chave" = o que hoje chamamos de carteira_id na API (o número que o usuário
-    # digita). String de propósito -- ver nota no topo do arquivo.
+    # "chave" = o carteira_id público (o número que o usuário escolhe). String de
+    # propósito, pra migrar pra chave estilo PIX sem outra migração.
     chave: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     saldo: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -93,38 +117,75 @@ class Transacao(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     origem_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
     destino_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
-    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    # Guarda o resultado do MFA facial daquela transferência (distancia, limite,
-    # confianca, modelo, verificado) -- ver schemas/transacao.py:VerificacaoFacial.
-    verificacao_facial: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    # valor_bruto = o que a origem paga. liquido = o que o destino recebe.
+    # cbs + ibs = o que foi retido e enviado à conta Governo (0 se destino não é PJ).
+    valor_bruto: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    cbs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    ibs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    liquido: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    tipo_destino: Mapped[TipoPessoa] = mapped_column(
+        Enum(TipoPessoa, name="tipo_pessoa"), nullable=False
+    )
+    aplicou_split: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    auth_metodo: Mapped[AuthMetodo] = mapped_column(
+        Enum(AuthMetodo, name="auth_metodo"), nullable=False, default=AuthMetodo.SENHA
+    )
+    # Resultado do MFA facial (quando houve) -- distancia, limite, confianca, modelo.
+    verificacao_facial: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
+    # Chave de idempotência enviada pelo cliente: um retry/double-click com a mesma
+    # chave devolve a MESMA transação em vez de criar outra (item #11).
+    idempotency_key: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RefreshToken(Base):
+    """Refresh tokens emitidos no login. Guardamos só o HASH (SHA-256) do token,
+    nunca o token em si. Rotação: a cada /auth/refresh o token usado é marcado
+    `revogado` e `substituido_por` aponta pro novo -- se um refresh já usado
+    reaparecer, dá pra detectar reuso (possível roubo) e revogar a cadeia."""
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False, index=True)
+    jti: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revogado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    substituido_por: Mapped[str | None] = mapped_column(String(64), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SessaoMfa(Base):
-    """Sessoes/MFA no DER -- um registro por TENTATIVA de biometria (sucesso ou
-    falha), não só pelas que passaram. É a base pra uma central de segurança
-    (ver as ideias que discutimos: MFA adaptativo por risco, painel ao vivo)."""
+    """Sessoes/MFA no DER -- um registro por TENTATIVA (login OU biometria),
+    sucesso ou falha. Agora de fato gravado (item #5) e usado como fonte do
+    rate-limit (ver core rate limit em services)."""
 
     __tablename__ = "sessoes_mfa"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
-    tipo: Mapped[str] = mapped_column(String(40), nullable=False)  # "cadastro" | "transferencia"
+    # identificador usado quando ainda não há usuario_id (ex: e-mail no login que falhou)
+    referencia: Mapped[str | None] = mapped_column(String(180), nullable=True, index=True)
+    tipo: Mapped[str] = mapped_column(String(40), nullable=False)  # login|cadastro|transferencia
     sucesso: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    detalhe: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detalhe: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (Index("ix_sessoes_tipo_criado", "tipo", "criado_em"),)
 
 
 class HistoricoSaldo(Base):
-    """Historico no DER -- ledger de toda mudança de saldo (ASSUNCAO, ver nota
-    no topo do arquivo)."""
+    """Ledger de toda mudança de saldo (inclui o depósito inicial -- item #6)."""
 
     __tablename__ = "historico_saldo"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
+    carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
     saldo_anterior: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     saldo_novo: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    motivo: Mapped[str] = mapped_column(String(40), nullable=False, default="transferencia")
     transacao_id: Mapped[int | None] = mapped_column(ForeignKey("transacoes.id"), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -133,35 +194,37 @@ class LogAuditoria(Base):
     __tablename__ = "logs_auditoria"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    ator: Mapped[str] = mapped_column(String(80), nullable=False)  # chave da carteira, "sistema", etc.
-    acao: Mapped[str] = mapped_column(String(80), nullable=False)  # "criar_conta" | "transferencia" | ...
-    detalhe: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ator: Mapped[str] = mapped_column(String(80), nullable=False)
+    acao: Mapped[str] = mapped_column(String(80), nullable=False)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    detalhe: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SplitRegra(Base):
-    """Schema pronto pro motor de Split Payment -- lógica ainda não implementada."""
+    """Alíquotas de IBS/CBS por vigência. Seedadas no boot (ver split_service).
+    percentual_* em pontos percentuais (ex: 8.80 = 8,8%)."""
 
     __tablename__ = "split_regras"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    nome: Mapped[str] = mapped_column(String(80), nullable=False)
-    natureza_produto: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    percentual_destino: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
-    percentual_taxa: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    vigencia: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # "2026" | "2027"
+    descricao: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    aliquota_cbs: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
+    aliquota_ibs: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class SplitLiquidacao(Base):
-    """Registro de cada perna de uma transação splitada -- lógica ainda não
-    implementada, schema pronto para quando o motor de split for construído."""
+    """Uma linha por perna da divisão de uma transação (CBS -> GOV, IBS -> GOV,
+    LIQUIDO -> destino). Torna a divisão fiscal reconstruível pra auditoria."""
 
     __tablename__ = "split_liquidacoes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    transacao_id: Mapped[int] = mapped_column(ForeignKey("transacoes.id"), nullable=False)
-    split_regra_id: Mapped[int | None] = mapped_column(ForeignKey("split_regras.id"), nullable=True)
+    transacao_id: Mapped[int] = mapped_column(ForeignKey("transacoes.id"), nullable=False, index=True)
+    natureza: Mapped[str] = mapped_column(String(20), nullable=False)  # CBS|IBS|LIQUIDO
     carteira_destino_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
-    valor_liquidado: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

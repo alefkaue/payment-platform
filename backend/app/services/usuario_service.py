@@ -1,72 +1,97 @@
 """
-Regras de negócio para criação e consulta de usuários/carteiras.
+Cadastro e consulta de contas. Mudanças da v6 (auditoria):
+- Conta agora nasce com SALDO ZERO. O `saldo_inicial` livre saiu (item #2: criava
+  dinheiro do nada). Saldo entra só por depósito da conta Governo (ver
+  deposito_service + admin).
+- Conta tem credencial (e-mail + senha) e documento (CPF/CNPJ). A senha é hasheada
+  (bcrypt) antes de chegar ao repositório.
+- O embedding facial é CIFRADO (Fernet) antes de persistir (item #12 / LGPD).
+- Cadastro + biometria gravam numa transação só no repositório (item #10:
+  atomicidade -- não sobra mais conta sem biometria por falha no meio).
 """
+
+import random
 
 from fastapi import HTTPException
 
-from app.repositories import Repositorio
+from app.core import security
+from app.db.models import Papel, TipoPessoa
+from app.repositories.exceptions import (
+    DocumentoDuplicadoError,
+    EmailDuplicadoError,
+    IdDuplicadoError,
+)
+from app.repositories.repository import Repositorio
 from app.services import biometria_service
 
 
-def criar_usuario(
+def _gerar_carteira_id(repo: Repositorio) -> int:
+    """Gera uma chave numérica livre quando o usuário não escolhe uma. Tenta
+    algumas vezes; a unicidade real é garantida pela constraint no banco."""
+    for _ in range(10):
+        cid = random.randint(100000, 999999)
+        if not repo.carteira_existe(cid):
+            return cid
+    raise HTTPException(status_code=503, detail="Não foi possível gerar um ID de carteira. Tente de novo.")
+
+
+def criar_conta(
     repo: Repositorio,
-    carteira_id: int,
+    *,
     nome: str,
+    email: str,
+    senha: str,
+    tipo: TipoPessoa,
+    documento: str | None,
     foto_rosto_base64: str,
-    saldo_inicial: float = 0.0,
+    carteira_id: int | None = None,
+    ip: str | None = None,
 ) -> dict:
-    # 1) Validações baratas primeiro -- rejeita antes de gastar ~5s processando a
-    # foto com o DeepFace (liveness + extração do rosto). Isso NÃO garante
-    # sozinho que o ID está livre (ver comentário no try/except abaixo) --
-    # é só pra sair rápido no caso comum de ID já existente.
-    if repo.carteira_existe(carteira_id):
-        raise HTTPException(
-            status_code=409,
-            detail=f"Já existe uma carteira com o ID {carteira_id}.",
-        )
+    # 1) Validações baratas antes de gastar ~5s no DeepFace.
+    if tipo == TipoPessoa.GOV:
+        raise HTTPException(status_code=400, detail="Conta Governo não é criada por este endpoint.")
+    if carteira_id is not None and repo.carteira_existe(carteira_id):
+        raise HTTPException(status_code=409, detail=f"Já existe uma carteira com o ID {carteira_id}.")
+    if repo.obter_usuario_por_email(email):
+        raise HTTPException(status_code=409, detail="Já existe uma conta com esse e-mail.")
 
-    if saldo_inicial < 0:
-        raise HTTPException(status_code=400, detail="Saldo inicial não pode ser negativo.")
-
-    # 2) MFA - Liveness Detection + Reconhecimento Facial (implementado):
-    # `cadastrar_biometria` valida que a foto tem exatamente 1 rosto real (não é
-    # foto de foto/tela) e devolve o embedding facial -- nunca a imagem em si.
-    # Levanta HTTPException (400/401) se liveness ou detecção falharem.
+    # 2) Biometria: valida liveness e extrai o embedding (texto puro); cifra em seguida.
     embedding = biometria_service.cadastrar_biometria(foto_rosto_base64)
+    embedding_cifrado = security.cifrar_embedding(embedding)
 
-    # 3) Cria a conta. Os dois repositórios protegem o ID duplicado de novo aqui
-    # dentro (lock em memória / constraint UNIQUE no Postgres) -- fecha a janela
-    # entre o "carteira_existe" do passo 1 e agora, onde dois cadastros
-    # simultâneos com o mesmo ID poderiam os dois passar pela checagem barata.
-    # TODO[AZURE - Persistencia]: quando este projeto for para Azure de verdade
-    # (Cosmos DB / Azure Database for PostgreSQL gerenciado), este service não
-    # muda -- só a implementação injetada via `get_repository()`. O embedding
-    # facial deveria ir para um datastore separado dos dados da conta, com o
-    # vetor criptografado em repouso -- é dado biométrico, "dado sensível" pela
-    # LGPD (art. 5º, XIII).
-    #
-    # TODO[ATOMICIDADE]: criar_usuario + salvar_embedding_facial ainda são 2
-    # escritas separadas no Postgres (2 transações). Numa falha entre as duas,
-    # sobra uma conta sem biometria (toda transferência dela falharia com 400
-    # "sem biometria cadastrada", nunca com saldo indo pro lugar errado -- por
-    # isso não tratei isso com a mesma urgência do lock de transferência).
+    senha_hash = security.hash_senha(senha)
+    cid = carteira_id if carteira_id is not None else _gerar_carteira_id(repo)
+
+    # 3) Cria conta + carteira + biometria numa transação só.
     try:
-        usuario = repo.criar_usuario(
-            carteira_id=carteira_id, nome=nome, saldo_inicial=saldo_inicial
+        conta = repo.criar_conta(
+            carteira_id=cid,
+            nome=nome,
+            email=email,
+            senha_hash=senha_hash,
+            tipo=tipo,
+            documento=documento,
+            embedding_cifrado=embedding_cifrado,
+            papel=Papel.USUARIO,
         )
-    except ValueError as erro:
-        raise HTTPException(status_code=409, detail=str(erro))
+    except IdDuplicadoError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except EmailDuplicadoError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except DocumentoDuplicadoError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
-    repo.salvar_embedding_facial(carteira_id, embedding)
-    return usuario
+    repo.registrar_sessao_mfa(tipo="cadastro", sucesso=True, usuario_id=conta["usuario_id"], ip=ip)
+    repo.registrar_log(ator=email.lower().strip(), acao="criar_conta", ip=ip, detalhe={"carteira_id": cid, "tipo": tipo.value})
+    return conta
 
 
-def obter_usuario_ou_404(repo: Repositorio, carteira_id: int) -> dict:
-    usuario = repo.obter_usuario(carteira_id)
-    if not usuario:
+def obter_conta_ou_404(repo: Repositorio, carteira_id: int) -> dict:
+    conta = repo.obter_conta_por_carteira(carteira_id)
+    if not conta:
         raise HTTPException(status_code=404, detail="Carteira não encontrada.")
-    return usuario
+    return conta
 
 
-def listar_usuarios(repo: Repositorio) -> list[dict]:
-    return repo.listar_usuarios()
+def listar_contas(repo: Repositorio, *, limite: int, offset: int) -> list[dict]:
+    return repo.listar_contas(limite=limite, offset=offset)

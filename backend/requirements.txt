@@ -1,6 +1,22 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 pydantic==2.9.2
+pydantic-settings==2.5.2
+email-validator==2.2.0
+
+# Autenticação: JWT (access + refresh) e hash de senha.
+# PyJWT é a lib mantida e simples para assinar/validar os tokens -- os repos de
+# referência (fastapi-jwt-auth) estão em manutenção mínima/arquivados, então
+# implementamos o fluxo de access+refresh sobre PyJWT direto (ver core/security.py
+# e services/auth_service.py). bcrypt pinado em 4.0.1 para não brigar com passlib
+# 1.7.4 (versões 4.1+ emitem o warning "trapped error reading bcrypt version").
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+PyJWT==2.9.0
+
+# Criptografia em repouso do template biométrico (embedding facial) -- LGPD,
+# dado sensível (ver core/security.py:cifrar_embedding / services/biometria_service.py).
+cryptography>=43.0.0
 
 # MFA - liveness + reconhecimento facial (ver services/biometria_service.py)
 # "[tensorflow]" é explícito de propósito: o deepface avisa que vai parar de
@@ -19,3 +35,9 @@ numpy>=1.24.0
 sqlalchemy>=2.0.30
 psycopg2-binary>=2.9.9
 python-dotenv>=1.0.1
+# Migrações versionadas de schema (substitui o create_all no boot em produção).
+alembic>=1.13.2
+
+# Testes
+pytest>=8.3.0
+httpx>=0.27.0
