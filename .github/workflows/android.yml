@@ -60,7 +60,15 @@ jobs:
         working-directory: app/android
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log || true
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            echo "APK gerado com sucesso."
+          else
+            MSG=$(grep -iE "what went wrong|FAILURE:|Caused by|error:|not found|Unsupported|requires|> " /tmp/gradle.log | tail -n 25 | tr '\n\t' '  ' | cut -c1-1600)
+            echo "::error::GRADLE_FAIL $MSG"
+            echo "---- tail do log ----"; tail -70 /tmp/gradle.log
+            exit 1
+          fi
 
       - name: Publicar o APK como artefato
         uses: actions/upload-artifact@v4
