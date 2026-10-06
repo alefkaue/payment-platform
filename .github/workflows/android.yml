@@ -39,9 +39,17 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - name: Build web (SPA) + sync Capacitor
+      - name: Vite build (SPA)
         working-directory: app
-        run: npm run build:mobile
+        run: npm run build
+
+      - name: Montar www (SPA estático)
+        working-directory: app
+        run: node scripts/assemble-www.mjs
+
+      - name: Capacitor sync (android)
+        working-directory: app
+        run: npx cap sync android
 
       - name: Gerar APK de debug
         working-directory: app/android
