@@ -47,9 +47,14 @@ jobs:
         working-directory: app
         run: node scripts/assemble-www.mjs
 
-      - name: Capacitor copy (android)
+      - name: Copiar web para o Android (sem Capacitor CLI)
         working-directory: app
-        run: npx cap copy android
+        run: |
+          rm -rf android/app/src/main/assets/public
+          mkdir -p android/app/src/main/assets/public
+          cp -r www/. android/app/src/main/assets/public/
+          printf '%s' '{"appId":"com.payflow.app","appName":"PayFlow","webDir":"www","backgroundColor":"#141414"}' > android/app/src/main/assets/capacitor.config.json
+          echo "conteúdo de assets/public:" && ls android/app/src/main/assets/public | head
 
       - name: Gerar APK de debug
         working-directory: app/android
