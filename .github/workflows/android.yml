@@ -1,7 +1,7 @@
 name: Build APK (PayFlow)
 
-# Gera o .apk do app (Capacitor) na nuvem — sem precisar de Android SDK local
-# e sem Expo. O APK sai como "artefato" da execução (aba Actions do GitHub).
+# Gera o .apk do app (Capacitor) na nuvem — sem Android SDK local e sem Expo.
+# O APK sai como "artefato" da execução (aba Actions do GitHub).
 
 on:
   push:
@@ -28,11 +28,12 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Android SDK
+      - name: Android SDK (cmdline-tools fixo + pacotes)
         uses: android-actions/setup-android@v3
-
-      - name: Pacotes do SDK alvo (compileSdk 36)
-        run: sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+        with:
+          cmdline-tools-version: "11076708"
+          accept-android-sdk-licenses: true
+          packages: "platform-tools platforms;android-36 build-tools;36.0.0"
 
       - name: Instalar dependências do app web
         working-directory: app
