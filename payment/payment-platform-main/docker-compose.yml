@@ -1,0 +1,44 @@
+# Segredos NÃO ficam hardcoded aqui (item #17 da auditoria: a senha do Postgres
+# estava em texto no compose). Eles vêm de um arquivo .env ao lado deste
+# docker-compose.yml (NÃO versionado) -- veja .env.docker.example. Em produção
+# (Azure), use secrets gerenciados (Key Vault) em vez de arquivo.
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      JWT_SECRET: ${JWT_SECRET}
+      EMBEDDING_KEY: ${EMBEDDING_KEY}
+      ADMIN_EMAIL: ${ADMIN_EMAIL}
+      ADMIN_SENHA: ${ADMIN_SENHA}
+      SPLIT_VIGENCIA: ${SPLIT_VIGENCIA:-2026}
+      LIMITE_FACIAL_REAIS: ${LIMITE_FACIAL_REAIS:-500}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      AMBIENTE: ${AMBIENTE:-producao}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - payflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Porta não exposta ao host de propósito -- só o backend alcança o banco.
+    # Para inspecionar com um client local, descomente:
+    # ports:
+    #   - "5432:5432"
+
+volumes:
+  payflow_db_data:

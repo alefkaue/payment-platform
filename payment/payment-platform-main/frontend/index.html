@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PayFlow - MVP</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #ffffff;
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --text: #1e293b;
+    --muted: #64748b;
+    --erro-bg: #fef2f2;
+    --erro-txt: #b91c1c;
+    --sucesso-bg: #f0fdf4;
+    --sucesso-txt: #15803d;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, system-ui, sans-serif;
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 32px 16px 64px;
+    background: linear-gradient(180deg, var(--bg) 0%, var(--bg) 140px, #f1f5f9 140px);
+    color: var(--text);
+  }
+
+  header { color: #fff; padding: 4px 4px 24px; }
+  header h1 { font-size: 20px; margin: 0 0 4px; }
+  header p { font-size: 13px; color: #cbd5e1; margin: 0; }
+
+  .card {
+    background: var(--card);
+    border-radius: 14px;
+    padding: 22px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+    margin-bottom: 22px;
+  }
+
+  .card h2 { font-size: 15px; margin: 0 0 4px; }
+  .card .subtitulo { font-size: 12.5px; color: var(--muted); margin: 0 0 16px; }
+
+  label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 600;
+    color: #475569;
+    margin-top: 12px;
+    margin-bottom: 4px;
+  }
+
+  .dica {
+    font-size: 11.5px;
+    color: var(--muted);
+    margin: 3px 0 0;
+  }
+
+  input[type="text"],
+  input[type="number"] {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #cbd5e1;
+    font-size: 14px;
+    background: #f8fafc;
+  }
+
+  input:focus { outline: none; border-color: var(--primary); background: #fff; }
+
+  input[type="file"] {
+    width: 100%;
+    font-size: 12.5px;
+    padding: 8px 0;
+  }
+
+  .linha-foto {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .linha-foto > div { flex: 1; min-width: 0; }
+
+  .preview-foto {
+    display: none;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #e2e8f0;
+    flex-shrink: 0;
+  }
+
+  button {
+    width: 100%;
+    padding: 12px;
+    border-radius: 8px;
+    border: none;
+    margin-top: 18px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    color: #fff;
+    background: var(--primary);
+    transition: background 0.15s ease;
+  }
+
+  button:hover:not(:disabled) { background: var(--primary-dark); }
+  button:active:not(:disabled) { transform: translateY(1px); }
+  button:disabled { background: #93b4ee; cursor: wait; }
+
+  .alert {
+    display: none;
+    margin-top: 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+
+  .alert.erro { display: block; background: var(--erro-bg); color: var(--erro-txt); }
+  .alert.sucesso { display: block; background: var(--sucesso-bg); color: var(--sucesso-txt); }
+
+  .contas-criadas { margin-top: 16px; }
+  .contas-criadas .titulo {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    margin: 0 0 6px;
+  }
+
+  .conta-chip {
+    display: inline-flex;
+    align-items: center;
+    background: #eef2ff;
+    color: #3730a3;
+    border-radius: 999px;
+    padding: 5px 10px;
+    font-size: 12px;
+    margin: 0 6px 6px 0;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>&#128184; PayFlow &mdash; MVP</h1>
+  <p>Fluxo livre: crie quantas carteiras quiser e transfira entre elas por ID. Cadastro e transfer&ecirc;ncia exigem foto do rosto (MFA por biometria facial).</p>
+</header>
+
+<!-- ============ SEÇÃO 1: CRIAR CONTA ============ -->
+<div class="card">
+  <h2>&#129333; Criar Conta</h2>
+  <p class="subtitulo">Escolha livremente o ID num&eacute;rico da carteira &mdash; como se cada cadastro fosse uma pessoa diferente abrindo o app.</p>
+
+  <label for="nome">Nome</label>
+  <input type="text" id="nome" placeholder="Ex: Alef">
+
+  <label for="carteira-id">ID da Carteira</label>
+  <input type="number" id="carteira-id" placeholder="Ex: 101" min="1" step="1">
+
+  <label for="saldo-inicial">Saldo Inicial (R$)</label>
+  <input type="number" id="saldo-inicial" placeholder="0,00" min="0" step="0.01">
+
+  <label for="foto-cadastro">Foto do rosto (cadastro da biometria)</label>
+  <div class="linha-foto">
+    <div><input type="file" id="foto-cadastro" accept="image/*" capture="user"></div>
+    <img id="preview-cadastro" class="preview-foto" alt="Pr&eacute;via da foto">
+  </div>
+  <p class="dica">1 rosto s&oacute;, de frente, boa luz. No celular abre a c&acirc;mera; no desktop, escolha um arquivo.</p>
+
+  <button id="botao-criar-conta" onclick="criarConta()">Criar</button>
+
+  <div id="alert-conta" class="alert"></div>
+
+  <div class="contas-criadas" id="contas-criadas-wrap" style="display:none;">
+    <p class="titulo">Carteiras criadas nesta sess&atilde;o</p>
+    <div id="contas-criadas"></div>
+  </div>
+</div>
+
+<!-- ============ SEÇÃO 2: TRANSFERIR ============ -->
+<div class="card">
+  <h2>&#128260; Transferir</h2>
+  <p class="subtitulo">Informe os IDs de origem e destino manualmente. Nenhuma lista pr&eacute;-cadastrada.</p>
+
+  <label for="origem-id">Meu ID de Carteira</label>
+  <input type="number" id="origem-id" placeholder="Ex: 101" min="1" step="1">
+
+  <label for="destino-id">ID da Carteira de Destino</label>
+  <input type="number" id="destino-id" placeholder="Ex: 202" min="1" step="1">
+
+  <label for="valor-transferencia">Valor (R$)</label>
+  <input type="number" id="valor-transferencia" placeholder="0,00" min="0.01" step="0.01">
+
+  <label for="foto-transferencia">Foto do rosto agora (MFA para autorizar)</label>
+  <div class="linha-foto">
+    <div><input type="file" id="foto-transferencia" accept="image/*" capture="user"></div>
+    <img id="preview-transferencia" class="preview-foto" alt="Pr&eacute;via da foto">
+  </div>
+  <p class="dica">Precisa bater com o rosto cadastrado na carteira de origem.</p>
+
+  <button id="botao-transferir" onclick="transferir()">Transferir</button>
+
+  <div id="alert-transferencia" class="alert"></div>
+</div>
+
+<script>
+  // Backend local (FastAPI). Ajuste quando o back-end for publicado
+  // (ex: Azure App Service / Container Apps).
+  const API_URL = "http://127.0.0.1:8000";
+  const TAMANHO_MAX_FOTO = 8 * 1024 * 1024; // 8MB
+
+  const carteirasCriadas = [];
+
+  function mostrarAlerta(elementId, mensagem, tipo) {
+    const el = document.getElementById(elementId);
+    el.textContent = mensagem;
+    el.className = "alert " + tipo;
+  }
+
+  function limparAlerta(elementId) {
+    const el = document.getElementById(elementId);
+    el.textContent = "";
+    el.className = "alert";
+  }
+
+  function mensagemDeErro(e, API_URL) {
+    // fetch() lança TypeError quando a conexão falha de verdade (API fora do ar,
+    // CORS, DNS). Qualquer outro erro (ex: "foto muito grande") já vem com uma
+    // mensagem própria em português -- mostra ela direto.
+    const msgConexao = `Não foi possível conectar ao backend em ${API_URL}. Confirme que a API está rodando (uvicorn).`;
+    return e instanceof TypeError ? msgConexao : (e.message || msgConexao);
+  }
+
+  function arquivoParaBase64(file) {
+    return new Promise((resolve, reject) => {
+      if (!file) {
+        reject(new Error("Nenhuma foto selecionada."));
+        return;
+      }
+      if (file.size > TAMANHO_MAX_FOTO) {
+        reject(new Error("Foto muito grande (máximo 8MB). Tire outra foto ou escolha um arquivo menor."));
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result); // já vem como "data:image/...;base64,...."
+      reader.onerror = () => reject(new Error("Não foi possível ler o arquivo da foto."));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function configurarPreview(inputId, previewId) {
+    const input = document.getElementById(inputId);
+    const preview = document.getElementById(previewId);
+    input.addEventListener("change", () => {
+      const file = input.files[0];
+      if (file) {
+        preview.src = URL.createObjectURL(file);
+        preview.style.display = "block";
+      } else {
+        preview.style.display = "none";
+      }
+    });
+  }
+  configurarPreview("foto-cadastro", "preview-cadastro");
+  configurarPreview("foto-transferencia", "preview-transferencia");
+
+  function registrarCarteiraCriada(usuario) {
+    carteirasCriadas.unshift(usuario);
+    document.getElementById("contas-criadas-wrap").style.display = "block";
+    document.getElementById("contas-criadas").innerHTML = carteirasCriadas
+      .map(u => `<span class="conta-chip">#${u.carteira_id} &middot; ${u.nome}</span>`)
+      .join("");
+  }
+
+  async function criarConta() {
+    limparAlerta("alert-conta");
+
+    const nome = document.getElementById("nome").value.trim();
+    const carteiraIdRaw = document.getElementById("carteira-id").value;
+    const saldoRaw = document.getElementById("saldo-inicial").value;
+    const arquivoFoto = document.getElementById("foto-cadastro").files[0];
+
+    const carteira_id = parseInt(carteiraIdRaw, 10);
+    const saldo_inicial = saldoRaw === "" ? 0 : parseFloat(saldoRaw);
+
+    if (!nome) {
+      mostrarAlerta("alert-conta", "Informe o nome.", "erro");
+      return;
+    }
+    if (!carteiraIdRaw || isNaN(carteira_id) || carteira_id <= 0) {
+      mostrarAlerta("alert-conta", "Informe um ID de carteira válido (número inteiro maior que zero).", "erro");
+      return;
+    }
+    if (isNaN(saldo_inicial) || saldo_inicial < 0) {
+      mostrarAlerta("alert-conta", "Informe um saldo inicial válido.", "erro");
+      return;
+    }
+    if (!arquivoFoto) {
+      mostrarAlerta("alert-conta", "Tire ou selecione uma foto do rosto para cadastrar a biometria (MFA).", "erro");
+      return;
+    }
+
+    const botao = document.getElementById("botao-criar-conta");
+    botao.disabled = true;
+    botao.textContent = "Verificando rosto...";
+
+    try {
+      const foto_rosto_base64 = await arquivoParaBase64(arquivoFoto);
+
+      const res = await fetch(`${API_URL}/usuarios`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome, carteira_id, saldo_inicial, foto_rosto_base64 }),
+      });
+
+      const dados = await res.json();
+
+      if (!res.ok) {
+        mostrarAlerta("alert-conta", dados.detail || "Erro ao criar conta.", "erro");
+        return;
+      }
+
+      mostrarAlerta(
+        "alert-conta",
+        `Conta criada com sucesso! Carteira #${dados.carteira_id} (${dados.nome}) - saldo R$ ${dados.saldo.toFixed(2)}. Biometria cadastrada.`,
+        "sucesso"
+      );
+      registrarCarteiraCriada(dados);
+
+      document.getElementById("nome").value = "";
+      document.getElementById("carteira-id").value = "";
+      document.getElementById("saldo-inicial").value = "";
+      document.getElementById("foto-cadastro").value = "";
+      document.getElementById("preview-cadastro").style.display = "none";
+    } catch (e) {
+      mostrarAlerta("alert-conta", mensagemDeErro(e, API_URL), "erro");
+    } finally {
+      botao.disabled = false;
+      botao.textContent = "Criar";
+    }
+  }
+
+  async function transferir() {
+    limparAlerta("alert-transferencia");
+
+    const origem_carteira_id = parseInt(document.getElementById("origem-id").value, 10);
+    const destino_carteira_id = parseInt(document.getElementById("destino-id").value, 10);
+    const valor = parseFloat(document.getElementById("valor-transferencia").value);
+    const arquivoFoto = document.getElementById("foto-transferencia").files[0];
+
+    if (!origem_carteira_id || !destino_carteira_id) {
+      mostrarAlerta("alert-transferencia", "Informe os IDs de carteira de origem e destino.", "erro");
+      return;
+    }
+    if (!valor || valor <= 0) {
+      mostrarAlerta("alert-transferencia", "Informe um valor válido.", "erro");
+      return;
+    }
+    if (!arquivoFoto) {
+      mostrarAlerta("alert-transferencia", "Tire uma foto do seu rosto agora para autorizar a transferência (MFA).", "erro");
+      return;
+    }
+
+    const botao = document.getElementById("botao-transferir");
+    botao.disabled = true;
+    botao.textContent = "Verificando rosto...";
+
+    try {
+      const foto_verificacao_base64 = await arquivoParaBase64(arquivoFoto);
+
+      const res = await fetch(`${API_URL}/pagamentos/transferir`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ origem_carteira_id, destino_carteira_id, valor, foto_verificacao_base64 }),
+      });
+
+      const dados = await res.json();
+
+      if (!res.ok) {
+        mostrarAlerta("alert-transferencia", dados.detail || "Erro na transferência.", "erro");
+        return;
+      }
+
+      const vf = dados.verificacao_facial;
+      const infoFacial = vf ? ` Rosto conferido (confiança ${vf.confianca.toFixed(1)}%).` : "";
+      mostrarAlerta(
+        "alert-transferencia",
+        `Transferência #${dados.id} concluída: R$ ${dados.valor.toFixed(2)} da carteira #${dados.origem_carteira_id} para #${dados.destino_carteira_id}.${infoFacial}`,
+        "sucesso"
+      );
+      document.getElementById("valor-transferencia").value = "";
+      document.getElementById("foto-transferencia").value = "";
+      document.getElementById("preview-transferencia").style.display = "none";
+    } catch (e) {
+      mostrarAlerta("alert-transferencia", mensagemDeErro(e, API_URL), "erro");
+    } finally {
+      botao.disabled = false;
+      botao.textContent = "Transferir";
+    }
+  }
+</script>
+
+</body>
+</html>

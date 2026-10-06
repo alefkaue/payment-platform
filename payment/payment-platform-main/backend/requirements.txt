@@ -1,0 +1,43 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+email-validator==2.2.0
+
+# Autenticação: JWT (access + refresh) e hash de senha.
+# PyJWT é a lib mantida e simples para assinar/validar os tokens -- os repos de
+# referência (fastapi-jwt-auth) estão em manutenção mínima/arquivados, então
+# implementamos o fluxo de access+refresh sobre PyJWT direto (ver core/security.py
+# e services/auth_service.py). bcrypt pinado em 4.0.1 para não brigar com passlib
+# 1.7.4 (versões 4.1+ emitem o warning "trapped error reading bcrypt version").
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+PyJWT==2.9.0
+
+# Criptografia em repouso do template biométrico (embedding facial) -- LGPD,
+# dado sensível (ver core/security.py:cifrar_embedding / services/biometria_service.py).
+cryptography>=43.0.0
+
+# MFA - liveness + reconhecimento facial (ver services/biometria_service.py)
+# "[tensorflow]" é explícito de propósito: o deepface avisa que vai parar de
+# instalar um backend por padrão, então fixamos o backend em vez de confiar
+# no default.
+deepface[tensorflow]>=0.0.93
+tf-keras>=2.15.0
+# Pinado (não >=) e SEM "-headless": esse é o fix do conflito opencv-python x
+# opencv-python-headless x opencv-contrib-python que resolvemos na venv. Não
+# precisa de headless porque libgl1/libglib2.0-0 já estão instalados no host
+# (ver README) -- só não pode ter os dois pacotes juntos.
+opencv-python==4.10.0.84
+numpy>=1.24.0
+
+# Persistência - Postgres (ver app/db/ e app/repositories/postgres_repository.py)
+sqlalchemy>=2.0.30
+psycopg2-binary>=2.9.9
+python-dotenv>=1.0.1
+# Migrações versionadas de schema (substitui o create_all no boot em produção).
+alembic>=1.13.2
+
+# Testes
+pytest>=8.3.0
+httpx>=0.27.0

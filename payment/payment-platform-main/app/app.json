@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "PayFlow",
+    "slug": "payflow",
+    "owner": "akstn",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "payflow",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#fbfaf7",
+      "resizeMode": "contain"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.payflow.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "O PayFlow usa a câmera para a verificação facial (selfie de segurança)."
+      }
+    },
+    "android": {
+      "package": "com.payflow.app",
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "adaptiveIcon": {
+        "backgroundColor": "#f2d03b"
+      }
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "O PayFlow usa a câmera para a verificação facial (selfie de segurança)."
+        }
+      ]
+    ],
+    "extra": {
+      "apiUrl": "https://indices-mathematics-discussions-tobago.trycloudflare.com",
+      "eas": {
+        "projectId": "ef6e94df-3a23-4e8a-a902-12d36e5ccdeb"
+      }
+    }
+  }
+}
