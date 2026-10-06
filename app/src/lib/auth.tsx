@@ -1,48 +1,80 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import type { Conta } from "./types";
+import { sair as sairApi, selecionarConta } from "./api";
+import type { Conta, LoginResposta } from "./types";
 
+/**
+ * Sessão do app. O login é da PESSOA; ela pode operar várias contas (a pessoal
+ * e as das empresas em que tem vínculo). `conta` é a que está em uso — o
+ * seletor no cabeçalho troca entre elas (no backend, header X-Conta).
+ */
 interface AuthState {
   ready: boolean;
   conta: Conta | null;
-  entrar: (conta: Conta) => void;
+  contas: Conta[];
+  entrar: (r: LoginResposta) => void;
+  trocarConta: (c: Conta) => void;
   sair: () => void;
 }
 
 const Ctx = createContext<AuthState | null>(null);
 const KEY = "payflow-session";
 
+interface Salvo {
+  conta: Conta;
+  contas: Conta[];
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [conta, setConta] = useState<Conta | null>(null);
+  const [contas, setContas] = useState<Conta[]>([]);
 
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem(KEY);
-      if (raw) setConta(JSON.parse(raw).conta);
+      if (raw) {
+        const s = JSON.parse(raw) as Partial<Salvo>;
+        if (s.conta) {
+          setConta(s.conta);
+          setContas(s.contas ?? [s.conta]);
+          selecionarConta(s.conta);
+        }
+      }
     } catch {
       /* ignore */
     }
     setReady(true);
   }, []);
 
-  const entrar = (c: Conta) => {
+  function salvar(c: Conta | null, cs: Conta[]) {
     setConta(c);
+    setContas(cs);
     try {
-      sessionStorage.setItem(KEY, JSON.stringify({ conta: c }));
+      if (c) sessionStorage.setItem(KEY, JSON.stringify({ conta: c, contas: cs } satisfies Salvo));
+      else sessionStorage.removeItem(KEY);
     } catch {
       /* ignore */
     }
+  }
+
+  const entrar = (r: LoginResposta) => {
+    selecionarConta(r.conta);
+    salvar(r.conta, r.contas);
+  };
+  const trocarConta = (c: Conta) => {
+    selecionarConta(c);
+    salvar(c, contas);
   };
   const sair = () => {
-    setConta(null);
-    try {
-      sessionStorage.removeItem(KEY);
-    } catch {
-      /* ignore */
-    }
+    void sairApi();
+    salvar(null, []);
   };
 
-  return <Ctx.Provider value={{ ready, conta, entrar, sair }}>{children}</Ctx.Provider>;
+  return (
+    <Ctx.Provider value={{ ready, conta, contas, entrar, trocarConta, sair }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export function useAuth() {

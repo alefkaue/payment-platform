@@ -2,23 +2,37 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
-  ChevronRight,
   CreditCard,
-  Fingerprint,
   Globe,
+  KeyRound,
   LogOut,
   Moon,
+  ScanFace,
   ShieldCheck,
   ShoppingCart,
+  Smartphone,
   Snowflake,
   Users,
 } from "lucide-react";
-import { atualizarCartao, cvvDinamico, meuCartao, minhaConta } from "@/lib/api";
-import { PORTES } from "@/lib/empresa";
+import {
+  alterarLimites,
+  aparelhoAtual,
+  atualizarCartao,
+  confiarAparelho,
+  criarChave,
+  cvvDinamico,
+  meuCartao,
+  meusLimites,
+  minhaConta,
+  minhasChaves,
+  MODO_API,
+} from "@/lib/api";
+import { PAPEIS, PORTES, REGIMES_APURACAO } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
-import { fmtBRL } from "@/lib/format";
-import type { Cartao } from "@/lib/types";
-import { PageTitle } from "@/components/payflow/ui";
+import { fmtBRL, fmtData, parseValor } from "@/lib/format";
+import type { Limites } from "@/lib/types";
+import { ErrorBox, PageTitle } from "@/components/payflow/ui";
+import { LivenessCheck } from "@/components/payflow/liveness";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/config")({
@@ -29,74 +43,57 @@ export const Route = createFileRoute("/_app/config")({
 function Config() {
   const { conta: sessao, sair } = useAuth();
   const nav = useNavigate();
-  const conta = useQuery({ queryKey: ["conta"], queryFn: minhaConta });
+  const conta = useQuery({ queryKey: ["conta", sessao?.numero], queryFn: minhaConta });
   const ehPJ = sessao?.tipo === "PJ";
-
-  const lim = ehPJ
-    ? { transacao: 250000, diario: 1000000, noturno: 50000 }
-    : { transacao: 5000, diario: 10000, noturno: 1000 };
-
-  const porte = conta.data?.porte ?? "GRANDE";
-  const perfil = PORTES[porte];
-  const metodoCert = ehPJ && perfil.metodo === "certificado";
+  const perfil = PORTES[conta.data?.porte ?? "PME"];
 
   return (
     <div className="enter space-y-7">
       <PageTitle sub="Cartão, limites, segurança e dados da sua conta.">Configurações</PageTitle>
 
       <CartaoSection />
+      <LimitesSection podeEditar={!ehPJ || sessao?.papel === "admin"} />
+      <AparelhoSection />
 
-      {/* Limites */}
-      <section className="surface overflow-hidden">
-        <h2 className="px-5 pt-5 text-lg text-ink">Limites</h2>
-        <ul className="mt-2 divide-y divide-border">
-          <LimiteRow label="Por transação (Pix/transferência)" valor={lim.transacao} />
-          <LimiteRow label="Diário" valor={lim.diario} />
-          <LimiteRow label="Noturno (20h–6h)" valor={lim.noturno} icon={<Moon size={15} />} />
-        </ul>
-      </section>
-
-      {/* Segurança e acesso */}
-      <section className="surface p-5">
-        <h2 className="text-lg text-ink">Segurança e acesso</h2>
-        <div className="mt-4 flex items-center gap-3">
-          <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-tint text-ink">
-            {metodoCert ? <ShieldCheck size={20} /> : <Fingerprint size={20} />}
-          </span>
-          <div className="min-w-0">
-            <p className="font-medium text-ink">
-              {metodoCert ? "Certificado digital e-CNPJ" : "Biometria do titular"}
-            </p>
-            <p className="text-xs text-mut3">
-              {metodoCert
-                ? "Acesso por ICP-Brasil (A1/A3) — o mesmo que assina a NF-e."
-                : "Reconhecimento facial para entrar e aprovar pagamentos."}
-            </p>
+      {ehPJ && (
+        <section className="surface p-5">
+          <h2 className="text-lg text-ink">Seu acesso nesta empresa</h2>
+          <div className="mt-4 flex items-center gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-tint text-ink">
+              <Users size={20} />
+            </span>
+            <div className="min-w-0">
+              <p className="font-medium text-ink">{PAPEIS[sessao?.papel ?? "consulta"]}</p>
+              <p className="text-xs text-mut3">
+                {sessao?.alcada == null
+                  ? "Sem limite de alçada."
+                  : `Alçada de ${fmtBRL(sessao.alcada)} por operação. Acima disso, outra pessoa aprova.`}
+              </p>
+            </div>
           </div>
-        </div>
-        {ehPJ && perfil.duplaAssinatura && (
-          <div className="mt-3 flex items-center gap-3 rounded-[14px] bg-tint px-4 py-3">
-            <Users size={18} className="shrink-0 text-ink" />
-            <p className="text-sm text-mut2">
-              <strong className="font-medium text-ink">3 assinantes com alçadas</strong> · dupla
-              autorização (maker-checker) acima do limite.
-            </p>
-          </div>
-        )}
-      </section>
+          <p className="mt-3 rounded-[14px] bg-tint px-4 py-3 text-sm text-mut2">
+            {perfil.governanca}
+          </p>
+        </section>
+      )}
 
-      {/* Dados da conta */}
       <section className="surface overflow-hidden">
         <h2 className="px-5 pt-5 text-lg text-ink">Conta</h2>
         <ul className="mt-2 divide-y divide-border px-5 pb-2 text-sm">
           <Dado label="Titular" valor={conta.data?.nome ?? "—"} />
           <Dado
-            label={ehPJ ? "CNPJ" : "Tipo"}
-            valor={ehPJ ? (conta.data?.cnpj ?? "—") : "Pessoa física"}
+            label="Agência / conta"
+            valor={`${conta.data?.agencia ?? "0001"} / ${conta.data?.numero ?? "—"}`}
           />
+          {ehPJ && <Dado label="CNPJ" valor={conta.data?.cnpj ?? "—"} />}
           {ehPJ && <Dado label="Porte" valor={perfil.label} />}
+          {ehPJ && conta.data?.regime_apuracao && (
+            <Dado label="Apuração" valor={REGIMES_APURACAO[conta.data.regime_apuracao].label} />
+          )}
         </ul>
       </section>
+
+      <ChavesSection ehPJ={ehPJ} />
 
       <button
         onClick={() => {
@@ -108,6 +105,204 @@ function Config() {
         <LogOut size={18} /> Sair da conta
       </button>
     </div>
+  );
+}
+
+/* --- Limites (no servidor; aumento com carência) --------------------------- */
+
+type CampoLimite = "por_transacao" | "diurno" | "noturno";
+
+function LimitesSection({ podeEditar }: { podeEditar: boolean }) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["limites"], queryFn: meusLimites });
+  const [editando, setEditando] = useState<CampoLimite | null>(null);
+  const [valor, setValor] = useState("");
+  const mut = useMutation({
+    mutationFn: alterarLimites,
+    onSuccess: (l: Limites) => {
+      qc.setQueryData(["limites"], l);
+      setEditando(null);
+    },
+  });
+  const l = q.data;
+  const linhas: { k: CampoLimite; label: string; icon?: React.ReactNode }[] = [
+    { k: "por_transacao", label: "Por transação (Pix/transferência)" },
+    { k: "diurno", label: "Diurno (6h–20h)" },
+    { k: "noturno", label: "Noturno (20h–6h)", icon: <Moon size={15} /> },
+  ];
+  return (
+    <section className="surface overflow-hidden">
+      <h2 className="px-5 pt-5 text-lg text-ink">Limites</h2>
+      <p className="px-5 text-xs text-mut3">
+        Reduzir vale na hora. Aumentar só vale 24h depois: se alguém tentar subir seu limite num
+        golpe, dá tempo de perceber.
+      </p>
+      <ul className="mt-2 divide-y divide-border">
+        {linhas.map(({ k, label, icon }) => {
+          const pendente = l?.pendente?.[k];
+          return (
+            <li key={k} className="px-5 py-3.5">
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-2 text-sm text-mut2">
+                  {icon} {label}
+                </span>
+                {editando === k ? (
+                  <form
+                    className="flex items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const v = parseValor(valor);
+                      if (v > 0) mut.mutate({ [k]: v });
+                    }}
+                  >
+                    <input
+                      autoFocus
+                      inputMode="decimal"
+                      aria-label={`Novo limite: ${label}`}
+                      className="field h-9 w-28 tabular"
+                      value={valor}
+                      onChange={(e) => setValor(e.target.value)}
+                    />
+                    <button className="btn btn-ink h-9 px-3 text-sm" disabled={mut.isPending}>
+                      Salvar
+                    </button>
+                  </form>
+                ) : (
+                  <button
+                    className="tabular font-semibold text-ink disabled:cursor-default"
+                    disabled={!podeEditar || !l}
+                    onClick={() => {
+                      setEditando(k);
+                      setValor(l ? String(l[k]) : "");
+                    }}
+                  >
+                    {l ? fmtBRL(l[k]) : "—"}
+                  </button>
+                )}
+              </div>
+              {pendente != null && l?.pendente && (
+                <p className="mt-1 text-xs text-tax2">
+                  Aumento para {fmtBRL(pendente)} vale a partir de {fmtData(l.pendente.vigente_em)}.
+                </p>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      {mut.isError && (
+        <div className="px-5 pb-4">
+          <ErrorBox>{(mut.error as Error).message}</ErrorBox>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/* --- Aparelho confiável --------------------------------------------------- */
+
+function AparelhoSection() {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["aparelho"], queryFn: aparelhoAtual });
+  const [liveness, setLiveness] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const confiavel = q.data?.confiavel ?? true;
+  return (
+    <section className="surface p-5">
+      <h2 className="text-lg text-ink">Segurança</h2>
+      <div className="mt-4 flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-tint text-ink">
+          {confiavel ? <ShieldCheck size={20} /> : <Smartphone size={20} />}
+        </span>
+        <div className="min-w-0">
+          <p className="font-medium text-ink">
+            {confiavel ? "Este aparelho é confiável" : "Aparelho ainda não confirmado"}
+          </p>
+          <p className="text-xs text-mut3">
+            {confiavel
+              ? "Verificação facial pedida em pagamentos acima de R$ 500."
+              : "Limite de R$ 200 por Pix e R$ 1.000 por dia até confirmar com o rosto."}
+          </p>
+        </div>
+      </div>
+      {!confiavel && (
+        <button className="btn btn-ink mt-4 w-full gap-2" onClick={() => setLiveness(true)}>
+          <ScanFace size={18} /> Confirmar este aparelho
+        </button>
+      )}
+      {erro && (
+        <div className="mt-3">
+          <ErrorBox>{erro}</ErrorBox>
+        </div>
+      )}
+      {liveness && (
+        <LivenessCheck
+          onClose={() => setLiveness(false)}
+          onSuccess={(prova) => {
+            setLiveness(false);
+            confiarAparelho(prova)
+              .then(() => qc.invalidateQueries({ queryKey: ["aparelho"] }))
+              .catch((e: Error) => setErro(e.message));
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+/* --- Chaves Pix ----------------------------------------------------------- */
+
+function ChavesSection({ ehPJ }: { ehPJ: boolean }) {
+  const qc = useQueryClient();
+  const q = useQuery({ queryKey: ["chaves"], queryFn: minhasChaves });
+  const mut = useMutation({
+    mutationFn: (tipo: string) => criarChave(tipo),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["chaves"] }),
+  });
+  const tipoDoc = ehPJ ? "cnpj" : "cpf";
+  const temDoc = q.data?.some((k) => k.tipo === tipoDoc);
+  return (
+    <section className="surface p-5">
+      <h2 className="flex items-center gap-2 text-lg text-ink">
+        <KeyRound size={18} /> Chaves Pix
+      </h2>
+      {q.data?.length ? (
+        <ul className="mt-3 divide-y divide-border text-sm">
+          {q.data.map((k) => (
+            <li key={k.id} className="flex items-center justify-between gap-3 py-2.5">
+              <span className="uppercase text-mut3">{k.tipo}</span>
+              <span className="truncate font-mono text-xs text-ink">{k.valor}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="mt-2 text-sm text-mut3">
+          Você ainda não tem chaves. Crie uma para receber Pix.
+        </p>
+      )}
+      <div className="mt-4 flex flex-wrap gap-2">
+        {!temDoc && (
+          <button
+            className="btn btn-ghost h-9 text-sm"
+            disabled={mut.isPending}
+            onClick={() => mut.mutate(tipoDoc)}
+          >
+            Usar meu {ehPJ ? "CNPJ" : "CPF"}
+          </button>
+        )}
+        <button
+          className="btn btn-ghost h-9 text-sm"
+          disabled={mut.isPending}
+          onClick={() => mut.mutate("aleatoria")}
+        >
+          Criar chave aleatória
+        </button>
+      </div>
+      {mut.isError && (
+        <div className="mt-3">
+          <ErrorBox>{(mut.error as Error).message}</ErrorBox>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -175,6 +370,7 @@ function CartaoSection() {
 
       <p className="mt-2 text-xs text-mut3">
         100% digital — sem plástico. Adicione à carteira do celular para pagar por aproximação.
+        {MODO_API && " Cartão em demonstração: a emissão real ainda não está ligada ao banco."}
       </p>
 
       <div className="surface mt-3 divide-y divide-border">
@@ -257,20 +453,6 @@ function ToggleRow({
         />
       </button>
     </div>
-  );
-}
-
-function LimiteRow({ label, valor, icon }: { label: string; valor: number; icon?: React.ReactNode }) {
-  return (
-    <li className="flex items-center justify-between px-5 py-3.5">
-      <span className="flex items-center gap-2 text-sm text-mut2">
-        {icon} {label}
-      </span>
-      <span className="flex items-center gap-1.5">
-        <span className="tabular font-semibold text-ink">{fmtBRL(valor)}</span>
-        <ChevronRight size={16} className="text-mut3" />
-      </span>
-    </li>
   );
 }
 

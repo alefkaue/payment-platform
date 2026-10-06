@@ -1,18 +1,8 @@
-<!-- LOVABLE:BEGIN -->
-
-> [!IMPORTANT]
-> This project is connected to [Lovable](https://lovable.dev). Avoid rewriting
-> published git history — force pushing, or rebasing/amending/squashing commits
-> that are already pushed — as it rewrites history on Lovable's side and the
-> user will likely lose their project history.
->
-> Commits you push to the connected branch sync back to Lovable and show up in
-> the editor, so keep the branch in a working state.
-
-<!-- LOVABLE:END -->
-
 ## Architecture rules
 
-- All data access goes through `src/lib/api.ts` (mock-backed today, typed to mirror the real backend); screens never import `src/mocks` directly — keeps the backend swap a one-file change.
-- Split math lives only in `src/lib/split.ts` (cbs/ibs rounded, liquido = remainder, PJ only) — single source of truth matching the backend.
-- Authenticated screens live under the pathless `_app` layout (TanStack Router, not React Router) — the template's router is fixed.
+- All data access goes through `src/lib/api.ts`; screens never import `src/mocks` directly. `api.ts` talks to the FastAPI backend when `VITE_API_URL` is set (see `src/lib/http.ts`) and falls back to the mocks (demo mode) otherwise.
+- Money comes from the API as decimal strings; `api.ts` converts with `num()` only for display. Do not do money math in the app.
+- Split rules mirror the backend: transfers never have split; the split happens when a charge (cobrança) with an invoice (NF-e) is paid, retaining the CBS/IBS stated on the invoice. `src/lib/split.ts` holds the transition table (2026–2033) and is used only for estimates (simulator, loja/viagens demo).
+- Login is per person; the current account (PF or a company the person is linked to) goes in the `X-Conta` header. Switching accounts clears the React Query cache.
+- Authenticated screens live under the pathless `_app` layout (TanStack Router, not React Router).
+- The project no longer depends on Lovable: `vite.config.ts` declares the standard plugins directly.

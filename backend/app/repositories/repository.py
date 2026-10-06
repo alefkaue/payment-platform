@@ -1,371 +1,1105 @@
 """
 Repositório único do PayFlow (SQLAlchemy). Roda igual sobre Postgres (produção) e
-SQLite (dev/testes) -- ver app/db/base.py. Toda a persistência passa por aqui;
-services e routers nunca tocam a sessão/ORM direto.
+SQLite (dev/testes). Services e routers nunca tocam a sessão/ORM direto; tudo
+que precisa ser atômico (dinheiro) mora aqui.
 
-Pontos sensíveis concentrados neste arquivo:
-- `executar_transferencia`: débito + crédito + repasse do imposto à conta Governo
-  + registro da transação + pernas do split + histórico de saldo -- tudo numa
-  transação de banco só, com SELECT ... FOR UPDATE nas carteiras envolvidas
-  (fecha a condição de corrida; no Postgres é efetivo, no SQLite o lock de banco
-  serializa as escritas).
-- Idempotência: `idempotency_key` única por transação -- um retry/double-click
-  com a mesma chave devolve a transação já criada, sem duplicar (item #11).
-- Refresh tokens: guardados só por hash, com rotação/revogação.
+O coração é `executar_movimento`: debita a origem, credita o destino (no saldo
+livre ou no bloqueado), manda o imposto para a conta TRIBUTOS, grava a transação,
+as pernas do split e o histórico de saldo -- numa transação de banco só, com
+SELECT ... FOR UPDATE nas carteiras envolvidas (ordem fixa por id, sem deadlock).
+Checagens que dependem do saldo/uso do período (saldo suficiente, limites) rodam
+DENTRO do lock, via o callback `checar`, para duas operações simultâneas não
+passarem as duas pelo mesmo limite.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
-from typing import Optional
+from typing import Callable, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
+from app.core import tempo
+from app.core.documentos import gerar_numero_conta
 from app.db.base import usando_postgres
 from app.db.models import (
     AuthMetodo,
+    AutorizacaoRecorrente,
     Carteira,
+    ChavePix,
+    Cobranca,
+    Contestacao,
+    CreditoTributario,
+    DesafioBiometria,
+    Dispositivo,
+    Empresa,
     HistoricoSaldo,
+    Limite,
     LogAuditoria,
+    OperacaoPendente,
     Papel,
+    PapelVinculo,
     RefreshToken,
+    RegimeApuracao,
+    Rendimento,
+    RepasseTributo,
     SessaoMfa,
     SplitLiquidacao,
-    SplitRegra,
+    StatusTransacao,
     TipoPessoa,
     Transacao,
     Usuario,
+    Vinculo,
+    Webhook,
+    WebhookEntrega,
 )
 from app.repositories.exceptions import (
-    CarteiraGovernoAusenteError,
-    DocumentoDuplicadoError,
+    CnpjDuplicadoError,
+    ContaSistemaAusenteError,
+    CpfDuplicadoError,
     EmailDuplicadoError,
-    IdDuplicadoError,
     SaldoInsuficienteError,
 )
-from app.services.split_service import ResultadoSplit, ALIQUOTAS
+from app.services.split_service import ResultadoSplit
+
+ZERO = Decimal("0.00")
+SISTEMAS = ("CAIXA", "TRIBUTOS", "FISCO")
+
+
+def _utc(dt: Optional[datetime]) -> Optional[datetime]:
+    """SQLite devolve datetime sem fuso; tudo aqui é UTC."""
+    if dt is None:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 class Repositorio:
     def __init__(self, session_factory: sessionmaker):
         self._sf = session_factory
 
-    # ===================== Contas / Usuários =====================
+    # =========================================================================
+    # Pessoas
+    # =========================================================================
 
-    def criar_conta(
+    def criar_pessoa(
         self,
         *,
-        carteira_id: int,
         nome: str,
         email: str,
+        cpf: Optional[str],
         senha_hash: str,
-        tipo: TipoPessoa,
-        documento: Optional[str],
         embedding_cifrado: Optional[bytes],
         papel: Papel = Papel.USUARIO,
-        saldo_inicial: Decimal = Decimal("0.00"),
+        com_carteira: bool = True,
+        limites_padrao: Optional[dict] = None,
     ) -> dict:
-        """Cria Usuario + Carteira numa única transação (fecha o item #10:
-        atomicidade cadastro+biometria -- antes eram 2 escritas separadas)."""
+        """Cria a pessoa e (opcional) a carteira PF com os limites padrão, numa
+        transação só."""
         with self._sf() as s:
-            usuario = Usuario(
-                nome=nome,
-                email=email.lower().strip(),
-                senha_hash=senha_hash,
-                tipo=tipo,
-                documento=documento,
-                papel=papel,
-                embedding_facial_cifrado=embedding_cifrado,
+            u = Usuario(
+                nome=nome, email=email.lower().strip(), cpf=cpf, senha_hash=senha_hash,
+                papel=papel, embedding_facial_cifrado=embedding_cifrado,
             )
-            carteira = Carteira(chave=str(carteira_id), saldo=saldo_inicial, usuario=usuario)
-            s.add_all([usuario, carteira])
+            s.add(u)
             try:
                 s.flush()
             except IntegrityError as e:
                 s.rollback()
-                raise self._traduzir_integridade(e, carteira_id, email, documento)
-            if saldo_inicial > 0:
-                s.add(
-                    HistoricoSaldo(
-                        carteira_id=carteira.id,
-                        saldo_anterior=Decimal("0.00"),
-                        saldo_novo=saldo_inicial,
-                        motivo="saldo_inicial",
-                    )
-                )
+                texto = str(e.orig).lower()
+                if "cpf" in texto:
+                    raise CpfDuplicadoError("Já existe uma conta com esse CPF.") from None
+                raise EmailDuplicadoError("Já existe uma conta com esse e-mail.") from None
+            carteira = None
+            if com_carteira:
+                carteira = self._nova_carteira(s, TipoPessoa.PF, usuario_id=u.id)
+                if limites_padrao:
+                    s.add(Limite(carteira_id=carteira.id, **limites_padrao))
             s.commit()
-            s.refresh(usuario)
-            s.refresh(carteira)
-            return self._conta_dict(usuario, carteira)
-
-    @staticmethod
-    def _traduzir_integridade(erro: IntegrityError, carteira_id: int, email: str, documento):
-        texto = str(erro.orig).lower()
-        if "chave" in texto or "carteira" in texto:
-            return IdDuplicadoError(f"Já existe uma carteira com o ID {carteira_id}.")
-        if "email" in texto:
-            return EmailDuplicadoError("Já existe uma conta com esse e-mail.")
-        if "documento" in texto:
-            return DocumentoDuplicadoError("Já existe uma conta com esse documento.")
-        # Fallback: não sabemos qual constraint -- devolve o mais provável no cadastro.
-        return IdDuplicadoError(f"Já existe uma carteira com o ID {carteira_id}.")
+            if carteira is None:
+                return self._usuario_auth_dict(u)
+            return self._conta_dict(s, carteira)
 
     def obter_usuario_por_email(self, email: str) -> Optional[dict]:
         with self._sf() as s:
             u = s.scalar(select(Usuario).where(Usuario.email == email.lower().strip()))
-            if not u:
-                return None
-            return self._usuario_auth_dict(u)
+            return self._usuario_auth_dict(u) if u else None
 
     def obter_usuario_por_id(self, usuario_id: int) -> Optional[dict]:
         with self._sf() as s:
             u = s.get(Usuario, usuario_id)
             return self._usuario_auth_dict(u) if u else None
 
-    def obter_conta_por_carteira(self, carteira_id: int) -> Optional[dict]:
+    def obter_embedding_cifrado(self, usuario_id: int) -> Optional[bytes]:
         with self._sf() as s:
-            c = self._buscar_carteira(s, carteira_id)
-            return self._conta_dict(c.usuario, c) if c else None
+            u = s.get(Usuario, usuario_id)
+            if u is None or u.embedding_facial_cifrado is None:
+                return None
+            return bytes(u.embedding_facial_cifrado)
 
-    def carteira_existe(self, carteira_id: int) -> bool:
+    def garantir_admin(self, *, email: str, senha_hash: str) -> dict:
+        existente = self.obter_usuario_por_email(email)
+        if existente:
+            return existente
+        return self.criar_pessoa(
+            nome="Administrador PayFlow", email=email, cpf=None, senha_hash=senha_hash,
+            embedding_cifrado=None, papel=Papel.ADMIN, com_carteira=False,
+        )
+
+    # =========================================================================
+    # Empresas e vínculos
+    # =========================================================================
+
+    def criar_empresa(
+        self,
+        *,
+        usuario_id: int,
+        cnpj: str,
+        razao_social: str,
+        nome_fantasia: Optional[str],
+        porte: str,
+        regime_apuracao: RegimeApuracao,
+        cnae: Optional[str],
+        situacao_cadastral: Optional[str],
+        verificada_por: str,
+        limites_padrao: Optional[dict] = None,
+    ) -> dict:
+        """Empresa + carteira PJ + vínculo ADMIN do criador, numa transação."""
         with self._sf() as s:
-            return self._buscar_carteira(s, carteira_id) is not None
+            e = Empresa(
+                cnpj=cnpj, razao_social=razao_social, nome_fantasia=nome_fantasia, porte=porte,
+                regime_apuracao=regime_apuracao, cnae=cnae, situacao_cadastral=situacao_cadastral,
+                verificada_em=tempo.agora(), verificada_por=verificada_por,
+            )
+            s.add(e)
+            try:
+                s.flush()
+            except IntegrityError:
+                s.rollback()
+                raise CnpjDuplicadoError("Esse CNPJ já tem conta no PayFlow.") from None
+            carteira = self._nova_carteira(s, TipoPessoa.PJ, empresa_id=e.id)
+            if limites_padrao:
+                s.add(Limite(carteira_id=carteira.id, **limites_padrao))
+            s.add(Vinculo(usuario_id=usuario_id, empresa_id=e.id, papel=PapelVinculo.ADMIN, alcada=None))
+            s.commit()
+            return self._conta_dict(s, carteira)
+
+    def obter_empresa(self, empresa_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            e = s.get(Empresa, empresa_id)
+            return self._empresa_dict(e) if e else None
+
+    def obter_vinculo(self, usuario_id: int, empresa_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            v = s.scalar(
+                select(Vinculo).where(
+                    Vinculo.usuario_id == usuario_id, Vinculo.empresa_id == empresa_id, Vinculo.ativo.is_(True)
+                )
+            )
+            return self._vinculo_dict(v) if v else None
+
+    def criar_ou_atualizar_vinculo(
+        self, *, empresa_id: int, usuario_id: int, papel: PapelVinculo, alcada: Optional[Decimal]
+    ) -> dict:
+        with self._sf() as s:
+            v = s.scalar(select(Vinculo).where(Vinculo.usuario_id == usuario_id, Vinculo.empresa_id == empresa_id))
+            if v is None:
+                v = Vinculo(usuario_id=usuario_id, empresa_id=empresa_id)
+                s.add(v)
+            v.papel, v.alcada, v.ativo = papel, alcada, True
+            s.commit()
+            s.refresh(v)
+            return self._vinculo_dict(v)
+
+    def listar_vinculos(self, empresa_id: int) -> list[dict]:
+        with self._sf() as s:
+            vs = s.scalars(select(Vinculo).where(Vinculo.empresa_id == empresa_id).order_by(Vinculo.id)).all()
+            return [self._vinculo_dict(v) for v in vs]
+
+    def desativar_vinculo(self, vinculo_id: int, empresa_id: int) -> bool:
+        with self._sf() as s:
+            v = s.get(Vinculo, vinculo_id)
+            if not v or v.empresa_id != empresa_id:
+                return False
+            v.ativo = False
+            s.commit()
+            return True
+
+    def contar_admins_ativos(self, empresa_id: int) -> int:
+        with self._sf() as s:
+            return int(
+                s.scalar(
+                    select(func.count(Vinculo.id)).where(
+                        Vinculo.empresa_id == empresa_id, Vinculo.ativo.is_(True), Vinculo.papel == PapelVinculo.ADMIN
+                    )
+                )
+                or 0
+            )
+
+    # =========================================================================
+    # Carteiras
+    # =========================================================================
+
+    def _nova_carteira(self, s: Session, titular: TipoPessoa, **kw) -> Carteira:
+        for _ in range(20):
+            numero = gerar_numero_conta()
+            if not s.scalar(select(Carteira.id).where(Carteira.numero == numero)):
+                c = Carteira(titular_tipo=titular, numero=numero, saldo=ZERO, saldo_bloqueado=ZERO, **kw)
+                s.add(c)
+                s.flush()
+                return c
+        raise RuntimeError("Não foi possível gerar um número de conta livre.")
+
+    def garantir_contas_sistema(self) -> None:
+        with self._sf() as s:
+            for nome in SISTEMAS:
+                if not s.scalar(select(Carteira).where(Carteira.sistema == nome)):
+                    self._nova_carteira(s, TipoPessoa.SISTEMA, sistema=nome)
+            s.commit()
+
+    def carteira_sistema(self, nome: str) -> dict:
+        with self._sf() as s:
+            return self._conta_dict(s, self._sistema(s, nome))
+
+    def _sistema(self, s: Session, nome: str) -> Carteira:
+        c = s.scalar(select(Carteira).where(Carteira.sistema == nome))
+        if c is None:
+            raise ContaSistemaAusenteError(nome)
+        return c
+
+    def obter_conta(self, carteira_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            c = s.get(Carteira, carteira_id)
+            return self._conta_dict(s, c) if c else None
+
+    def obter_conta_por_numero(self, numero: str, agencia: str = "0001") -> Optional[dict]:
+        with self._sf() as s:
+            c = s.scalar(select(Carteira).where(Carteira.numero == numero, Carteira.agencia == agencia))
+            return self._conta_dict(s, c) if c else None
+
+    def carteira_pf_do_usuario(self, usuario_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            c = s.scalar(select(Carteira).where(Carteira.usuario_id == usuario_id))
+            return self._conta_dict(s, c) if c else None
+
+    def carteira_da_empresa(self, empresa_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            c = s.scalar(select(Carteira).where(Carteira.empresa_id == empresa_id))
+            return self._conta_dict(s, c) if c else None
+
+    def contas_do_usuario(self, usuario_id: int) -> list[dict]:
+        """Carteira PF + carteiras PJ das empresas em que a pessoa tem vínculo ativo."""
+        with self._sf() as s:
+            res = []
+            pf = s.scalar(select(Carteira).where(Carteira.usuario_id == usuario_id))
+            if pf:
+                res.append({**self._conta_dict(s, pf), "papel": None, "alcada": None})
+            vs = s.scalars(select(Vinculo).where(Vinculo.usuario_id == usuario_id, Vinculo.ativo.is_(True))).all()
+            for v in vs:
+                c = s.scalar(select(Carteira).where(Carteira.empresa_id == v.empresa_id))
+                if c:
+                    res.append({**self._conta_dict(s, c), "papel": v.papel.value, "alcada": v.alcada})
+            return res
 
     def listar_contas(self, *, limite: int = 50, offset: int = 0) -> list[dict]:
         with self._sf() as s:
-            carteiras = s.scalars(
-                select(Carteira).order_by(Carteira.id).limit(limite).offset(offset)
-            ).all()
-            return [self._conta_dict(c.usuario, c) for c in carteiras]
+            cs = s.scalars(select(Carteira).order_by(Carteira.id).limit(limite).offset(offset)).all()
+            return [self._conta_dict(s, c) for c in cs]
 
-    def obter_carteira_do_usuario(self, usuario_id: int) -> Optional[dict]:
+    def carteiras_para_rendimento(self) -> list[int]:
         with self._sf() as s:
-            c = s.scalar(select(Carteira).where(Carteira.usuario_id == usuario_id))
-            return self._conta_dict(c.usuario, c) if c else None
+            return list(
+                s.scalars(
+                    select(Carteira.id).where(
+                        Carteira.titular_tipo.in_([TipoPessoa.PF, TipoPessoa.PJ]), Carteira.saldo > 0
+                    )
+                ).all()
+            )
 
-    # ---- Biometria ----
+    # =========================================================================
+    # Movimentação (atômica)
+    # =========================================================================
 
-    def salvar_embedding_cifrado(self, carteira_id: int, blob: bytes) -> None:
-        with self._sf() as s:
-            c = self._buscar_carteira(s, carteira_id)
-            c.usuario.embedding_facial_cifrado = blob
-            s.commit()
-
-    def obter_embedding_cifrado(self, carteira_id: int) -> Optional[bytes]:
-        with self._sf() as s:
-            c = self._buscar_carteira(s, carteira_id)
-            if c is None or c.usuario.embedding_facial_cifrado is None:
-                return None
-            return bytes(c.usuario.embedding_facial_cifrado)
-
-    # ===================== Conta Governo =====================
-
-    def garantir_conta_governo(
-        self, *, carteira_id: int, nome: str, email: str, senha_hash: str, documento: str
-    ) -> dict:
-        """Cria a conta GOV se ainda não existir (idempotente). É o destino do
-        imposto retido no split."""
-        with self._sf() as s:
-            gov = s.scalar(select(Usuario).where(Usuario.tipo == TipoPessoa.GOV))
-            if gov:
-                c = gov.carteiras[0] if gov.carteiras else None
-                return self._conta_dict(gov, c)
-        return self.criar_conta(
-            carteira_id=carteira_id,
-            nome=nome,
-            email=email,
-            senha_hash=senha_hash,
-            tipo=TipoPessoa.GOV,
-            documento=documento,
-            embedding_cifrado=None,
-            papel=Papel.ADMIN,
-        )
-
-    def _carteira_governo(self, s) -> Carteira:
-        gov = s.scalar(select(Usuario).where(Usuario.tipo == TipoPessoa.GOV))
-        if not gov or not gov.carteiras:
-            raise CarteiraGovernoAusenteError()
-        return gov.carteiras[0]
-
-    # ===================== Transferência + Split =====================
-
-    def executar_transferencia(
+    def executar_movimento(
         self,
         *,
-        origem_carteira_id: int,
-        destino_carteira_id: int,
+        origem_id: int,
+        destino_id: int,
         split: ResultadoSplit,
-        verificacao_facial: Optional[dict],
+        tipo: str,
         auth_metodo: AuthMetodo,
+        autor_usuario_id: Optional[int] = None,
+        dispositivo_id: Optional[int] = None,
+        descricao: Optional[str] = None,
+        verificacao_facial: Optional[dict] = None,
         idempotency_key: Optional[str] = None,
+        bloqueio_ate: Optional[datetime] = None,
+        permitir_saldo_negativo: bool = False,
+        transacao_original_id: Optional[int] = None,
+        usar_bloqueado_destino_primeiro: bool = False,
+        checar: Optional[Callable[[Session, Carteira], None]] = None,
+        cobranca_id: Optional[int] = None,
     ) -> dict:
+        """Move `split.valor_bruto` da origem: o destino recebe `split.liquido`
+        (no saldo bloqueado se `bloqueio_ate`), a conta TRIBUTOS recebe cbs+ibs.
+        Levanta SaldoInsuficienteError; `checar` pode levantar qualquer erro de
+        domínio (limite estourado etc.) -- tudo dentro do lock."""
         with self._sf() as s:
-            # Idempotência: se a chave já produziu uma transação, devolve ela.
             if idempotency_key:
-                ja = s.scalar(
-                    select(Transacao).where(Transacao.idempotency_key == idempotency_key)
-                )
+                ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
                 if ja:
                     return self._transacao_dict(s, ja)
 
-            # Trava as carteiras envolvidas (origem, destino e GOV se houver imposto),
-            # sempre na mesma ordem (por chave) pra não dar deadlock entre A->B e B->A.
-            chaves = {str(origem_carteira_id), str(destino_carteira_id)}
-            gov_carteira = None
-            if split.aplicou_split and (split.cbs + split.ibs) > 0:
-                gov_carteira = self._carteira_governo(s)
-                chaves.add(gov_carteira.chave)
-
-            stmt = select(Carteira).where(Carteira.chave.in_(sorted(chaves)))
+            ids = {origem_id, destino_id}
+            tributos = None
+            if split.aplicou_split and split.imposto_total > 0:
+                tributos = self._sistema(s, "TRIBUTOS")
+                ids.add(tributos.id)
+            stmt = select(Carteira).where(Carteira.id.in_(sorted(ids))).order_by(Carteira.id)
             if usando_postgres():
                 stmt = stmt.with_for_update()
-            carteiras = {c.chave: c for c in s.scalars(stmt).all()}
+            cs = {c.id: c for c in s.scalars(stmt).all()}
+            origem, destino = cs[origem_id], cs[destino_id]
 
-            origem = carteiras[str(origem_carteira_id)]
-            destino = carteiras[str(destino_carteira_id)]
-            gov = carteiras.get(gov_carteira.chave) if gov_carteira else None
-
-            if origem.saldo < split.valor_bruto:
+            if checar:
+                checar(s, origem)
+            if not permitir_saldo_negativo and origem.saldo < split.valor_bruto:
                 raise SaldoInsuficienteError()
 
-            # Débito integral da origem; destino recebe só o líquido; GOV recebe imposto.
-            self._mover(s, origem, -split.valor_bruto, motivo="transferencia")
-            self._mover(s, destino, split.liquido, motivo="transferencia")
-            imposto = split.cbs + split.ibs
-            if gov is not None and imposto > 0:
-                self._mover(s, gov, imposto, motivo="imposto")
+            agora = tempo.agora()
+            self._mover(s, origem, -split.valor_bruto, motivo=tipo)
+            if bloqueio_ate is not None:
+                self._mover(s, destino, ZERO, bloqueado=split.liquido, motivo=f"{tipo}_retido")
+            else:
+                self._mover(s, destino, split.liquido, motivo=tipo)
+            if tributos is not None:
+                self._mover(s, cs[tributos.id], split.imposto_total, motivo="tributo_retido")
 
-            transacao = Transacao(
+            t = Transacao(
                 origem_carteira_id=origem.id,
                 destino_carteira_id=destino.id,
+                tipo=tipo,
                 valor_bruto=split.valor_bruto,
                 cbs=split.cbs,
                 ibs=split.ibs,
                 liquido=split.liquido,
-                tipo_destino=destino.usuario.tipo,
+                tipo_destino=destino.titular_tipo,
                 aplicou_split=split.aplicou_split,
                 auth_metodo=auth_metodo,
+                status=StatusTransacao.RETIDA if bloqueio_ate else StatusTransacao.CONCLUIDA,
+                bloqueio_ate=bloqueio_ate,
+                autor_usuario_id=autor_usuario_id,
+                dispositivo_id=dispositivo_id,
+                descricao=descricao,
                 verificacao_facial=verificacao_facial,
                 idempotency_key=idempotency_key,
+                transacao_original_id=transacao_original_id,
+                criado_em=agora,
             )
-            s.add(transacao)
+            s.add(t)
             s.flush()
-
-            # Pernas do split (reconstituição fiscal).
-            s.add(
-                SplitLiquidacao(
-                    transacao_id=transacao.id,
-                    natureza="LIQUIDO",
-                    carteira_destino_id=destino.id,
-                    valor=split.liquido,
-                )
-            )
-            if gov is not None and imposto > 0:
-                if split.cbs > 0:
-                    s.add(SplitLiquidacao(transacao_id=transacao.id, natureza="CBS", carteira_destino_id=gov.id, valor=split.cbs))
-                if split.ibs > 0:
-                    s.add(SplitLiquidacao(transacao_id=transacao.id, natureza="IBS", carteira_destino_id=gov.id, valor=split.ibs))
-
-            # Liga os HistoricoSaldo recém-criados (motivo transferencia/imposto) a esta transação.
-            self._vincular_historico(s, transacao.id)
-
+            if split.aplicou_split:
+                s.add(SplitLiquidacao(transacao_id=t.id, natureza="LIQUIDO", carteira_destino_id=destino.id, valor=split.liquido, criado_em=agora))
+                if tributos is not None:
+                    if split.cbs > 0:
+                        s.add(SplitLiquidacao(transacao_id=t.id, natureza="CBS", carteira_destino_id=tributos.id, valor=split.cbs, criado_em=agora))
+                    if split.ibs > 0:
+                        s.add(SplitLiquidacao(transacao_id=t.id, natureza="IBS", carteira_destino_id=tributos.id, valor=split.ibs, criado_em=agora))
+            if cobranca_id is not None:
+                cob = s.get(Cobranca, cobranca_id)
+                if cob.status != "aberta":
+                    s.rollback()
+                    raise ValueError("Esta cobrança não está mais aberta.")
+                cob.status, cob.transacao_id, cob.paga_em = "paga", t.id, agora
+            self._vincular_historico(s, t.id)
             try:
                 s.commit()
             except IntegrityError:
-                # Corrida na idempotency_key: outra requisição idêntica ganhou.
                 s.rollback()
                 if idempotency_key:
                     ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
                     if ja:
                         return self._transacao_dict(s, ja)
                 raise
-            s.refresh(transacao)
-            return self._transacao_dict(s, transacao)
+            s.refresh(t)
+            return self._transacao_dict(s, t)
 
-    def depositar(self, *, carteira_id: int, valor: Decimal) -> dict:
-        """Depósito controlado: a conta Governo (emissor) credita a carteira.
-        Sem split (depósito não é fato gerador de imposto). Debita a GOV (o
-        emissor pode ficar negativo -- representa dinheiro emitido em circulação)."""
+    def liberar_bloqueio(self, transacao_id: int) -> Optional[dict]:
+        """Retida -> concluída: move o valor do saldo bloqueado para o livre."""
         with self._sf() as s:
-            gov_carteira = self._carteira_governo(s)
-            chaves = sorted({str(carteira_id), gov_carteira.chave})
-            stmt = select(Carteira).where(Carteira.chave.in_(chaves))
+            t = s.get(Transacao, transacao_id)
+            if t is None or t.status != StatusTransacao.RETIDA:
+                return None
+            stmt = select(Carteira).where(Carteira.id == t.destino_carteira_id)
             if usando_postgres():
                 stmt = stmt.with_for_update()
-            carteiras = {c.chave: c for c in s.scalars(stmt).all()}
-            destino = carteiras[str(carteira_id)]
-            gov = carteiras[gov_carteira.chave]
-
-            self._mover(s, gov, -valor, motivo="emissao")
-            self._mover(s, destino, valor, motivo="deposito")
-
-            transacao = Transacao(
-                origem_carteira_id=gov.id,
-                destino_carteira_id=destino.id,
-                valor_bruto=valor,
-                cbs=Decimal("0.00"),
-                ibs=Decimal("0.00"),
-                liquido=valor,
-                tipo_destino=destino.usuario.tipo,
-                aplicou_split=False,
-                auth_metodo=AuthMetodo.SENHA,
-            )
-            s.add(transacao)
-            s.flush()
-            self._vincular_historico(s, transacao.id)
+            destino = s.scalar(stmt)
+            self._mover(s, destino, t.liquido, bloqueado=-t.liquido, motivo="liberacao_bloqueio")
+            t.status, t.bloqueio_ate = StatusTransacao.CONCLUIDA, None
+            self._vincular_historico(s, t.id)
             s.commit()
-            s.refresh(transacao)
-            return self._transacao_dict(s, transacao)
+            return self._transacao_dict(s, t)
 
-    def _mover(self, s, carteira: Carteira, delta: Decimal, *, motivo: str) -> None:
-        anterior = carteira.saldo
-        carteira.saldo = anterior + delta
-        s.add(
-            HistoricoSaldo(
-                carteira_id=carteira.id,
-                saldo_anterior=anterior,
-                saldo_novo=carteira.saldo,
-                motivo=motivo,
+    def transacoes_retidas_vencidas(self, ate: datetime) -> list[int]:
+        with self._sf() as s:
+            abertas = select(Contestacao.transacao_id).where(Contestacao.status == "aberta")
+            return list(
+                s.scalars(
+                    select(Transacao.id).where(
+                        Transacao.status == StatusTransacao.RETIDA,
+                        Transacao.bloqueio_ate <= ate,
+                        Transacao.id.not_in(abertas),
+                    )
+                ).all()
             )
-        )
+
+    def devolver(self, *, transacao_id: int, valor_maximo: Decimal, tipo: str, autor_usuario_id: Optional[int]) -> dict:
+        """Devolve ao pagador até `valor_maximo`, tirando primeiro do que está
+        bloqueado (se a transação estava retida) e depois do saldo livre do
+        recebedor, sem deixá-lo negativo. Usado pelo MED procedente."""
+        with self._sf() as s:
+            t = s.get(Transacao, transacao_id)
+            ids = sorted({t.origem_carteira_id, t.destino_carteira_id})
+            stmt = select(Carteira).where(Carteira.id.in_(ids)).order_by(Carteira.id)
+            if usando_postgres():
+                stmt = stmt.with_for_update()
+            cs = {c.id: c for c in s.scalars(stmt).all()}
+            origem, destino = cs[t.origem_carteira_id], cs[t.destino_carteira_id]
+
+            do_bloqueado = min(valor_maximo, destino.saldo_bloqueado) if t.status == StatusTransacao.RETIDA else ZERO
+            do_livre = min(valor_maximo - do_bloqueado, max(destino.saldo, ZERO))
+            total = do_bloqueado + do_livre
+            if total <= 0:
+                return {"valor_devolvido": ZERO, "transacao": None}
+
+            self._mover(s, destino, -do_livre, bloqueado=-do_bloqueado, motivo=tipo)
+            self._mover(s, origem, total, motivo=tipo)
+            dev = Transacao(
+                origem_carteira_id=destino.id, destino_carteira_id=origem.id, tipo=tipo,
+                valor_bruto=total, liquido=total, cbs=ZERO, ibs=ZERO, tipo_destino=origem.titular_tipo,
+                aplicou_split=False, auth_metodo=AuthMetodo.SISTEMA, autor_usuario_id=autor_usuario_id,
+                transacao_original_id=t.id, criado_em=tempo.agora(),
+            )
+            s.add(dev)
+            s.flush()
+            # Sobra bloqueada que não foi devolvida volta para o saldo livre.
+            if t.status == StatusTransacao.RETIDA:
+                sobra = t.liquido - do_bloqueado
+                if sobra > 0 and destino.saldo_bloqueado >= sobra:
+                    self._mover(s, destino, sobra, bloqueado=-sobra, motivo="liberacao_bloqueio")
+                t.bloqueio_ate = None
+            t.status = StatusTransacao.DEVOLVIDA if total >= t.liquido else StatusTransacao.DEVOLVIDA_PARCIAL
+            self._vincular_historico(s, dev.id)
+            s.commit()
+            return {"valor_devolvido": total, "transacao": self._transacao_dict(s, dev)}
+
+    def estornar_cobranca(self, *, cobranca_id: int, autor_usuario_id: int) -> dict:
+        """Devolve ao pagador o valor bruto de uma cobrança paga. O recebedor
+        devolve o líquido; os tributos ainda não repassados saem da conta
+        TRIBUTOS; os já repassados saem do recebedor e viram crédito informado
+        (a empresa recupera na apuração)."""
+        with self._sf() as s:
+            cob = s.get(Cobranca, cobranca_id)
+            t = s.get(Transacao, cob.transacao_id)
+            tributos = self._sistema(s, "TRIBUTOS")
+            ids = sorted({t.origem_carteira_id, t.destino_carteira_id, tributos.id})
+            stmt = select(Carteira).where(Carteira.id.in_(ids)).order_by(Carteira.id)
+            if usando_postgres():
+                stmt = stmt.with_for_update()
+            cs = {c.id: c for c in s.scalars(stmt).all()}
+            pagador, recebedor, trib = cs[t.origem_carteira_id], cs[t.destino_carteira_id], cs[tributos.id]
+
+            pernas = s.scalars(
+                select(SplitLiquidacao).where(
+                    SplitLiquidacao.transacao_id == t.id, SplitLiquidacao.natureza.in_(["CBS", "IBS"])
+                )
+            ).all()
+            de_tributos = sum((p.valor for p in pernas if p.repasse_id is None), ZERO)
+            ja_repassado = {p.natureza: p.valor for p in pernas if p.repasse_id is not None}
+            do_recebedor = t.liquido + sum(ja_repassado.values(), ZERO)
+            if recebedor.saldo < do_recebedor:
+                raise SaldoInsuficienteError()
+
+            self._mover(s, recebedor, -do_recebedor, motivo="estorno")
+            if de_tributos > 0:
+                self._mover(s, trib, -de_tributos, motivo="estorno_tributo")
+            self._mover(s, pagador, t.valor_bruto, motivo="estorno")
+            for p in pernas:
+                if p.repasse_id is None:
+                    p.estornada = True
+            if ja_repassado and recebedor.empresa_id:
+                for natureza, valor in ja_repassado.items():
+                    s.add(CreditoTributario(
+                        empresa_id=recebedor.empresa_id, tributo=natureza, valor=valor,
+                        fonte="estorno", referencia=f"cobranca:{cob.txid}",
+                    ))
+            dev = Transacao(
+                origem_carteira_id=recebedor.id, destino_carteira_id=pagador.id, tipo="estorno",
+                valor_bruto=t.valor_bruto, liquido=t.valor_bruto, cbs=ZERO, ibs=ZERO,
+                tipo_destino=pagador.titular_tipo, aplicou_split=False, auth_metodo=AuthMetodo.SISTEMA,
+                autor_usuario_id=autor_usuario_id, transacao_original_id=t.id, criado_em=tempo.agora(),
+            )
+            s.add(dev)
+            s.flush()
+            t.status = StatusTransacao.DEVOLVIDA
+            cob.status = "estornada"
+            self._vincular_historico(s, dev.id)
+            s.commit()
+            return self._transacao_dict(s, dev)
+
+    def _mover(self, s: Session, c: Carteira, delta: Decimal, *, motivo: str, bloqueado: Decimal = ZERO) -> None:
+        anterior, bloq_ant = c.saldo, c.saldo_bloqueado
+        c.saldo = anterior + delta
+        c.saldo_bloqueado = bloq_ant + bloqueado
+        s.add(HistoricoSaldo(
+            carteira_id=c.id, saldo_anterior=anterior, saldo_novo=c.saldo,
+            bloqueado_anterior=bloq_ant, bloqueado_novo=c.saldo_bloqueado, motivo=motivo,
+        ))
 
     @staticmethod
-    def _vincular_historico(s, transacao_id: int) -> None:
-        # Os HistoricoSaldo criados nesta sessão ainda sem transacao_id são desta transferência.
+    def _vincular_historico(s: Session, transacao_id: int) -> None:
         for obj in s.new:
             if isinstance(obj, HistoricoSaldo) and obj.transacao_id is None:
                 obj.transacao_id = transacao_id
 
-    def listar_transacoes(
-        self, *, carteira_id: Optional[int] = None, limite: int = 50, offset: int = 0
-    ) -> list[dict]:
+    # ---- consultas usadas por limites e risco (rodam dentro do lock) ----
+
+    @staticmethod
+    def soma_saidas(s: Session, carteira_id: int, desde: datetime, *, dispositivo_id: Optional[int] = None) -> Decimal:
+        stmt = select(func.coalesce(func.sum(Transacao.valor_bruto), 0)).where(
+            Transacao.origem_carteira_id == carteira_id,
+            Transacao.tipo.in_(["transferencia", "cobranca"]),
+            Transacao.status != StatusTransacao.DEVOLVIDA,
+            Transacao.criado_em >= desde,
+        )
+        if dispositivo_id is not None:
+            stmt = stmt.where(Transacao.dispositivo_id == dispositivo_id)
+        return Decimal(s.scalar(stmt) or 0)
+
+    def ja_transacionou(self, origem_id: int, destino_id: int) -> bool:
+        with self._sf() as s:
+            return (
+                s.scalar(
+                    select(func.count(Transacao.id)).where(
+                        Transacao.origem_carteira_id == origem_id,
+                        Transacao.destino_carteira_id == destino_id,
+                        Transacao.status == StatusTransacao.CONCLUIDA,
+                    )
+                )
+                or 0
+            ) > 0
+
+    def obter_transacao(self, transacao_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            t = s.get(Transacao, transacao_id)
+            return self._transacao_dict(s, t) if t else None
+
+    def listar_transacoes(self, *, carteira_id: Optional[int] = None, limite: int = 50, offset: int = 0) -> list[dict]:
         with self._sf() as s:
             stmt = select(Transacao)
             if carteira_id is not None:
-                c = self._buscar_carteira(s, carteira_id)
-                if c is None:
-                    return []
                 stmt = stmt.where(
-                    (Transacao.origem_carteira_id == c.id)
-                    | (Transacao.destino_carteira_id == c.id)
+                    or_(Transacao.origem_carteira_id == carteira_id, Transacao.destino_carteira_id == carteira_id)
                 )
             stmt = stmt.order_by(Transacao.id.desc()).limit(limite).offset(offset)
             return [self._transacao_dict(s, t) for t in s.scalars(stmt).all()]
 
-    def total_retido_governo(self) -> dict:
+    # =========================================================================
+    # Limites e dispositivos
+    # =========================================================================
+
+    def obter_limite(self, carteira_id: int) -> Optional[dict]:
         with self._sf() as s:
-            cbs = s.scalar(select(func.coalesce(func.sum(Transacao.cbs), 0))) or Decimal("0")
-            ibs = s.scalar(select(func.coalesce(func.sum(Transacao.ibs), 0))) or Decimal("0")
-            n = s.scalar(select(func.count(Transacao.id)).where(Transacao.aplicou_split.is_(True))) or 0
+            lim = s.scalar(select(Limite).where(Limite.carteira_id == carteira_id))
+            if lim is None:
+                return None
+            self._aplicar_pendente(s, lim)
+            s.commit()
+            return self._limite_dict(lim)
+
+    @staticmethod
+    def _aplicar_pendente(s: Session, lim: Limite) -> None:
+        vig = _utc(lim.pendente_vigente_em)
+        if vig and vig <= tempo.agora():
+            for campo in ("por_transacao", "diurno", "noturno"):
+                novo = getattr(lim, f"pendente_{campo}")
+                if novo is not None:
+                    setattr(lim, campo, novo)
+                setattr(lim, f"pendente_{campo}", None)
+            lim.pendente_vigente_em = None
+
+    @staticmethod
+    def limite_na_sessao(s: Session, carteira_id: int) -> Optional[Limite]:
+        lim = s.scalar(select(Limite).where(Limite.carteira_id == carteira_id))
+        if lim is not None:
+            Repositorio._aplicar_pendente(s, lim)
+        return lim
+
+    def salvar_limite(self, carteira_id: int, *, imediatos: dict, pendentes: dict, vigente_em: Optional[datetime]) -> dict:
+        with self._sf() as s:
+            lim = s.scalar(select(Limite).where(Limite.carteira_id == carteira_id))
+            for campo, valor in imediatos.items():
+                setattr(lim, campo, valor)
+                setattr(lim, f"pendente_{campo}", None)
+            for campo, valor in pendentes.items():
+                setattr(lim, f"pendente_{campo}", valor)
+            if pendentes:
+                lim.pendente_vigente_em = vigente_em
+            elif not any(getattr(lim, f"pendente_{c}") for c in ("por_transacao", "diurno", "noturno")):
+                lim.pendente_vigente_em = None
+            lim.atualizado_em = tempo.agora()
+            s.commit()
+            s.refresh(lim)
+            return self._limite_dict(lim)
+
+    def registrar_dispositivo(self, *, usuario_id: int, id_hash: str, nome: Optional[str], confiavel: bool = False) -> dict:
+        with self._sf() as s:
+            d = s.scalar(select(Dispositivo).where(Dispositivo.usuario_id == usuario_id, Dispositivo.id_hash == id_hash))
+            agora = tempo.agora()
+            if d is None:
+                d = Dispositivo(usuario_id=usuario_id, id_hash=id_hash, nome=nome, confiavel=confiavel,
+                                confiavel_em=agora if confiavel else None)
+                s.add(d)
+            elif confiavel and not d.confiavel:
+                d.confiavel, d.confiavel_em = True, agora
+            d.ultimo_uso = agora
+            if nome:
+                d.nome = nome
+            s.commit()
+            s.refresh(d)
+            return self._dispositivo_dict(d)
+
+    def marcar_dispositivo_confiavel(self, usuario_id: int, dispositivo_id: int) -> dict:
+        with self._sf() as s:
+            d = s.get(Dispositivo, dispositivo_id)
+            if d.usuario_id != usuario_id:
+                raise ValueError("Dispositivo de outra pessoa.")
+            d.confiavel, d.confiavel_em = True, tempo.agora()
+            s.commit()
+            return self._dispositivo_dict(d)
+
+    def obter_dispositivo(self, usuario_id: int, id_hash: str) -> Optional[dict]:
+        with self._sf() as s:
+            d = s.scalar(select(Dispositivo).where(Dispositivo.usuario_id == usuario_id, Dispositivo.id_hash == id_hash))
+            return self._dispositivo_dict(d) if d else None
+
+    def listar_dispositivos(self, usuario_id: int) -> list[dict]:
+        with self._sf() as s:
+            ds = s.scalars(select(Dispositivo).where(Dispositivo.usuario_id == usuario_id).order_by(Dispositivo.id)).all()
+            return [self._dispositivo_dict(d) for d in ds]
+
+    def remover_dispositivo(self, usuario_id: int, dispositivo_id: int) -> bool:
+        with self._sf() as s:
+            d = s.get(Dispositivo, dispositivo_id)
+            if not d or d.usuario_id != usuario_id:
+                return False
+            s.delete(d)
+            s.commit()
+            return True
+
+    # =========================================================================
+    # Biometria (desafios)
+    # =========================================================================
+
+    def criar_desafio(self, *, publico_id: str, acao: str, usuario_id: Optional[int], expira_em: datetime) -> None:
+        with self._sf() as s:
+            s.add(DesafioBiometria(publico_id=publico_id, acao=acao, usuario_id=usuario_id, expira_em=expira_em))
+            s.commit()
+
+    def consumir_desafio(self, publico_id: str) -> Optional[dict]:
+        """Marca como usado e devolve; None se não existe ou já foi usado. O
+        UPDATE condicional garante uso único mesmo com requisições simultâneas."""
+        with self._sf() as s:
+            d = s.scalar(select(DesafioBiometria).where(DesafioBiometria.publico_id == publico_id))
+            if d is None or d.usado:
+                return None
+            linhas = s.query(DesafioBiometria).filter(
+                DesafioBiometria.id == d.id, DesafioBiometria.usado.is_(False)
+            ).update({"usado": True})
+            s.commit()
+            if linhas != 1:
+                return None
+            return {"acao": d.acao, "usuario_id": d.usuario_id, "expira_em": _utc(d.expira_em)}
+
+    # =========================================================================
+    # Chaves Pix
+    # =========================================================================
+
+    def criar_chave(self, *, carteira_id: int, tipo: str, valor: str) -> Optional[dict]:
+        with self._sf() as s:
+            k = ChavePix(carteira_id=carteira_id, tipo=tipo, valor=valor)
+            s.add(k)
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                return None
+            s.refresh(k)
+            return {"id": k.id, "tipo": k.tipo, "valor": k.valor, "criado_em": k.criado_em}
+
+    def listar_chaves(self, carteira_id: int) -> list[dict]:
+        with self._sf() as s:
+            ks = s.scalars(select(ChavePix).where(ChavePix.carteira_id == carteira_id).order_by(ChavePix.id)).all()
+            return [{"id": k.id, "tipo": k.tipo, "valor": k.valor, "criado_em": k.criado_em} for k in ks]
+
+    def contar_chaves(self, carteira_id: int) -> int:
+        with self._sf() as s:
+            return int(s.scalar(select(func.count(ChavePix.id)).where(ChavePix.carteira_id == carteira_id)) or 0)
+
+    def remover_chave(self, carteira_id: int, chave_id: int) -> bool:
+        with self._sf() as s:
+            k = s.get(ChavePix, chave_id)
+            if not k or k.carteira_id != carteira_id:
+                return False
+            s.delete(k)
+            s.commit()
+            return True
+
+    def buscar_chave(self, tipo: str, valor: str) -> Optional[int]:
+        with self._sf() as s:
+            return s.scalar(select(ChavePix.carteira_id).where(ChavePix.tipo == tipo, ChavePix.valor == valor))
+
+    # =========================================================================
+    # Cobranças e Pix Automático
+    # =========================================================================
+
+    def criar_cobrancas(self, linhas: list[dict]) -> list[dict]:
+        with self._sf() as s:
+            objs = [Cobranca(**l) for l in linhas]
+            s.add_all(objs)
+            s.commit()
+            return [self._cobranca_dict(s, c) for c in objs]
+
+    def obter_cobranca(self, *, txid: Optional[str] = None, cobranca_id: Optional[int] = None) -> Optional[dict]:
+        with self._sf() as s:
+            if txid is not None:
+                c = s.scalar(select(Cobranca).where(Cobranca.txid == txid))
+            else:
+                c = s.get(Cobranca, cobranca_id)
+            return self._cobranca_dict(s, c) if c else None
+
+    def listar_cobrancas(self, recebedor_carteira_id: int, *, status: Optional[str] = None, limite: int = 50, offset: int = 0) -> list[dict]:
+        with self._sf() as s:
+            stmt = select(Cobranca).where(Cobranca.recebedor_carteira_id == recebedor_carteira_id)
+            if status:
+                stmt = stmt.where(Cobranca.status == status)
+            stmt = stmt.order_by(Cobranca.id.desc()).limit(limite).offset(offset)
+            return [self._cobranca_dict(s, c) for c in s.scalars(stmt).all()]
+
+    def cancelar_cobranca(self, cobranca_id: int) -> bool:
+        with self._sf() as s:
+            n = s.query(Cobranca).filter(Cobranca.id == cobranca_id, Cobranca.status == "aberta").update({"status": "cancelada"})
+            s.commit()
+            return n == 1
+
+    def cobrancas_recorrentes_vencidas(self, ate: date) -> list[dict]:
+        with self._sf() as s:
+            stmt = (
+                select(Cobranca)
+                .join(AutorizacaoRecorrente, AutorizacaoRecorrente.id == Cobranca.autorizacao_id)
+                .where(Cobranca.status == "aberta", Cobranca.vencimento <= ate, AutorizacaoRecorrente.status == "ativa")
+                .order_by(Cobranca.id)
+            )
+            return [self._cobranca_dict(s, c) for c in s.scalars(stmt).all()]
+
+    def cobrancas_da_autorizacao(self, autorizacao_id: int) -> list[dict]:
+        with self._sf() as s:
+            cs = s.scalars(
+                select(Cobranca).where(Cobranca.autorizacao_id == autorizacao_id, Cobranca.status != "cancelada")
+            ).all()
+            return [self._cobranca_dict(s, c) for c in cs]
+
+    def criar_autorizacao(self, **kw) -> dict:
+        with self._sf() as s:
+            a = AutorizacaoRecorrente(**kw)
+            s.add(a)
+            s.commit()
+            return self._autorizacao_dict(s, a)
+
+    def obter_autorizacao(self, autorizacao_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            a = s.get(AutorizacaoRecorrente, autorizacao_id)
+            return self._autorizacao_dict(s, a) if a else None
+
+    def atualizar_autorizacao(self, autorizacao_id: int, **campos) -> dict:
+        with self._sf() as s:
+            a = s.get(AutorizacaoRecorrente, autorizacao_id)
+            for k, v in campos.items():
+                setattr(a, k, v)
+            s.commit()
+            return self._autorizacao_dict(s, a)
+
+    def listar_autorizacoes(self, carteira_id: int) -> list[dict]:
+        with self._sf() as s:
+            as_ = s.scalars(
+                select(AutorizacaoRecorrente)
+                .where(or_(AutorizacaoRecorrente.pagador_carteira_id == carteira_id,
+                           AutorizacaoRecorrente.recebedor_carteira_id == carteira_id))
+                .order_by(AutorizacaoRecorrente.id.desc())
+            ).all()
+            return [self._autorizacao_dict(s, a) for a in as_]
+
+    # =========================================================================
+    # Operações pendentes (dupla aprovação)
+    # =========================================================================
+
+    def criar_pendente(self, *, empresa_id: int, tipo: str, valor: Decimal, payload: dict, criado_por: int) -> dict:
+        with self._sf() as s:
+            p = OperacaoPendente(empresa_id=empresa_id, tipo=tipo, valor=valor, payload=payload, criado_por_usuario_id=criado_por)
+            s.add(p)
+            s.commit()
+            return self._pendente_dict(p)
+
+    def obter_pendente(self, pendente_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            p = s.get(OperacaoPendente, pendente_id)
+            return self._pendente_dict(p) if p else None
+
+    def listar_pendentes(self, empresa_id: int, status: Optional[str] = "pendente") -> list[dict]:
+        with self._sf() as s:
+            stmt = select(OperacaoPendente).where(OperacaoPendente.empresa_id == empresa_id)
+            if status:
+                stmt = stmt.where(OperacaoPendente.status == status)
+            return [self._pendente_dict(p) for p in s.scalars(stmt.order_by(OperacaoPendente.id.desc())).all()]
+
+    def reservar_pendente(self, pendente_id: int, decidido_por: int, novo_status: str) -> bool:
+        """pendente -> novo_status, só uma vez (UPDATE condicional)."""
+        with self._sf() as s:
+            n = s.query(OperacaoPendente).filter(
+                OperacaoPendente.id == pendente_id, OperacaoPendente.status == "pendente"
+            ).update({"status": novo_status, "decidido_por_usuario_id": decidido_por, "decidido_em": tempo.agora()})
+            s.commit()
+            return n == 1
+
+    def concluir_pendente(self, pendente_id: int, status: str, resultado: dict) -> None:
+        with self._sf() as s:
+            p = s.get(OperacaoPendente, pendente_id)
+            p.status, p.resultado = status, resultado
+            s.commit()
+
+    # =========================================================================
+    # Contestações (MED)
+    # =========================================================================
+
+    def criar_contestacao(self, *, transacao_id: int, usuario_id: int, motivo: str) -> Optional[dict]:
+        with self._sf() as s:
+            c = Contestacao(transacao_id=transacao_id, aberta_por_usuario_id=usuario_id, motivo=motivo)
+            s.add(c)
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                return None
+            return self._contestacao_dict(c)
+
+    def obter_contestacao(self, contestacao_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            c = s.get(Contestacao, contestacao_id)
+            return self._contestacao_dict(c) if c else None
+
+    def listar_contestacoes(self, status: Optional[str] = None) -> list[dict]:
+        with self._sf() as s:
+            stmt = select(Contestacao)
+            if status:
+                stmt = stmt.where(Contestacao.status == status)
+            return [self._contestacao_dict(c) for c in s.scalars(stmt.order_by(Contestacao.id)).all()]
+
+    def fechar_contestacao(self, contestacao_id: int, *, status: str, valor_devolvido: Decimal) -> bool:
+        with self._sf() as s:
+            n = s.query(Contestacao).filter(Contestacao.id == contestacao_id, Contestacao.status == "aberta").update(
+                {"status": status, "valor_devolvido": valor_devolvido, "decidida_em": tempo.agora()}
+            )
+            s.commit()
+            return n == 1
+
+    # =========================================================================
+    # Tributos
+    # =========================================================================
+
+    def repassar_tributos(self, corte: datetime) -> Optional[dict]:
+        """Leva ao FISCO as pernas CBS/IBS criadas antes de `corte` e ainda não
+        repassadas nem estornadas."""
+        with self._sf() as s:
+            trib, fisco = self._sistema(s, "TRIBUTOS"), self._sistema(s, "FISCO")
+            stmt = select(Carteira).where(Carteira.id.in_(sorted([trib.id, fisco.id]))).order_by(Carteira.id)
+            if usando_postgres():
+                stmt = stmt.with_for_update()
+            s.scalars(stmt).all()
+            pernas = s.scalars(
+                select(SplitLiquidacao).where(
+                    SplitLiquidacao.natureza.in_(["CBS", "IBS"]),
+                    SplitLiquidacao.repasse_id.is_(None),
+                    SplitLiquidacao.estornada.is_(False),
+                    SplitLiquidacao.criado_em < corte,
+                )
+            ).all()
+            if not pernas:
+                return None
+            cbs = sum((p.valor for p in pernas if p.natureza == "CBS"), ZERO)
+            ibs = sum((p.valor for p in pernas if p.natureza == "IBS"), ZERO)
+            rep = RepasseTributo(cbs_total=cbs, ibs_total=ibs, corte=corte)
+            s.add(rep)
+            s.flush()
+            for p in pernas:
+                p.repasse_id = rep.id
+            self._mover(s, trib, -(cbs + ibs), motivo="repasse_tributo")
+            self._mover(s, fisco, cbs + ibs, motivo="repasse_tributo")
+            t = Transacao(
+                origem_carteira_id=trib.id, destino_carteira_id=fisco.id, tipo="repasse_tributo",
+                valor_bruto=cbs + ibs, liquido=cbs + ibs, cbs=cbs, ibs=ibs, tipo_destino=TipoPessoa.SISTEMA,
+                aplicou_split=False, auth_metodo=AuthMetodo.SISTEMA, descricao=f"Repasse #{rep.id}",
+                criado_em=tempo.agora(),
+            )
+            s.add(t)
+            s.flush()
+            self._vincular_historico(s, t.id)
+            s.commit()
+            return {"id": rep.id, "cbs_total": cbs, "ibs_total": ibs, "total": cbs + ibs, "corte": corte, "pernas": len(pernas)}
+
+    def resumo_tributos(self, *, recebedor_carteira_id: Optional[int] = None) -> dict:
+        with self._sf() as s:
+            base = select(SplitLiquidacao).where(SplitLiquidacao.natureza.in_(["CBS", "IBS"]), SplitLiquidacao.estornada.is_(False))
+            if recebedor_carteira_id is not None:
+                base = base.join(Transacao, Transacao.id == SplitLiquidacao.transacao_id).where(
+                    Transacao.destino_carteira_id == recebedor_carteira_id
+                )
+            pernas = s.scalars(base).all()
+            def soma(nat, repassada):
+                return sum((p.valor for p in pernas if p.natureza == nat and (p.repasse_id is not None) == repassada), ZERO)
             return {
-                "cbs_total": Decimal(cbs),
-                "ibs_total": Decimal(ibs),
-                "total": Decimal(cbs) + Decimal(ibs),
-                "transacoes_com_split": int(n),
+                "cbs_retido": soma("CBS", False) + soma("CBS", True),
+                "ibs_retido": soma("IBS", False) + soma("IBS", True),
+                "cbs_repassado": soma("CBS", True),
+                "ibs_repassado": soma("IBS", True),
+                "a_repassar": soma("CBS", False) + soma("IBS", False),
+                "transacoes_com_split": len({p.transacao_id for p in pernas}),
             }
 
-    # ===================== Refresh tokens =====================
+    def registrar_credito(self, *, empresa_id: int, tributo: str, valor: Decimal, fonte: str, referencia: Optional[str]) -> dict:
+        with self._sf() as s:
+            c = CreditoTributario(empresa_id=empresa_id, tributo=tributo, valor=valor, fonte=fonte, referencia=referencia)
+            s.add(c)
+            s.commit()
+            return {"id": c.id, "tributo": c.tributo, "valor": c.valor, "fonte": c.fonte, "referencia": c.referencia, "consultado_em": c.consultado_em}
+
+    def listar_creditos(self, empresa_id: int) -> list[dict]:
+        with self._sf() as s:
+            cs = s.scalars(select(CreditoTributario).where(CreditoTributario.empresa_id == empresa_id).order_by(CreditoTributario.id)).all()
+            return [{"id": c.id, "tributo": c.tributo, "valor": c.valor, "fonte": c.fonte, "referencia": c.referencia, "consultado_em": c.consultado_em} for c in cs]
+
+    # =========================================================================
+    # Rendimento
+    # =========================================================================
+
+    def creditar_rendimento(self, *, carteira_id: int, data: date, taxa_diaria: Decimal, calcular: Callable[[Decimal], Decimal]) -> Optional[dict]:
+        """Credita o rendimento do dia (uma vez por carteira/dia) a partir do CAIXA."""
+        with self._sf() as s:
+            if s.scalar(select(Rendimento.id).where(Rendimento.carteira_id == carteira_id, Rendimento.data == data)):
+                return None
+            caixa = self._sistema(s, "CAIXA")
+            stmt = select(Carteira).where(Carteira.id.in_(sorted([carteira_id, caixa.id]))).order_by(Carteira.id)
+            if usando_postgres():
+                stmt = stmt.with_for_update()
+            cs = {c.id: c for c in s.scalars(stmt).all()}
+            c = cs[carteira_id]
+            valor = calcular(c.saldo)
+            if valor <= 0:
+                return None
+            self._mover(s, cs[caixa.id], -valor, motivo="rendimento")
+            self._mover(s, c, valor, motivo="rendimento")
+            s.add(Rendimento(carteira_id=c.id, data=data, saldo_base=c.saldo - valor, valor=valor, taxa_diaria=taxa_diaria))
+            t = Transacao(
+                origem_carteira_id=caixa.id, destino_carteira_id=c.id, tipo="rendimento", valor_bruto=valor,
+                liquido=valor, cbs=ZERO, ibs=ZERO, tipo_destino=c.titular_tipo, aplicou_split=False,
+                auth_metodo=AuthMetodo.SISTEMA, descricao=f"Rendimento {data.isoformat()}", criado_em=tempo.agora(),
+            )
+            s.add(t)
+            try:
+                s.flush()
+            except IntegrityError:
+                s.rollback()
+                return None
+            self._vincular_historico(s, t.id)
+            s.commit()
+            return {"carteira_id": carteira_id, "valor": valor}
+
+    def listar_rendimentos(self, carteira_id: int, limite: int = 30) -> list[dict]:
+        with self._sf() as s:
+            rs = s.scalars(select(Rendimento).where(Rendimento.carteira_id == carteira_id).order_by(Rendimento.data.desc()).limit(limite)).all()
+            return [{"data": r.data, "saldo_base": r.saldo_base, "valor": r.valor, "taxa_diaria": r.taxa_diaria} for r in rs]
+
+    # =========================================================================
+    # Webhooks
+    # =========================================================================
+
+    def criar_webhook(self, *, empresa_id: int, url: str, segredo: str, eventos: list[str]) -> dict:
+        with self._sf() as s:
+            w = Webhook(empresa_id=empresa_id, url=url, segredo=segredo, eventos=eventos)
+            s.add(w)
+            s.commit()
+            return self._webhook_dict(w)
+
+    def listar_webhooks(self, empresa_id: int, *, so_ativos: bool = False) -> list[dict]:
+        with self._sf() as s:
+            stmt = select(Webhook).where(Webhook.empresa_id == empresa_id)
+            if so_ativos:
+                stmt = stmt.where(Webhook.ativo.is_(True))
+            return [self._webhook_dict(w) for w in s.scalars(stmt.order_by(Webhook.id)).all()]
+
+    def desativar_webhook(self, empresa_id: int, webhook_id: int) -> bool:
+        with self._sf() as s:
+            w = s.get(Webhook, webhook_id)
+            if not w or w.empresa_id != empresa_id:
+                return False
+            w.ativo = False
+            s.commit()
+            return True
+
+    def obter_webhook_com_segredo(self, webhook_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            w = s.get(Webhook, webhook_id)
+            return {**self._webhook_dict(w), "segredo": w.segredo} if w else None
+
+    def criar_entrega(self, *, webhook_id: int, evento: str, payload: dict) -> int:
+        with self._sf() as s:
+            e = WebhookEntrega(webhook_id=webhook_id, evento=evento, payload=payload)
+            s.add(e)
+            s.commit()
+            return e.id
+
+    def entregas_pendentes(self, max_tentativas: int) -> list[dict]:
+        with self._sf() as s:
+            es = s.scalars(
+                select(WebhookEntrega).where(WebhookEntrega.status != "entregue", WebhookEntrega.tentativas < max_tentativas)
+                .order_by(WebhookEntrega.id)
+            ).all()
+            return [self._entrega_dict(e) for e in es]
+
+    def obter_entrega(self, entrega_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            e = s.get(WebhookEntrega, entrega_id)
+            return self._entrega_dict(e) if e else None
+
+    def registrar_tentativa_entrega(self, entrega_id: int, *, sucesso: bool, resposta: str, max_tentativas: int) -> None:
+        with self._sf() as s:
+            e = s.get(WebhookEntrega, entrega_id)
+            e.tentativas += 1
+            e.ultima_resposta = resposta[:300]
+            e.atualizado_em = tempo.agora()
+            e.status = "entregue" if sucesso else ("falhou" if e.tentativas >= max_tentativas else "pendente")
+            s.commit()
+
+    def listar_entregas(self, empresa_id: int, limite: int = 50) -> list[dict]:
+        with self._sf() as s:
+            es = s.scalars(
+                select(WebhookEntrega).join(Webhook, Webhook.id == WebhookEntrega.webhook_id)
+                .where(Webhook.empresa_id == empresa_id).order_by(WebhookEntrega.id.desc()).limit(limite)
+            ).all()
+            return [self._entrega_dict(e) for e in es]
+
+    # =========================================================================
+    # Refresh tokens
+    # =========================================================================
 
     def salvar_refresh(self, *, usuario_id: int, jti: str, token_hash: str, expira_em: datetime) -> None:
         with self._sf() as s:
@@ -377,14 +1111,8 @@ class Repositorio:
             rt = s.scalar(select(RefreshToken).where(RefreshToken.token_hash == token_hash))
             if not rt:
                 return None
-            return {
-                "id": rt.id,
-                "usuario_id": rt.usuario_id,
-                "jti": rt.jti,
-                "revogado": rt.revogado,
-                "expira_em": rt.expira_em,
-                "substituido_por": rt.substituido_por,
-            }
+            return {"id": rt.id, "usuario_id": rt.usuario_id, "jti": rt.jti, "revogado": rt.revogado,
+                    "expira_em": rt.expira_em, "substituido_por": rt.substituido_por}
 
     def revogar_refresh(self, jti: str, substituido_por: Optional[str] = None) -> None:
         with self._sf() as s:
@@ -396,51 +1124,38 @@ class Repositorio:
                 s.commit()
 
     def revogar_todos_refresh(self, usuario_id: int) -> None:
-        """Usado na detecção de reuso (possível roubo) e no logout de todos os
-        dispositivos."""
         with self._sf() as s:
             for rt in s.scalars(select(RefreshToken).where(RefreshToken.usuario_id == usuario_id, RefreshToken.revogado.is_(False))):
                 rt.revogado = True
             s.commit()
 
-    # ===================== Auditoria / rate-limit =====================
+    # =========================================================================
+    # Auditoria / rate limit
+    # =========================================================================
 
     def registrar_sessao_mfa(
-        self,
-        *,
-        tipo: str,
-        sucesso: bool,
-        usuario_id: Optional[int] = None,
-        referencia: Optional[str] = None,
-        ip: Optional[str] = None,
-        detalhe: Optional[dict] = None,
+        self, *, tipo: str, sucesso: bool, usuario_id: Optional[int] = None, referencia: Optional[str] = None,
+        ip: Optional[str] = None, detalhe: Optional[dict] = None,
     ) -> None:
         with self._sf() as s:
-            s.add(
-                SessaoMfa(
-                    usuario_id=usuario_id,
-                    referencia=referencia,
-                    tipo=tipo,
-                    sucesso=sucesso,
-                    ip=ip,
-                    detalhe=detalhe,
-                )
-            )
+            s.add(SessaoMfa(usuario_id=usuario_id, referencia=referencia, tipo=tipo, sucesso=sucesso, ip=ip,
+                            detalhe=detalhe, criado_em=tempo.agora()))
             s.commit()
 
-    def contar_falhas_recentes(
-        self, *, tipo: str, desde: datetime, usuario_id: Optional[int] = None, referencia: Optional[str] = None
+    def contar_eventos(
+        self, *, tipo: str, desde: datetime, sucesso: Optional[bool] = False, usuario_id: Optional[int] = None,
+        referencia: Optional[str] = None, ip: Optional[str] = None,
     ) -> int:
         with self._sf() as s:
-            stmt = select(func.count(SessaoMfa.id)).where(
-                SessaoMfa.tipo == tipo,
-                SessaoMfa.sucesso.is_(False),
-                SessaoMfa.criado_em >= desde,
-            )
+            stmt = select(func.count(SessaoMfa.id)).where(SessaoMfa.tipo == tipo, SessaoMfa.criado_em >= desde)
+            if sucesso is not None:
+                stmt = stmt.where(SessaoMfa.sucesso.is_(sucesso))
             if usuario_id is not None:
                 stmt = stmt.where(SessaoMfa.usuario_id == usuario_id)
             if referencia is not None:
                 stmt = stmt.where(SessaoMfa.referencia == referencia)
+            if ip is not None:
+                stmt = stmt.where(SessaoMfa.ip == ip)
             return int(s.scalar(stmt) or 0)
 
     def registrar_log(self, *, ator: str, acao: str, ip: Optional[str] = None, detalhe: Optional[dict] = None) -> None:
@@ -448,63 +1163,84 @@ class Repositorio:
             s.add(LogAuditoria(ator=ator, acao=acao, ip=ip, detalhe=detalhe))
             s.commit()
 
-    # ===================== Split regras (seed) =====================
-
-    def seed_split_regras(self) -> None:
-        with self._sf() as s:
-            for vig, dados in ALIQUOTAS.items():
-                existe = s.scalar(select(SplitRegra).where(SplitRegra.vigencia == vig))
-                if not existe:
-                    s.add(
-                        SplitRegra(
-                            vigencia=vig,
-                            descricao=str(dados.get("descricao", "")),
-                            aliquota_cbs=dados["cbs"],
-                            aliquota_ibs=dados["ibs"],
-                        )
-                    )
-            s.commit()
-
-    # ===================== Helpers =====================
+    # =========================================================================
+    # Conversões para dict
+    # =========================================================================
 
     @staticmethod
-    def _buscar_carteira(s, carteira_id: int) -> Optional[Carteira]:
-        return s.scalar(select(Carteira).where(Carteira.chave == str(carteira_id)))
-
-    @staticmethod
-    def _conta_dict(usuario: Usuario, carteira: Optional[Carteira]) -> dict:
+    def _conta_dict(s: Session, c: Carteira) -> dict:
+        nome = documento = None
+        regime = None
+        if c.titular_tipo == TipoPessoa.PF and c.usuario_id:
+            u = s.get(Usuario, c.usuario_id)
+            nome, documento = u.nome, u.cpf
+        elif c.titular_tipo == TipoPessoa.PJ and c.empresa_id:
+            e = s.get(Empresa, c.empresa_id)
+            nome, documento, regime = (e.nome_fantasia or e.razao_social), e.cnpj, e.regime_apuracao.value
+        else:
+            nome = f"PayFlow {c.sistema}"
         return {
-            "usuario_id": usuario.id,
-            "carteira_id": int(carteira.chave) if carteira else None,
-            "nome": usuario.nome,
-            "email": usuario.email,
-            "tipo": usuario.tipo.value,
-            "documento": usuario.documento,
-            "papel": usuario.papel.value,
-            "saldo": carteira.saldo if carteira else Decimal("0.00"),
-            "tem_biometria": usuario.embedding_facial_cifrado is not None,
+            "carteira_id": c.id,
+            "agencia": c.agencia,
+            "numero": c.numero,
+            "titular_tipo": c.titular_tipo.value,
+            "sistema": c.sistema,
+            "usuario_id": c.usuario_id,
+            "empresa_id": c.empresa_id,
+            "nome": nome,
+            "documento": documento,
+            "regime_apuracao": regime,
+            "saldo": c.saldo,
+            "saldo_bloqueado": c.saldo_bloqueado,
         }
 
     @staticmethod
     def _usuario_auth_dict(u: Usuario) -> dict:
         return {
-            "id": u.id,
-            "nome": u.nome,
-            "email": u.email,
-            "senha_hash": u.senha_hash,
-            "papel": u.papel.value,
-            "tipo": u.tipo.value,
-            "ativo": u.ativo,
+            "id": u.id, "nome": u.nome, "email": u.email, "cpf": u.cpf, "senha_hash": u.senha_hash,
+            "papel": u.papel.value, "ativo": u.ativo, "tem_biometria": u.embedding_facial_cifrado is not None,
         }
 
-    def _transacao_dict(self, s, t: Transacao) -> dict:
+    @staticmethod
+    def _empresa_dict(e: Empresa) -> dict:
+        return {
+            "id": e.id, "cnpj": e.cnpj, "razao_social": e.razao_social, "nome_fantasia": e.nome_fantasia,
+            "porte": e.porte, "regime_apuracao": e.regime_apuracao.value, "cnae": e.cnae,
+            "situacao_cadastral": e.situacao_cadastral, "verificada_por": e.verificada_por,
+        }
+
+    @staticmethod
+    def _vinculo_dict(v: Vinculo) -> dict:
+        return {
+            "id": v.id, "usuario_id": v.usuario_id, "empresa_id": v.empresa_id, "papel": v.papel.value,
+            "alcada": v.alcada, "ativo": v.ativo, "nome": v.usuario.nome if v.usuario else None,
+            "email": v.usuario.email if v.usuario else None,
+        }
+
+    @staticmethod
+    def _limite_dict(l: Limite) -> dict:
+        return {
+            "por_transacao": l.por_transacao, "diurno": l.diurno, "noturno": l.noturno,
+            "pendente": None if l.pendente_vigente_em is None else {
+                "por_transacao": l.pendente_por_transacao, "diurno": l.pendente_diurno,
+                "noturno": l.pendente_noturno, "vigente_em": _utc(l.pendente_vigente_em),
+            },
+        }
+
+    @staticmethod
+    def _dispositivo_dict(d: Dispositivo) -> dict:
+        return {"id": d.id, "nome": d.nome, "confiavel": d.confiavel, "confiavel_em": _utc(d.confiavel_em),
+                "ultimo_uso": _utc(d.ultimo_uso), "criado_em": _utc(d.criado_em)}
+
+    def _transacao_dict(self, s: Session, t: Transacao) -> dict:
         origem = s.get(Carteira, t.origem_carteira_id)
         destino = s.get(Carteira, t.destino_carteira_id)
+        o, d = self._conta_dict(s, origem), self._conta_dict(s, destino)
         return {
             "id": t.id,
-            "origem_carteira_id": int(origem.chave),
-            "destino_carteira_id": int(destino.chave),
-            "valor": t.valor_bruto,  # compat: "valor" == bruto
+            "tipo": t.tipo,
+            "origem": {"carteira_id": o["carteira_id"], "agencia": o["agencia"], "numero": o["numero"], "nome": o["nome"]},
+            "destino": {"carteira_id": d["carteira_id"], "agencia": d["agencia"], "numero": d["numero"], "nome": d["nome"]},
             "valor_bruto": t.valor_bruto,
             "cbs": t.cbs,
             "ibs": t.ibs,
@@ -513,7 +1249,59 @@ class Repositorio:
             "tipo_destino": t.tipo_destino.value,
             "aplicou_split": t.aplicou_split,
             "auth_metodo": t.auth_metodo.value,
+            "status": t.status.value,
+            "bloqueio_ate": _utc(t.bloqueio_ate),
+            "descricao": t.descricao,
             "verificacao_facial": t.verificacao_facial,
-            "idempotency_key": t.idempotency_key,
-            "data_hora": t.criado_em or datetime.now(timezone.utc),
+            "transacao_original_id": t.transacao_original_id,
+            "data_hora": _utc(t.criado_em) or tempo.agora(),
         }
+
+    def _cobranca_dict(self, s: Session, c: Cobranca) -> dict:
+        rec = s.get(Carteira, c.recebedor_carteira_id)
+        conta = self._conta_dict(s, rec)
+        return {
+            "id": c.id, "txid": c.txid, "valor": c.valor, "descricao": c.descricao, "vencimento": c.vencimento,
+            "pagador_documento": c.pagador_documento, "nfe_chave": c.nfe_chave, "cbs": c.cbs, "ibs": c.ibs,
+            "linha_digitavel": c.linha_digitavel, "status": c.status, "grupo_parcelamento": c.grupo_parcelamento,
+            "parcela_numero": c.parcela_numero, "parcelas_total": c.parcelas_total, "autorizacao_id": c.autorizacao_id,
+            "transacao_id": c.transacao_id, "paga_em": _utc(c.paga_em),
+            "recebedor": {"carteira_id": rec.id, "nome": conta["nome"], "documento": conta["documento"],
+                          "empresa_id": rec.empresa_id, "regime_apuracao": conta["regime_apuracao"]},
+        }
+
+    def _autorizacao_dict(self, s: Session, a: AutorizacaoRecorrente) -> dict:
+        rec = self._conta_dict(s, s.get(Carteira, a.recebedor_carteira_id))
+        pag = self._conta_dict(s, s.get(Carteira, a.pagador_carteira_id))
+        return {
+            "id": a.id, "descricao": a.descricao, "valor_maximo": a.valor_maximo, "periodicidade": a.periodicidade,
+            "status": a.status, "aceita_em": _utc(a.aceita_em), "cancelada_em": _utc(a.cancelada_em),
+            "recebedor": {"carteira_id": rec["carteira_id"], "nome": rec["nome"]},
+            "pagador": {"carteira_id": pag["carteira_id"], "nome": pag["nome"]},
+        }
+
+    @staticmethod
+    def _pendente_dict(p: OperacaoPendente) -> dict:
+        return {
+            "id": p.id, "empresa_id": p.empresa_id, "tipo": p.tipo, "valor": p.valor, "payload": p.payload,
+            "criado_por_usuario_id": p.criado_por_usuario_id, "status": p.status,
+            "decidido_por_usuario_id": p.decidido_por_usuario_id, "decidido_em": _utc(p.decidido_em),
+            "resultado": p.resultado, "criado_em": _utc(p.criado_em),
+        }
+
+    @staticmethod
+    def _contestacao_dict(c: Contestacao) -> dict:
+        return {
+            "id": c.id, "transacao_id": c.transacao_id, "aberta_por_usuario_id": c.aberta_por_usuario_id,
+            "motivo": c.motivo, "status": c.status, "valor_devolvido": c.valor_devolvido,
+            "decidida_em": _utc(c.decidida_em), "criado_em": _utc(c.criado_em),
+        }
+
+    @staticmethod
+    def _webhook_dict(w: Webhook) -> dict:
+        return {"id": w.id, "empresa_id": w.empresa_id, "url": w.url, "eventos": w.eventos, "ativo": w.ativo}
+
+    @staticmethod
+    def _entrega_dict(e: WebhookEntrega) -> dict:
+        return {"id": e.id, "webhook_id": e.webhook_id, "evento": e.evento, "payload": e.payload, "status": e.status,
+                "tentativas": e.tentativas, "ultima_resposta": e.ultima_resposta}

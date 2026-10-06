@@ -22,6 +22,17 @@ const TITULO: Record<CategoriaTx, string> = {
   viagem: "Passagem emitida",
   deposito: "Depósito confirmado",
   recebimento: "Pagamento recebido",
+  cobranca: "Cobrança paga",
+  rendimento: "Rendimento creditado",
+  estorno: "Valor devolvido",
+};
+
+const AUTH: Record<string, string> = {
+  senha: "senha do app",
+  selfie: "verificação facial",
+  aprovacao: "aprovação de outra pessoa da empresa",
+  automatico: "Pix Automático (autorização prévia)",
+  sistema: "PayFlow",
 };
 
 function Comprovante() {
@@ -58,8 +69,8 @@ function Comprovante() {
         <SplitBar liquido={t.liquido} imposto={t.cbs + t.ibs} />
         <div className="mt-3 divide-y divide-border">
           <ValueRow label="Você pagou" value={t.valor_bruto} />
-          {t.aplicou_split && <ValueRow label="CBS → Governo" value={t.cbs} tax />}
-          {t.aplicou_split && <ValueRow label="IBS → Governo" value={t.ibs} tax />}
+          {t.aplicou_split && <ValueRow label="CBS da nota → Fisco" value={t.cbs} tax />}
+          {t.aplicou_split && <ValueRow label="IBS da nota → Fisco" value={t.ibs} tax />}
           <ValueRow
             label={t.aplicou_split ? "Destino recebe (líquido)" : "Destino recebe"}
             value={t.liquido}
@@ -67,10 +78,19 @@ function Comprovante() {
           />
         </div>
         {!t.aplicou_split && (
-          <p className="mt-2 text-sm text-mut2">Destino Pessoa Física — sem retenção de imposto.</p>
+          <p className="mt-2 text-sm text-mut2">
+            {t.categoria === "transferencia"
+              ? "Transferência não tem retenção de imposto."
+              : "Sem retenção de imposto."}
+          </p>
+        )}
+        {t.status === "retida" && (
+          <p className="mt-2 rounded-[12px] bg-tax-bg px-3 py-2 text-sm text-tax2">
+            Por segurança, o valor fica em análise por até 72h antes de ser liberado ao destino.
+          </p>
         )}
         <p className="mt-4 rounded-[12px] bg-tint px-3 py-2 font-mono text-xs text-mut2">
-          {fmtId(t.id)} · autorizado por {t.auth_metodo}
+          {fmtId(t.id)} · autorizado por {AUTH[t.auth_metodo] ?? t.auth_metodo}
         </p>
       </section>
 

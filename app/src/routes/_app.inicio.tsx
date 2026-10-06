@@ -19,8 +19,9 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { apuracaoPJ, listarFaturas, minhaConta, transacoes } from "@/lib/api";
-import { PORTES } from "@/lib/empresa";
+import { apuracaoPJ, listarFaturas, minhaConta, MODO_API, transacoes } from "@/lib/api";
+import { PAPEIS, PORTES } from "@/lib/empresa";
+import { ALIQUOTA_PLENA, VIGENCIA_ATUAL } from "@/lib/split";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, fmtData, fmtPontos, iniciais, primeiroNome } from "@/lib/format";
 import type { Conta, Fatura } from "@/lib/types";
@@ -39,17 +40,14 @@ import {
 
 export const Route = createFileRoute("/_app/inicio")({
   head: () => ({
-    meta: [
-      { title: "Início — PayFlow" },
-      { name: "description", content: "Sua conta PayFlow." },
-    ],
+    meta: [{ title: "Início — PayFlow" }, { name: "description", content: "Sua conta PayFlow." }],
   }),
   component: Inicio,
 });
 
 function Inicio() {
   const { conta: sessaoConta } = useAuth();
-  const conta = useQuery({ queryKey: ["conta"], queryFn: minhaConta });
+  const conta = useQuery({ queryKey: ["conta", sessaoConta?.numero], queryFn: minhaConta });
   const ehPJ = sessaoConta?.tipo === "PJ";
 
   return (
@@ -139,13 +137,17 @@ const BANNERS_PF: Banner[] = [
 ];
 
 function InicioPF() {
-  const conta = useQuery({ queryKey: ["conta"], queryFn: minhaConta });
+  const { conta: sessaoConta } = useAuth();
+  const conta = useQuery({ queryKey: ["conta", sessaoConta?.numero], queryFn: minhaConta });
   const [ver, setVer] = useState(true);
 
   return (
     <>
       {/* Cartão de saldo (estilo neobanco) */}
-      <section className="rounded-[22px] bg-ink p-6 text-ink-foreground shadow-lift" aria-label="Saldo">
+      <section
+        className="rounded-[22px] bg-ink p-6 text-ink-foreground shadow-lift"
+        aria-label="Saldo"
+      >
         <div className="flex items-center justify-between">
           <p className="text-sm opacity-60">Saldo disponível</p>
           <button
@@ -180,12 +182,16 @@ function InicioPF() {
         <div className="mt-6 flex justify-between">
           <QuickAction icon={ArrowUpRight} label="Transferir" to="/transferir" />
           <QuickAction icon={Plus} label="Depositar" to="/depositar" />
-          <QuickAction icon={ShoppingBag} label="Loja" to="/loja" />
-          <QuickAction icon={Plane} label="Viagens" to="/viagens" />
+          {!MODO_API && <QuickAction icon={ShoppingBag} label="Loja" to="/loja" />}
+          {!MODO_API && <QuickAction icon={Plane} label="Viagens" to="/viagens" />}
         </div>
       </section>
 
-      <BannerCarousel banners={BANNERS_PF} />
+      <BannerCarousel
+        banners={
+          MODO_API ? BANNERS_PF.filter((b) => b.id === "rende" || b.id === "pix") : BANNERS_PF
+        }
+      />
 
       {/* Pro dia a dia — grade de serviços */}
       <section>
@@ -193,9 +199,9 @@ function InicioPF() {
         <div className="grid grid-cols-3 gap-3">
           <Shortcut icon={QrCode} label="Pix" to="/transferir" />
           <Shortcut icon={Plus} label="Depositar" to="/depositar" />
-          <Shortcut icon={ShoppingBag} label="Loja" to="/loja" />
-          <Shortcut icon={Plane} label="Viagens" to="/viagens" />
-          <Shortcut icon={Sparkles} label="Pontos" to="/viagens" />
+          {!MODO_API && <Shortcut icon={ShoppingBag} label="Loja" to="/loja" />}
+          {!MODO_API && <Shortcut icon={Plane} label="Viagens" to="/viagens" />}
+          {!MODO_API && <Shortcut icon={Sparkles} label="Pontos" to="/viagens" />}
           <Shortcut icon={ListOrdered} label="Extrato" to="/extrato" />
         </div>
       </section>
@@ -210,13 +216,17 @@ function InicioPF() {
 /* ========================================================================== */
 
 function InicioPJ() {
-  const conta = useQuery({ queryKey: ["conta"], queryFn: minhaConta });
+  const { conta: sessaoConta } = useAuth();
+  const conta = useQuery({ queryKey: ["conta", sessaoConta?.numero], queryFn: minhaConta });
   const [ver, setVer] = useState(true);
 
   return (
     <>
       {/* Caixa da empresa */}
-      <section className="rounded-[22px] bg-ink p-6 text-ink-foreground shadow-lift" aria-label="Saldo">
+      <section
+        className="rounded-[22px] bg-ink p-6 text-ink-foreground shadow-lift"
+        aria-label="Saldo"
+      >
         <div className="flex items-center justify-between">
           <p className="text-sm opacity-60">Saldo em conta</p>
           <button
@@ -247,7 +257,7 @@ function InicioPJ() {
       </section>
 
       <ApuracaoCard />
-      <CreditosCard creditos={conta.data?.creditos ?? 0} />
+      <CreditosCard />
       <ContasPreview />
       <AcessoCard conta={conta.data} />
       <AtividadeRecente minha={conta.data?.carteira_id ?? 0} titulo="Movimentações recentes" />
@@ -255,59 +265,68 @@ function InicioPJ() {
   );
 }
 
-/** O herói do pitch B2B: apuração automática com split inteligente. */
+/** O herói do pitch B2B: o imposto das vendas separado no ato (split). */
 function ApuracaoCard() {
-  const q = useQuery({ queryKey: ["apuracao-pj"], queryFn: apuracaoPJ });
+  const { conta } = useAuth();
+  const q = useQuery({ queryKey: ["apuracao-pj", conta?.numero], queryFn: apuracaoPJ });
+  const projecao2033 = q.data ? q.data.faturamento * ALIQUOTA_PLENA : 0;
 
   return (
     <section className="surface overflow-hidden p-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg text-ink">Apuração automática</h2>
+        <h2 className="text-lg text-ink">Imposto das suas vendas</h2>
         <span className="inline-flex items-center gap-1.5 rounded-full bg-tax-bg px-3 py-1 text-xs font-semibold text-tax2">
-          <ShieldCheck size={13} /> no ato
+          <ShieldCheck size={13} /> separado no ato
         </span>
       </div>
 
       {q.isError ? (
         <div className="mt-4">
-          <ErrorBox>Não foi possível carregar a apuração.</ErrorBox>
+          <ErrorBox>Não foi possível carregar os tributos.</ErrorBox>
         </div>
       ) : !q.data ? (
         <div className="mt-4 h-28 animate-pulse rounded-2xl bg-tint" />
       ) : (
         <>
           <p className="mt-1 text-sm text-muted-foreground">
-            {q.data.periodo} · regime {q.data.regime} ({q.data.aliquota_pct.toLocaleString("pt-BR")}
-            %)
+            {q.data.periodo} · {q.data.vendas_com_split} venda(s) com nota · alíquotas de{" "}
+            {VIGENCIA_ATUAL}
           </p>
 
-          <p className="mt-4 text-sm text-mut2">Imposto recolhido ao Fisco</p>
+          <p className="mt-4 text-sm text-mut2">Retido das notas e enviado ao Fisco</p>
           <p className="tabular text-4xl font-semibold tracking-display text-ink">
-            {fmtBRL(q.data.imposto_recolhido)}
+            {fmtBRL(q.data.imposto_retido)}
           </p>
-          <p className="mt-1 text-sm text-pos">
-            de {fmtBRL(q.data.imposto_devido)} devidos — o resto foi abatido pelos seus créditos.
+          <p className="mt-1 text-sm text-mut2">
+            CBS {fmtBRL(q.data.cbs_retido)} + IBS {fmtBRL(q.data.ibs_retido)}, exatamente o que está
+            destacado nas suas notas.
           </p>
 
-          {/* devido = crédito usado + recolhido */}
           <div className="mt-5">
-            <SplitBar liquido={q.data.credito_usado} imposto={q.data.imposto_recolhido} />
+            <SplitBar liquido={q.data.repassado} imposto={q.data.a_repassar} />
             <div className="mt-2 flex justify-between text-xs">
-              <span className="text-pos">
-                Crédito abatido {fmtBRL(q.data.credito_usado)}
-              </span>
-              <span className="text-tax">Recolhido {fmtBRL(q.data.imposto_recolhido)}</span>
+              <span className="text-pos">Já repassado {fmtBRL(q.data.repassado)}</span>
+              <span className="text-tax">Repasse amanhã {fmtBRL(q.data.a_repassar)}</span>
             </div>
           </div>
 
           <div className="mt-5 grid grid-cols-2 gap-3">
-            <MetricTile label="Faturamento no mês" value={fmtBRL(q.data.faturamento)} />
-            <MetricTile label="Imposto devido" value={fmtBRL(q.data.imposto_devido)} tone="tax" />
+            <MetricTile label="Vendas com nota" value={fmtBRL(q.data.faturamento)} />
+            <MetricTile
+              label="Em 2033 seria"
+              value={fmtBRL(projecao2033)}
+              tone="tax"
+              hint="com as alíquotas cheias (≈26,5%)"
+            />
           </div>
 
           <p className="mt-4 rounded-[14px] bg-tax-bg px-4 py-3 text-sm text-tax2">
-            <strong className="font-semibold">Zero apuração manual.</strong> O IBS/CBS é calculado e
-            separado em cada venda — sem fechamento mensal, sem contador apurando depois.
+            <strong className="font-semibold">
+              Imposto separado na hora, apuração quase pronta.
+            </strong>{" "}
+            Cada cobrança paga já chega líquida e com o imposto conciliado à nota. A apuração
+            continua (assistida pela Receita): seus créditos de compras entram nela e o que sobrar
+            volta como compensação ou restituição.
           </p>
         </>
       )}
@@ -315,42 +334,46 @@ function ApuracaoCard() {
   );
 }
 
-/** Créditos tributários acumulados + caixa preservado (pilar fluxo de caixa). */
-function CreditosCard({ creditos }: { creditos: number }) {
-  const q = useQuery({ queryKey: ["apuracao-pj"], queryFn: apuracaoPJ });
+/** Créditos informados e restituição prevista (estimativa). */
+function CreditosCard() {
+  const { conta } = useAuth();
+  const q = useQuery({ queryKey: ["apuracao-pj", conta?.numero], queryFn: apuracaoPJ });
   return (
     <section className="grid gap-3 sm:grid-cols-2">
       <div className="surface flex flex-col p-5">
         <span className="grid h-10 w-10 place-items-center rounded-full bg-tint text-ink">
           <Coins size={20} />
         </span>
-        <p className="mt-3 text-sm text-mut2">Créditos de IBS/CBS</p>
-        <p className="tabular text-2xl font-semibold tracking-display text-ink">{fmtBRL(creditos)}</p>
+        <p className="mt-3 text-sm text-mut2">Créditos de IBS/CBS informados</p>
+        <p className="tabular text-2xl font-semibold tracking-display text-ink">
+          {q.data ? fmtBRL(q.data.creditos_informados) : "—"}
+        </p>
         <p className="mt-1 text-xs text-mut3">
-          Acumulados nas compras de insumo, energia e máquinas. Abatem seu imposto automaticamente.
+          Das suas compras com nota (informados pelo contador ou gerados por estorno). Quem abate é
+          o Fisco, na apuração.
         </p>
       </div>
       <div className="surface flex flex-col p-5">
         <span className="grid h-10 w-10 place-items-center rounded-full bg-tint text-pos">
           <Landmark size={20} />
         </span>
-        <p className="mt-3 text-sm text-mut2">Caixa preservado no mês</p>
+        <p className="mt-3 text-sm text-mut2">Restituição prevista</p>
         <p className="tabular text-2xl font-semibold tracking-display text-pos">
-          {q.data ? fmtBRL(q.data.caixa_preservado) : "—"}
+          {q.data ? fmtBRL(q.data.restituicao_prevista) : "—"}
         </p>
         <p className="mt-1 text-xs text-mut3">
-          Valor de imposto que nunca passou pelo seu caixa — você não precisa provisionar.
+          Estimativa: o menor valor entre seus créditos e o que já foi retido.
         </p>
       </div>
     </section>
   );
 }
 
-/** Acesso & assinaturas — verificação por certificado e-CNPJ, alçadas, dupla autorização. */
+/** Quem opera a empresa: papel, alçada e dupla aprovação. */
 function AcessoCard({ conta }: { conta: Conta | undefined }) {
-  const porte = conta?.porte ?? "GRANDE";
-  const perfil = PORTES[porte];
-  const cert = perfil.metodo === "certificado";
+  const { conta: sessao } = useAuth();
+  const perfil = PORTES[conta?.porte ?? "PME"];
+  const papel = sessao?.papel ?? "consulta";
   return (
     <section className="surface p-6">
       <div className="flex items-center gap-3">
@@ -358,40 +381,34 @@ function AcessoCard({ conta }: { conta: Conta | undefined }) {
           <ShieldCheck size={20} />
         </span>
         <div className="min-w-0">
-          <h2 className="text-lg text-ink">Acesso & assinaturas</h2>
-          <p className="text-xs text-mut3">
-            {cert ? "Certificado digital e-CNPJ (ICP-Brasil)" : "Biometria do titular (MEI)"}
-          </p>
+          <h2 className="text-lg text-ink">Acesso e aprovações</h2>
+          <p className="text-xs text-mut3">{perfil.governanca}</p>
         </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
+        <MetricTile label="Seu papel" value={PAPEIS[papel]} />
         <MetricTile
-          label="Assinantes"
-          value={perfil.duplaAssinatura ? "3 com alçadas" : "Titular"}
-        />
-        <MetricTile
-          label="Autorização"
-          value={perfil.duplaAssinatura ? "Dupla (maker-checker)" : "Simples"}
+          label="Sua alçada"
+          value={sessao?.alcada == null ? "Sem limite" : fmtBRL(sessao.alcada)}
         />
       </div>
-      {perfil.duplaAssinatura && (
-        <p className="mt-4 flex items-start gap-2 rounded-[14px] bg-tint px-4 py-3 text-sm text-mut2">
-          <Users size={18} className="mt-0.5 shrink-0" />
-          Pagamentos acima da alçada exigem um segundo aprovador — sem selfie, com assinatura por
-          certificado.
-        </p>
-      )}
+      <p className="mt-4 flex items-start gap-2 rounded-[14px] bg-tint px-4 py-3 text-sm text-mut2">
+        <Users size={18} className="mt-0.5 shrink-0" />
+        Pagamentos acima da alçada de quem lançou ficam pendentes até outra pessoa da empresa
+        aprovar, com verificação facial acima de R$ 500.
+      </p>
     </section>
   );
 }
 
 /** Prévia das contas a receber / a pagar (B2B). */
 function ContasPreview() {
-  const q = useQuery({ queryKey: ["faturas"], queryFn: () => listarFaturas() });
+  const { conta } = useAuth();
+  const q = useQuery({ queryKey: ["faturas", conta?.numero], queryFn: () => listarFaturas() });
   return (
     <section className="surface px-5 py-2">
       <div className="flex items-center justify-between pt-4">
-        <h2 className="text-lg text-ink">Contas a pagar e receber</h2>
+        <h2 className="text-lg text-ink">Cobranças e contas</h2>
         <Link to="/contas" className="text-sm font-medium text-mut2 hover:text-ink">
           Ver tudo
         </Link>
@@ -453,7 +470,8 @@ export function FaturaRow({ f }: { f: Fatura }) {
 /* ========================================================================== */
 
 function AtividadeRecente({ minha, titulo }: { minha: number; titulo: string }) {
-  const txs = useQuery({ queryKey: ["transacoes"], queryFn: transacoes });
+  const { conta } = useAuth();
+  const txs = useQuery({ queryKey: ["transacoes", conta?.numero], queryFn: transacoes });
   return (
     <section className="surface px-5 py-2">
       <div className="flex items-center justify-between pt-4">

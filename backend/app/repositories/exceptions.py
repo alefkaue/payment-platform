@@ -4,23 +4,21 @@ para o HTTPException apropriado -- o repositório não conhece HTTP."""
 
 class SaldoInsuficienteError(Exception):
     """Saldo checado e debitado dentro da MESMA operação atômica
-    (executar_transferencia). É o que fecha a condição de corrida: checar e
-    escrever viraram uma coisa só, protegida por SELECT ... FOR UPDATE (Postgres)
-    / lock de banco (SQLite)."""
-
-
-class IdDuplicadoError(Exception):
-    """carteira_id (chave) já existe."""
+    (executar_movimento), com as carteiras travadas."""
 
 
 class EmailDuplicadoError(Exception):
     """e-mail já cadastrado."""
 
 
-class DocumentoDuplicadoError(Exception):
-    """CPF/CNPJ já cadastrado."""
+class CpfDuplicadoError(Exception):
+    """CPF já cadastrado."""
 
 
-class CarteiraGovernoAusenteError(Exception):
-    """A conta Governo (destino do imposto) não foi inicializada. Não deveria
-    acontecer em runtime -- ela é criada no boot (ver main.py:startup)."""
+class CnpjDuplicadoError(Exception):
+    """CNPJ já cadastrado."""
+
+
+class ContaSistemaAusenteError(Exception):
+    """Uma conta de sistema (CAIXA, TRIBUTOS, FISCO) não foi criada. Elas são
+    criadas no boot (main.py:_preparar)."""

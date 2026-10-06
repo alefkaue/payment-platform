@@ -1,18 +1,31 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
-//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
-//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+// Config do Vite sem a camada da Lovable (@lovable.dev/vite-tanstack-config).
+// Fora do sandbox da Lovable, aquele pacote só montava estes plugins padrão;
+// aqui eles ficam explícitos e o projeto não depende mais da plataforma.
+// Sem Nitro: o app é SPA (web + apk). O build sai em dist/client (shell em
+// dist/client/_shell.html). Para deploy com SSR, adicione `nitro()` de "nitro/vite".
+import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
+import tsConfigPaths from "vite-tsconfig-paths";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
 
 export default defineConfig({
-  tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
-    // SPA mode: prerender a static shell (.output/public/index.html) that boots
-    // client-side. Lets us empacotar o mesmo app como PWA/apk (Capacitor) sem servidor.
-    spa: { enabled: true },
-  },
+  server: { port: 8081 },
+  resolve: { dedupe: ["react", "react-dom", "@tanstack/react-router", "@tanstack/react-query"] },
+  plugins: [
+    tailwindcss(),
+    tsConfigPaths({ projects: ["./tsconfig.json"] }),
+    tanstackStart({
+      // Código de servidor nunca entra no bundle do cliente.
+      importProtection: {
+        behavior: "error",
+        client: { files: ["**/server/**"], specifiers: ["server-only"] },
+      },
+      // Entry do servidor em src/server.ts (wrapper de erro do SSR).
+      server: { entry: "server" },
+      // SPA: gera o shell estático (dist/client/_shell.html) que o apk usa.
+      spa: { enabled: true },
+    }),
+    viteReact(),
+  ],
 });

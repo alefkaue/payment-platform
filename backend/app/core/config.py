@@ -53,27 +53,74 @@ class Settings(BaseSettings):
     login_janela_min: int = Field(default=15, alias="LOGIN_JANELA_MIN")
 
     # ---------- Split Payment (IBS/CBS - Reforma Tributária) ----------
-    # "2026" = alíquotas de teste; "2027" = simulação cheia. As alíquotas em si
-    # ficam em split_service.ALIQUOTAS -- aqui só qual vigência está ativa.
-    split_vigencia: str = Field(default="2026", alias="SPLIT_VIGENCIA")
+    # Ano da tabela de transição (split_service.CRONOGRAMA) usado no SIMULADOR
+    # quando o cliente não informa um ano. Vazio = ano corrente. Não afeta o split
+    # de cobranças reais: ali o valor do imposto vem da própria NF-e.
+    split_vigencia: str | None = Field(default=None, alias="SPLIT_VIGENCIA")
     # Acima deste valor (em reais), a transferência exige MFA facial (selfie).
     # Abaixo, basta o JWT. Espelha o LIMITE_FACIAL do design (padrão R$ 500).
     limite_facial_reais: float = Field(default=500.0, alias="LIMITE_FACIAL_REAIS")
-    # Conta Governo (destino do imposto + emissor dos depósitos). É criada no boot.
-    conta_governo_documento: str = Field(default="GOV-TESOURO", alias="CONTA_GOVERNO_DOCUMENTO")
-    conta_governo_carteira_id: int = Field(default=0, alias="CONTA_GOVERNO_CARTEIRA_ID")
 
-    # Admin bootstrap: a conta Governo é também a conta admin (faz depósitos, vê
-    # relatórios). Em produção, ADMIN_SENHA é obrigatória (erro se faltar); em dev
-    # cai num default com aviso no log.
+    # Admin bootstrap: uma PESSOA com papel admin (sem carteira). Não é mais a
+    # conta Governo -- caixa e tributos são contas de sistema separadas (ver
+    # db/models.py:ContaSistema). Em produção ADMIN_SENHA é obrigatória.
     admin_email: str = Field(default="admin@payflow.com.br", alias="ADMIN_EMAIL")
     admin_senha: str | None = Field(default=None, alias="ADMIN_SENHA")
+
+    # ---------- Limites de Pix (Res. BCB 142/2021 e IN BCB 491/2024) ----------
+    # Período noturno: das HORA_INICIO às HORA_FIM (horário de Brasília).
+    noturno_hora_inicio: int = Field(default=20, alias="NOTURNO_HORA_INICIO")
+    noturno_hora_fim: int = Field(default=6, alias="NOTURNO_HORA_FIM")
+    # Aparelho ainda não confiável (PF): teto por transação e por dia.
+    dispositivo_novo_por_transacao: float = Field(default=200.0, alias="DISPOSITIVO_NOVO_POR_TRANSACAO")
+    dispositivo_novo_diario: float = Field(default=1000.0, alias="DISPOSITIVO_NOVO_DIARIO")
+    # Aumento de limite pedido pelo cliente só vale depois desta carência.
+    limite_carencia_horas: int = Field(default=24, alias="LIMITE_CARENCIA_HORAS")
+
+    # ---------- Risco / bloqueio cautelar ----------
+    # Transferência a partir deste valor, para destino com quem a origem nunca
+    # transacionou, fica RETIDA no recebedor por até BLOQUEIO_CAUTELAR_HORAS.
+    risco_valor_minimo: float = Field(default=1000.0, alias="RISCO_VALOR_MINIMO")
+    bloqueio_cautelar_horas: int = Field(default=72, alias="BLOQUEIO_CAUTELAR_HORAS")
+    # Prazo para o pagador contestar uma transação (MED).
+    contestacao_prazo_dias: int = Field(default=80, alias="CONTESTACAO_PRAZO_DIAS")
+
+    # ---------- Rate limit por IP ----------
+    login_max_tentativas_ip: int = Field(default=30, alias="LOGIN_MAX_TENTATIVAS_IP")
+    # Proxies cujo X-Forwarded-For é confiável (vírgula). Vazio = ignora o header.
+    proxies_confiaveis: str = Field(default="", alias="PROXIES_CONFIAVEIS")
+    # Consultas de chave Pix por usuário por hora (anti-varredura, como no DICT).
+    consulta_chave_max_hora: int = Field(default=60, alias="CONSULTA_CHAVE_MAX_HORA")
+
+    # ---------- Biometria ----------
+    # Quantas análises faciais (DeepFace) rodam ao mesmo tempo. O resto espera até
+    # BIOMETRIA_ESPERA_SEG e recebe 503 -- não deixa a biometria ocupar todas as
+    # threads da API.
+    biometria_concorrencia: int = Field(default=2, alias="BIOMETRIA_CONCORRENCIA")
+    biometria_espera_seg: float = Field(default=10.0, alias="BIOMETRIA_ESPERA_SEG")
+    desafio_validade_seg: int = Field(default=120, alias="DESAFIO_VALIDADE_SEG")
+
+    # ---------- Consulta de CNPJ ----------
+    # "stub" (dev/testes: aceita qualquer CNPJ válido) | "brasilapi" (consulta
+    # pública da Receita via brasilapi.com.br).
+    cnpj_provedor: str = Field(default="stub", alias="CNPJ_PROVEDOR")
+
+    # ---------- Rendimento ----------
+    # CDI anual (fração, ex 0.149 = 14,9% a.a.) e quanto dele a conta paga (1.0 = 100%).
+    cdi_anual: float = Field(default=0.149, alias="CDI_ANUAL")
+    rendimento_percentual_cdi: float = Field(default=1.0, alias="RENDIMENTO_PERCENTUAL_CDI")
+
+    # ---------- Webhooks ----------
+    webhook_timeout_seg: float = Field(default=5.0, alias="WEBHOOK_TIMEOUT_SEG")
+    webhook_max_tentativas: int = Field(default=5, alias="WEBHOOK_MAX_TENTATIVAS")
+    # Tenta entregar logo após o evento (thread). Os testes desligam e chamam o job.
+    webhook_entrega_imediata: bool = Field(default=True, alias="WEBHOOK_ENTREGA_IMEDIATA")
 
     # ---------- CORS ----------
     # Lista separada por vírgula dos origins liberados. Default restrito ao front
     # local (fecha o bug #17: CORS "*"). Em produção, o domínio publicado.
     cors_origins: str = Field(
-        default="http://localhost:3000,http://localhost:19006,http://127.0.0.1:5500",
+        default="http://localhost:8081,http://localhost:8080,http://localhost:3000",
         alias="CORS_ORIGINS",
     )
 
@@ -92,6 +139,10 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
+    def proxies_confiaveis_lista(self) -> set[str]:
+        return {p.strip() for p in self.proxies_confiaveis.split(",") if p.strip()}
+
+    @property
     def em_producao(self) -> bool:
         return self.ambiente.lower() in {"producao", "production", "prod"}
 
@@ -104,4 +155,6 @@ def get_settings() -> Settings:
             "BIOMETRIA_STUB não pode ser usado em produção -- é um modo de teste "
             "que aprova qualquer rosto. Desligue-o (BIOMETRIA_STUB=0)."
         )
+    if s.cnpj_provedor == "stub" and s.em_producao:
+        raise RuntimeError("CNPJ_PROVEDOR=stub não pode ser usado em produção (aceita qualquer CNPJ).")
     return s

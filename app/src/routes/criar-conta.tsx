@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, ScanFace, ShieldCheck } from "lucide-react";
+import { Building2, ScanFace } from "lucide-react";
 import { registrar } from "@/lib/api";
-import { PORTES } from "@/lib/empresa";
+import { PORTES, REGIMES_APURACAO } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
 import { maskDoc } from "@/lib/format";
-import type { PortePJ } from "@/lib/types";
+import type { PortePJ, ProvaBiometrica, RegimeApuracao } from "@/lib/types";
 import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
 import { cn } from "@/lib/utils";
@@ -22,14 +22,18 @@ export const Route = createFileRoute("/criar-conta")({
       { title: "Abrir conta — PayFlow" },
       { name: "description", content: "Abra sua conta PayFlow para pessoa física ou empresa." },
       { property: "og:title", content: "Abrir conta — PayFlow" },
-      { property: "og:description", content: "Conta PF ou PJ com split automático de IBS/CBS." },
+      { property: "og:description", content: "Conta PF ou PJ com split de IBS/CBS nas cobranças." },
     ],
   }),
   component: CriarConta,
 });
 
-const SETORES = ["Indústria", "Autopeças", "Comércio", "Serviços", "Transporte", "Outro"];
-
+/**
+ * Cadastro. Toda conta começa por uma PESSOA (CPF + verificação facial). Para
+ * empresa, a mesma pessoa informa o CNPJ: o banco confere na Receita e, quando o
+ * quadro de sócios está disponível, exige que ela seja sócia. Ela vira admin da
+ * empresa e pode adicionar outras pessoas com papéis e alçadas depois.
+ */
 function CriarConta() {
   const nav = useNavigate();
   const { entrar } = useAuth();
@@ -38,41 +42,46 @@ function CriarConta() {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
-  const [doc, setDoc] = useState("");
-  const [setor, setSetor] = useState(SETORES[0]);
+  const [cpf, setCpf] = useState("");
+  const [cnpj, setCnpj] = useState("");
+  const [fantasia, setFantasia] = useState("");
   const [porte, setPorte] = useState<PortePJ>("PME");
-  const [facialOk, setFacialOk] = useState(false);
+  const [regime, setRegime] = useState<RegimeApuracao>("regular");
   const [liveness, setLiveness] = useState(false);
-  const [certOk, setCertOk] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // MEI e pessoa física usam biometria; demais portes usam certificado digital.
-  const usaBiometria = tipo === "PF" || porte === "MEI";
-
-  async function submit(e: React.FormEvent) {
+  function validar(e: React.FormEvent) {
     e.preventDefault();
     setErro(null);
-    const digits = doc.replace(/\D/g, "");
     if (!nome || !email) return setErro("Preencha nome e e-mail.");
     if (senha.length < 8) return setErro("A senha precisa ter ao menos 8 caracteres.");
-    if (digits.length !== (tipo === "PF" ? 11 : 14))
-      return setErro(`${tipo === "PF" ? "CPF" : "CNPJ"} incompleto.`);
-    if (usaBiometria && !facialOk)
-      return setErro("Conclua a verificação facial (prova de vida).");
-    if (!usaBiometria && !certOk)
-      return setErro("Conecte o certificado digital e-CNPJ da empresa.");
+    if (cpf.replace(/\D/g, "").length !== 11) return setErro("CPF incompleto.");
+    if (tipo === "PJ" && cnpj.replace(/\D/g, "").length !== 14) return setErro("CNPJ incompleto.");
+    setLiveness(true);
+  }
+
+  async function criar(prova: ProvaBiometrica) {
     setLoading(true);
     try {
       const r = await registrar({
-        tipo,
         nome,
         email,
         senha,
-        documento: digits,
-        selfie: null,
+        cpf: cpf.replace(/\D/g, ""),
+        biometria: prova,
+        ...(tipo === "PJ"
+          ? {
+              empresa: {
+                cnpj: cnpj.replace(/\D/g, ""),
+                ...(fantasia ? { nome_fantasia: fantasia } : {}),
+                porte,
+                regime_apuracao: porte === "MEI" ? "mei" : regime,
+              },
+            }
+          : {}),
       });
-      entrar(r.conta);
+      entrar(r);
       nav({ to: "/inicio" });
     } catch (err) {
       setErro((err as Error).message);
@@ -87,7 +96,7 @@ function CriarConta() {
         <div className="surface p-6 md:p-10">
           <Wordmark />
           <h1 className="mt-6 text-3xl text-ink">Abrir conta</h1>
-          <form onSubmit={submit} className="mt-6 space-y-4">
+          <form onSubmit={validar} className="mt-6 space-y-4">
             <div
               role="radiogroup"
               aria-label="Tipo de conta"
@@ -99,10 +108,7 @@ function CriarConta() {
                   type="button"
                   role="radio"
                   aria-checked={tipo === t}
-                  onClick={() => {
-                    setTipo(t);
-                    setDoc("");
-                  }}
+                  onClick={() => setTipo(t)}
                   className={cn(
                     "h-10 rounded-full text-sm font-semibold transition-colors duration-200",
                     tipo === t
@@ -110,11 +116,12 @@ function CriarConta() {
                       : "text-mut2 hover:text-ink",
                   )}
                 >
-                  {t === "PF" ? "Pessoa física" : "Empresa (PJ)"}
+                  {t === "PF" ? "Pessoa física" : "Pessoa + empresa"}
                 </button>
               ))}
             </div>
-            <Field label={tipo === "PF" ? "Nome" : "Razão social"} id="nome">
+
+            <Field label="Seu nome" id="nome">
               <input
                 id="nome"
                 className="field"
@@ -140,40 +147,50 @@ function CriarConta() {
                 onChange={(e) => setSenha(e.target.value)}
               />
             </Field>
-            <Field label={tipo === "PF" ? "CPF" : "CNPJ"} id="doc">
+            <Field label="Seu CPF" id="cpf">
               <input
-                id="doc"
+                id="cpf"
                 inputMode="numeric"
                 className="field tabular"
-                value={doc}
-                onChange={(e) => setDoc(maskDoc(e.target.value, tipo))}
-                placeholder={tipo === "PF" ? "000.000.000-00" : "00.000.000/0000-00"}
+                value={cpf}
+                onChange={(e) => setCpf(maskDoc(e.target.value, "PF"))}
+                placeholder="000.000.000-00"
               />
             </Field>
+
             {tipo === "PJ" && (
-              <>
-                <Field label="Setor de atuação" id="setor">
-                  <select
-                    id="setor"
-                    className="field"
-                    value={setor}
-                    onChange={(e) => setSetor(e.target.value)}
-                  >
-                    {SETORES.map((s) => (
-                      <option key={s}>{s}</option>
-                    ))}
-                  </select>
+              <div className="space-y-4 rounded-[18px] border border-line2 p-4">
+                <p className="flex items-center gap-2 text-sm font-semibold text-ink">
+                  <Building2 size={16} /> Dados da empresa
+                </p>
+                <Field
+                  label="CNPJ"
+                  id="cnpj"
+                  hint="Conferimos na Receita. Você precisa ser sócio(a)."
+                >
+                  <input
+                    id="cnpj"
+                    inputMode="numeric"
+                    className="field tabular"
+                    value={cnpj}
+                    onChange={(e) => setCnpj(maskDoc(e.target.value, "PJ"))}
+                    placeholder="00.000.000/0000-00"
+                  />
                 </Field>
-                <Field label="Porte da empresa" id="porte" hint="Define como sua conta é verificada.">
+                <Field label="Nome fantasia (opcional)" id="fantasia">
+                  <input
+                    id="fantasia"
+                    className="field"
+                    value={fantasia}
+                    onChange={(e) => setFantasia(e.target.value)}
+                  />
+                </Field>
+                <Field label="Porte" id="porte">
                   <select
                     id="porte"
                     className="field"
                     value={porte}
-                    onChange={(e) => {
-                      setPorte(e.target.value as PortePJ);
-                      setFacialOk(false);
-                      setCertOk(false);
-                    }}
+                    onChange={(e) => setPorte(e.target.value as PortePJ)}
                   >
                     {(Object.keys(PORTES) as PortePJ[]).map((p) => (
                       <option key={p} value={p}>
@@ -182,21 +199,37 @@ function CriarConta() {
                     ))}
                   </select>
                 </Field>
-              </>
+                {porte !== "MEI" && (
+                  <Field
+                    label="Regime de apuração"
+                    id="regime"
+                    hint={REGIMES_APURACAO[regime].dica}
+                  >
+                    <select
+                      id="regime"
+                      className="field"
+                      value={regime}
+                      onChange={(e) => setRegime(e.target.value as RegimeApuracao)}
+                    >
+                      {(["regular", "simples"] as const).map((r) => (
+                        <option key={r} value={r}>
+                          {REGIMES_APURACAO[r].label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                )}
+              </div>
             )}
 
-            {usaBiometria ? (
-              <FacialStep ok={facialOk} onStart={() => setLiveness(true)} />
-            ) : (
-              <CertificadoDigital
-                ok={certOk}
-                onConnect={() => setCertOk(true)}
-                dupla={PORTES[porte].duplaAssinatura}
-              />
-            )}
+            <p className="flex items-start gap-2 rounded-[14px] bg-tint px-4 py-3 text-sm text-mut2">
+              <ScanFace size={18} className="mt-0.5 shrink-0" />
+              Ao continuar, fazemos uma verificação facial rápida pela câmera: olhar de frente e
+              virar o rosto para o lado que o app pedir.
+            </p>
             {erro && <ErrorBox>{erro}</ErrorBox>}
             <button className="btn btn-ink w-full" disabled={loading}>
-              {loading ? "Criando…" : "Criar conta"}
+              {loading ? "Criando…" : "Continuar"}
             </button>
           </form>
           <p className="mt-6 text-center text-sm text-muted-foreground">
@@ -211,96 +244,12 @@ function CriarConta() {
       {liveness && (
         <LivenessCheck
           onClose={() => setLiveness(false)}
-          onSuccess={() => {
+          onSuccess={(prova) => {
             setLiveness(false);
-            setFacialOk(true);
+            void criar(prova);
           }}
         />
       )}
     </main>
-  );
-}
-
-/** Passo de verificação facial com prova de vida (PF e MEI). */
-function FacialStep({ ok, onStart }: { ok: boolean; onStart: () => void }) {
-  return (
-    <div className="rounded-[18px] border border-dashed border-line2 bg-background p-4">
-      <div className="flex items-start gap-3">
-        <span
-          className={cn(
-            "grid h-11 w-11 shrink-0 place-items-center rounded-full",
-            ok ? "bg-[color-mix(in_oklab,var(--pos)_16%,transparent)] text-pos" : "bg-tint text-ink",
-          )}
-        >
-          {ok ? <Check size={22} strokeWidth={3} /> : <ScanFace size={22} />}
-        </span>
-        <div className="min-w-0">
-          <p className="font-medium text-ink">
-            {ok ? "Verificação facial concluída" : "Verificação facial (prova de vida)"}
-          </p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Pela câmera, ao vivo — você vai piscar e virar o rosto. Sem foto, nada é armazenado.
-          </p>
-          {!ok && (
-            <button
-              type="button"
-              onClick={onStart}
-              className="mt-2 text-sm font-semibold text-ink underline underline-offset-4"
-            >
-              Iniciar verificação
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Verificação por certificado digital e-CNPJ (PME e grandes empresas). */
-function CertificadoDigital({
-  ok,
-  onConnect,
-  dupla,
-}: {
-  ok: boolean;
-  onConnect: () => void;
-  dupla: boolean;
-}) {
-  return (
-    <div className="rounded-[18px] border border-dashed border-line2 bg-background p-4">
-      <div className="flex items-start gap-3">
-        <span
-          className={cn(
-            "grid h-11 w-11 shrink-0 place-items-center rounded-full",
-            ok ? "bg-[color-mix(in_oklab,var(--pos)_16%,transparent)] text-pos" : "bg-tint text-ink",
-          )}
-        >
-          {ok ? <Check size={22} strokeWidth={3} /> : <ShieldCheck size={22} />}
-        </span>
-        <div className="min-w-0">
-          <p className="font-medium text-ink">
-            {ok ? "Certificado e-CNPJ conectado" : "Certificado digital e-CNPJ"}
-          </p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Autenticação por ICP-Brasil (A1 em arquivo ou A3 em token) — o mesmo que assina suas
-            notas fiscais. Sem selfie.
-          </p>
-          {!ok && (
-            <button
-              type="button"
-              onClick={onConnect}
-              className="mt-2 text-sm font-semibold text-ink underline underline-offset-4"
-            >
-              Conectar certificado ou token
-            </button>
-          )}
-          {dupla && (
-            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-tax-bg px-2.5 py-1 text-[11px] font-medium text-tax2">
-              <ShieldCheck size={12} /> Dupla autorização e alçadas por assinante
-            </p>
-          )}
-        </div>
-      </div>
-    </div>
   );
 }

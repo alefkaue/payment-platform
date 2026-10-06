@@ -1,9 +1,10 @@
-import { calcularSplit } from "@/lib/split";
+import { aliquotasDoAno, calcularSplit, semSplit, VIGENCIA_ATUAL } from "@/lib/split";
 import type {
   ApuracaoPJ,
   Cartao,
   CarteiraInfo,
   CategoriaTx,
+  Cobranca,
   Conta,
   Fatura,
   Produto,
@@ -19,12 +20,15 @@ let nextId = 500;
 export const genId = () => ++nextId;
 
 // --- Contas de demonstração -------------------------------------------------
-// Login decide qual conta entra (e-mail com "empresa"/"pj" -> conta PJ).
+// A mesma pessoa (Marina) opera a conta pessoal e a empresa (é admin dela):
+// troca pelo seletor de conta, como no backend (header X-Conta).
 const contaPF: Conta = {
   id: 42,
   nome: "Marina Alves",
   tipo: "PF",
   carteira_id: 1042,
+  agencia: "0001",
+  numero: "1042",
   saldo: 8420.35,
   pontos: 12450,
 };
@@ -33,13 +37,18 @@ const contaPJ: Conta = {
   nome: "Rodoforte Autopeças Ltda",
   tipo: "PJ",
   carteira_id: 3050,
+  agencia: "0001",
+  numero: "3050",
   saldo: 486210.75,
   pontos: 0,
   cnpj: "12.345.678/0001-90",
   setor: "Indústria · Autopeças",
   porte: "GRANDE",
-  // Crédito de IBS/CBS acumulado nas compras de aço, energia e componentes.
-  creditos: 184300,
+  regime_apuracao: "regular",
+  papel: "admin",
+  alcada: null,
+  // Crédito de IBS/CBS informado (apurado pelo contador) — informação, não saldo.
+  creditos: 5_120.4,
 };
 
 export const contasDemo: Record<TipoConta, Conta> = { PF: contaPF, PJ: contaPJ };
@@ -283,9 +292,10 @@ function mk(
   auth: "senha" | "selfie" = "senha",
 ): Transacao {
   const tipo = categoria === "deposito" ? "PF" : tipoDe(destino);
+  // Transferência e depósito nunca têm split; compra/viagem (com nota) têm.
   const s =
-    categoria === "deposito"
-      ? { valor_bruto: valor, cbs: 0, ibs: 0, liquido: valor, aplicou_split: false }
+    categoria === "deposito" || categoria === "transferencia"
+      ? semSplit(valor)
       : calcularSplit(valor, tipo);
   return {
     id: ++nextId,
@@ -298,6 +308,7 @@ function mk(
     tipo_destino: tipo,
     aplicou_split: s.aplicou_split,
     auth_metodo: auth,
+    status: "concluida",
     categoria,
     descricao,
     criado_em: new Date(Date.now() - daysAgo * 86400000 - 3600000 * (daysAgo + 2)).toISOString(),
@@ -305,9 +316,9 @@ function mk(
 }
 
 /**
- * Operação B2B industrial (conta Empresa): imposto calculado no regime pleno
- * da Reforma (IBS 17,7% + CBS 8,8% ≈ 26,5%), não na fase de teste de 1%, para
- * que o extrato da Empresa mostre o imposto cheio — e o crédito que o abate.
+ * Operação B2B com nota fiscal (conta Empresa): o imposto retido é o da tabela
+ * de transição do ANO CORRENTE (em 2026, CBS 0,9% + IBS 0,1%). A projeção para
+ * o regime pleno (2033) aparece separada na tela, nunca como valor retido hoje.
  */
 function mkB2B(
   origem: number,
@@ -317,7 +328,7 @@ function mkB2B(
   categoria: CategoriaTx,
   descricao: string,
 ): Transacao {
-  const a = { cbs: 0.088, ibs: 0.177 };
+  const a = aliquotasDoAno(VIGENCIA_ATUAL);
   const r = (n: number) => Math.round(n * 100) / 100;
   const cbs = r(bruto * a.cbs);
   const ibs = r(bruto * a.ibs);
@@ -332,6 +343,7 @@ function mkB2B(
     tipo_destino: "PJ",
     aplicou_split: true,
     auth_metodo: "senha",
+    status: "concluida",
     categoria,
     descricao,
     criado_em: new Date(Date.now() - daysAgo * 86400000 - 3600000 * (daysAgo + 2)).toISOString(),
@@ -352,14 +364,15 @@ export const transacoes: Transacao[] = [
   mkB2B(3200, 3050, 312450.0, 1, "recebimento", "Venda · Mercedes-Benz · NF-e 0012877"),
   mkB2B(3201, 3050, 188900.0, 2, "recebimento", "Venda · Scania · NF-e 0012861"),
   mkB2B(3200, 3050, 96120.5, 5, "recebimento", "Venda · Mercedes-Benz · NF-e 0012840"),
-  // …e compras de insumo que geram crédito de IBS/CBS (categoria "compra" = saída)
+  // …e compras de insumo com nota (a nota gera crédito de IBS/CBS na apuração)
   mkB2B(3050, 3202, 142800.0, 3, "compra", "Compra · Usiminas Aços · NF-e 0033120"),
   mkB2B(3050, 3203, 38650.0, 6, "compra", "Compra · Energia Sul · NF-e 0033104"),
 ];
 
 // --- Conta Empresa (B2B): contas a receber / a pagar atreladas a NF-e ---------
-const daysFromNow = (d: number) =>
-  new Date(Date.now() + d * 86400000).toISOString();
+const daysFromNow = (d: number) => new Date(Date.now() + d * 86400000).toISOString();
+const aliq = aliquotasDoAno(VIGENCIA_ATUAL);
+const impostoNota = (bruto: number) => Math.round(bruto * (aliq.cbs + aliq.ibs) * 100) / 100;
 
 export const faturas: Fatura[] = [
   {
@@ -368,8 +381,8 @@ export const faturas: Fatura[] = [
     contraparte: "Mercedes-Benz do Brasil",
     nf: "NF-e 0012903",
     valor_bruto: 428_900,
-    imposto: 113_658.5, // 26,5%
-    liquido: 315_241.5,
+    imposto: impostoNota(428_900),
+    liquido: 428_900 - impostoNota(428_900),
     credito_gerado: 0,
     vencimento: daysFromNow(4),
     status: "pendente",
@@ -380,8 +393,8 @@ export const faturas: Fatura[] = [
     contraparte: "Scania Latin America",
     nf: "NF-e 0012899",
     valor_bruto: 206_500,
-    imposto: 54_722.5,
-    liquido: 151_777.5,
+    imposto: impostoNota(206_500),
+    liquido: 206_500 - impostoNota(206_500),
     credito_gerado: 0,
     vencimento: daysFromNow(9),
     status: "agendado",
@@ -392,9 +405,9 @@ export const faturas: Fatura[] = [
     contraparte: "Usiminas Aços",
     nf: "NF-e 0033188",
     valor_bruto: 167_300,
-    imposto: 44_334.5,
+    imposto: impostoNota(167_300),
     liquido: 167_300,
-    credito_gerado: 44_334.5, // compra de insumo gera crédito de IBS/CBS
+    credito_gerado: impostoNota(167_300), // compra de insumo com nota gera crédito na apuração
     vencimento: daysFromNow(2),
     status: "pendente",
   },
@@ -404,9 +417,9 @@ export const faturas: Fatura[] = [
     contraparte: "Energia Sul Distribuidora",
     nf: "NF-e 0033170",
     valor_bruto: 41_200,
-    imposto: 10_918,
+    imposto: impostoNota(41_200),
     liquido: 41_200,
-    credito_gerado: 10_918,
+    credito_gerado: impostoNota(41_200),
     vencimento: daysFromNow(6),
     status: "agendado",
   },
@@ -442,16 +455,27 @@ export const cartoes: Cartao[] = [
   },
 ];
 
-// --- Apuração automática do mês (split inteligente) ---------------------------
+// --- Tributos do mês (split "inteligente": retém o que a nota destaca) --------
 const nomeMes = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+const vendas = transacoes.filter((t) => t.destino_carteira_id === 3050 && t.aplicou_split);
+const somar = (f: (t: Transacao) => number) =>
+  Math.round(vendas.reduce((a, t) => a + f(t), 0) * 100) / 100;
+const cbsRetido = somar((t) => t.cbs);
+const ibsRetido = somar((t) => t.ibs);
 export const apuracaoDemo: ApuracaoPJ = {
   periodo: nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1),
-  faturamento: 597_470.5,
-  imposto_devido: 158_329.68, // 26,5% sobre o faturamento
-  credito_usado: 132_145.2, // crédito das compras abate o devido (não-cumulatividade)
-  imposto_recolhido: 26_184.48, // só a diferença vai ao Fisco, no ato
-  credito_saldo: 184_300, // crédito tributário que segue acumulado
-  caixa_preservado: 158_329.68, // imposto que nunca passou pelo caixa da empresa
-  aliquota_pct: 26.5,
-  regime: "Padrão", // autopeças/indústria = regime padrão (sem redução)
+  faturamento: somar((t) => t.valor_bruto),
+  cbs_retido: cbsRetido,
+  ibs_retido: ibsRetido,
+  imposto_retido: Math.round((cbsRetido + ibsRetido) * 100) / 100,
+  a_repassar: Math.round(vendas[0] ? (vendas[0].cbs + vendas[0].ibs) * 100 : 0) / 100, // venda de ontem: vai em D+1
+  repassado:
+    Math.round((cbsRetido + ibsRetido - (vendas[0] ? vendas[0].cbs + vendas[0].ibs : 0)) * 100) /
+    100,
+  creditos_informados: contaPJ.creditos ?? 0,
+  restituicao_prevista: Math.min(contaPJ.creditos ?? 0, cbsRetido + ibsRetido),
+  vendas_com_split: vendas.length,
 };
+
+// --- Cobranças emitidas pela empresa (Pix dinâmico + boleto) -----------------
+export const cobrancasDemo: Cobranca[] = [];

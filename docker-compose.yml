@@ -1,16 +1,16 @@
-version: "3.9"
+# Sobe backend + Postgres. Credenciais e segredos vêm do arquivo .env (copie de
+# .env.example). Nada de senha escrita aqui: o compose falha com mensagem clara
+# se POSTGRES_PASSWORD não estiver definida.
 
 services:
   backend:
     build: ./backend
     ports:
       - "8000:8000"
+    env_file: .env
     environment:
-      # Aponta pro serviço "db" abaixo pelo nome (resolução de DNS interna do
-      # Docker Compose) -- não é "localhost", já que backend e db são
-      # containers diferentes. Pra rodar sem Postgres (repositório em
-      # memória), comente esta linha inteira.
-      DATABASE_URL: postgresql+psycopg2://payflow:payflow@db:5432/payflow
+      # "db" é o nome do serviço abaixo (DNS interno do Compose), não localhost.
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-payflow}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@db:5432/${POSTGRES_DB:-payflow}
     depends_on:
       db:
         condition: service_healthy
@@ -18,21 +18,18 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: payflow
-      POSTGRES_PASSWORD: payflow
-      POSTGRES_DB: payflow
+      POSTGRES_USER: ${POSTGRES_USER:-payflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-payflow}
     volumes:
-      # Persiste os dados entre "docker compose down/up". Pra zerar o banco
-      # de propósito, "docker compose down -v" remove o volume também.
+      # Persiste entre "docker compose down/up"; "down -v" apaga.
       - payflow_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U payflow -d payflow"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
-    # Não expõe a porta 5432 pro host de propósito -- só o container "backend"
-    # precisa alcançar o banco. Se quiser inspecionar com um client local
-    # (DBeaver, psql), descomente:
+    # Porta 5432 não exposta de propósito. Para inspecionar com DBeaver/psql, descomente:
     # ports:
     #   - "5432:5432"
 

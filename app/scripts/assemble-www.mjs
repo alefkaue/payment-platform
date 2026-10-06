@@ -1,9 +1,10 @@
 // Monta a pasta `www` (raiz web do apk) a partir do build SPA do Vite.
-// O TanStack Start em modo SPA gera `.output/public/_shell.html`; o Capacitor
+// O TanStack Start em modo SPA gera `dist/client/_shell.html`; o Capacitor
 // precisa de um `index.html` na raiz, então copiamos tudo e renomeamos o shell.
 import { cpSync, rmSync, renameSync, existsSync } from "node:fs";
 
-const PUB = ".output/public";
+// dist/client = build sem Nitro (atual); .output/public = build com Nitro (antigo).
+const PUB = existsSync("dist/client/_shell.html") ? "dist/client" : ".output/public";
 const WWW = "www";
 
 if (!existsSync(`${PUB}/_shell.html`)) {

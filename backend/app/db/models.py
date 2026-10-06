@@ -1,48 +1,49 @@
 """
-Modelos ORM do PayFlow. Esta é a v6: o schema ficou "mais concreto" em cima do
-DER da v5, incorporando autenticação (login/JWT), split payment de IBS/CBS e as
-correções de segurança da auditoria.
+Modelos ORM do PayFlow -- v7.
 
-Mudanças desta versão em relação à v5 (todas endereçando itens da auditoria):
+O que mudou em relação à v6 (ver HANDOFF.md, seção "v7"):
 
-- `usuarios` agora é uma CONTA DE VERDADE, com credencial de login: `email`
-  (único), `senha_hash` (bcrypt, nunca texto puro), `papel` (user/admin) e
-  `documento` (CPF/CNPJ) único. `tipo` ganhou o valor GOV (conta Governo/Tesouro
-  que recebe o imposto retido no split). Fecha o item #1 (sem autenticação).
-- `embedding_facial` virou `embedding_facial_cifrado` (LargeBinary, cifrado com
-  Fernet -- ver core/security.py). Antes era um ARRAY(Float) em texto puro. Fecha
-  o item #12 (biometria sem criptografia / LGPD).
-- `transacoes` ganhou as colunas do split: `valor_bruto`, `cbs`, `ibs`,
-  `liquido`, `tipo_destino`, `aplicou_split`, `auth_metodo` e `idempotency_key`
-  (único) -- fecha os itens #11 (idempotência) e #13 (split sem cálculo).
-- `refresh_tokens`: tabela nova pra rotação/revogação de refresh tokens (guarda só
-  o HASH do token, nunca o token em si).
-- `split_liquidacoes` agora guarda a `natureza` de cada perna (CBS/IBS/LIQUIDO) e
-  tem FK pra transação -- o motor em services/split_service.py grava uma linha por
-  perna, tornando a auditoria fiscal reconstruível.
-- `historico_saldo` passa a receber TAMBÉM o depósito/saldo inicial (fecha o item
-  #6: antes o histórico começava incompleto).
-
-O que continua igual (e por quê): `carteiras` separada de `usuarios` (1 usuário ->
-N carteiras, hoje 1), dinheiro em Numeric(14,2) (nunca float), `sessoes_mfa` como
-registro de CADA tentativa (agora de fato gravado -- item #5), `logs_auditoria`
-como log genérico (agora de fato gravado).
+- PESSOA x EMPRESA x VÍNCULO. `usuarios` agora é sempre uma pessoa (CPF, login,
+  biometria). Empresas ficam em `empresas` (CNPJ, porte, regime de apuração) e
+  quem opera cada empresa está em `vinculos` (papel + alçada em R$). Antes a
+  mesma linha era a pessoa que faz login E a empresa, o que impedia representante
+  legal, vários operadores e dupla aprovação.
+- CARTEIRA com titular explícito: PF (usuario_id), PJ (empresa_id) ou SISTEMA
+  (`sistema` = CAIXA | TRIBUTOS). Agência + número de conta com dígito; o número
+  é gerado pelo banco (antes o usuário escolhia um id de 6 dígitos, fácil de
+  adivinhar). `saldo_bloqueado` guarda o que está em bloqueio cautelar.
+- A antiga conta "Governo" fazia 3 papéis (admin, emissor de depósitos, destino
+  do imposto). Agora: admin = pessoa com papel admin; CAIXA = conta de liquidação
+  (emite depósitos/rendimento, pode ficar negativa); TRIBUTOS = conta transitória
+  de CBS/IBS, esvaziada pelo repasse diário (`repasses_tributo`).
+- SPLIT só em COBRANÇA vinculada a NF-e (`cobrancas.nfe_chave` + cbs/ibs que vêm
+  da nota). Transferência comum nunca retém imposto.
+- `creditos_tributarios` substitui `carteiras.creditos`: crédito é INFORMAÇÃO
+  (consultada ou declarada, com fonte e data), não dinheiro guardado pelo banco.
+- Segurança: `dispositivos`, `limites`, `desafios_biometria`, `contestacoes`;
+  transação ganhou `status` (concluida | retida | devolvida | devolvida_parcial).
+- PJ: `operacoes_pendentes` (dupla aprovação), `chaves_pix`, `autorizacoes_
+  recorrentes` (Pix Automático), `webhooks` + `webhook_entregas`,
+  `rendimentos` (rendimento diário do saldo).
 """
 
 import enum
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     Enum,
     ForeignKey,
     Index,
+    Integer,
     LargeBinary,
     Numeric,
     String,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -50,15 +51,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
-# Tipo JSON cross-dialect: JSONB no Postgres (indexável, binário), JSON genérico
-# no SQLite (dev/testes). Assim o MESMO modelo roda nos dois bancos sem mudança.
+# Tipo JSON cross-dialect: JSONB no Postgres, JSON genérico no SQLite.
 JSONTipo = JSON().with_variant(JSONB(), "postgresql")
+Dinheiro = Numeric(14, 2)
 
 
 class TipoPessoa(str, enum.Enum):
-    PF = "PF"   # pessoa física
-    PJ = "PJ"   # pessoa jurídica (sofre retenção de IBS/CBS no recebimento)
-    GOV = "GOV"  # conta Governo/Tesouro -- destino do imposto retido
+    """Titular de uma carteira (e tipo do destino de uma transação)."""
+
+    PF = "PF"
+    PJ = "PJ"
+    SISTEMA = "SISTEMA"  # contas internas do banco (CAIXA, TRIBUTOS)
 
 
 class Papel(str, enum.Enum):
@@ -67,56 +70,122 @@ class Papel(str, enum.Enum):
 
 
 class AuthMetodo(str, enum.Enum):
-    SENHA = "senha"    # transferência abaixo do limite: só o JWT (login) autoriza
-    SELFIE = "selfie"  # transferência acima do limite: exigiu MFA facial
+    SENHA = "senha"          # abaixo do limite facial: o JWT autoriza
+    SELFIE = "selfie"        # acima do limite: exigiu MFA facial com desafio
+    APROVACAO = "aprovacao"  # PJ: executada após aprovação de um segundo usuário
+    AUTOMATICO = "automatico"  # Pix Automático: autorização prévia do pagador
+    SISTEMA = "sistema"      # depósito, rendimento, repasse, devolução
+
+
+class PapelVinculo(str, enum.Enum):
+    ADMIN = "admin"          # sócio/representante: tudo, inclusive gerir vínculos
+    APROVADOR = "aprovador"  # aprova operações pendentes até a própria alçada
+    OPERADOR = "operador"    # lança operações (acima da alçada viram pendentes)
+    CONSULTA = "consulta"    # só vê saldo e extrato
+
+
+class RegimeApuracao(str, enum.Enum):
+    REGULAR = "regular"  # IBS/CBS pelo regime regular -> sujeito ao split
+    SIMPLES = "simples"  # Simples Nacional (recolhe pelo DAS) -> sem split por padrão
+    MEI = "mei"          # fora da obrigatoriedade do split
+
+
+class StatusTransacao(str, enum.Enum):
+    CONCLUIDA = "concluida"
+    RETIDA = "retida"                    # bloqueio cautelar no recebedor
+    DEVOLVIDA = "devolvida"              # MED procedente ou estorno total
+    DEVOLVIDA_PARCIAL = "devolvida_parcial"
+
+
+# =============================================================================
+# Pessoas, empresas e vínculos
+# =============================================================================
 
 
 class Usuario(Base):
-    """Usuarios/Empresas no DER -- agora com credencial de login."""
+    """Uma PESSOA: faz login, tem biometria e, opcionalmente, uma carteira PF."""
 
     __tablename__ = "usuarios"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     nome: Mapped[str] = mapped_column(String(120), nullable=False)
-    tipo: Mapped[TipoPessoa] = mapped_column(
-        Enum(TipoPessoa, name="tipo_pessoa"), nullable=False, default=TipoPessoa.PF
-    )
-    # CPF (PF) ou CNPJ (PJ). Único quando presente; GOV pode usar o documento
-    # sintético de config (CONTA_GOVERNO_DOCUMENTO).
-    documento: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
+    # CPF só com dígitos. Nulo apenas para o admin de sistema.
+    cpf: Mapped[str | None] = mapped_column(String(11), unique=True, nullable=True)
     email: Mapped[str] = mapped_column(String(180), unique=True, nullable=False, index=True)
     senha_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    papel: Mapped[Papel] = mapped_column(
-        Enum(Papel, name="papel_usuario"), nullable=False, default=Papel.USUARIO
-    )
+    papel: Mapped[Papel] = mapped_column(Enum(Papel, name="papel_usuario"), nullable=False, default=Papel.USUARIO)
     # Template biométrico CIFRADO (Fernet). Nunca a foto, nunca o vetor em texto puro.
     embedding_facial_cifrado: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    # Porte da empresa (PJ): MEI | PME | GRANDE. Define a verificação de acesso
-    # (MEI = biometria; PME/GRANDE = certificado digital e-CNPJ). Nulo para PF.
-    porte: Mapped[str | None] = mapped_column(String(10), nullable=True)
-    # Regime de alíquota do setor: padrao | reduzido_30 | reduzido_60 | zero.
-    regime_tributario: Mapped[str] = mapped_column(String(20), nullable=False, default="padrao")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    carteiras: Mapped[list["Carteira"]] = relationship(back_populates="usuario")
+    vinculos: Mapped[list["Vinculo"]] = relationship(back_populates="usuario")
+
+
+class Empresa(Base):
+    __tablename__ = "empresas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cnpj: Mapped[str] = mapped_column(String(14), unique=True, nullable=False)
+    razao_social: Mapped[str] = mapped_column(String(180), nullable=False)
+    nome_fantasia: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    porte: Mapped[str] = mapped_column(String(10), nullable=False, default="PME")  # MEI | PME | GRANDE
+    regime_apuracao: Mapped[RegimeApuracao] = mapped_column(
+        Enum(RegimeApuracao, name="regime_apuracao"), nullable=False, default=RegimeApuracao.REGULAR
+    )
+    cnae: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    situacao_cadastral: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Quando e por qual provedor o CNPJ foi conferido (ver services/cnpj_service.py).
+    verificada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verificada_por: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    vinculos: Mapped[list["Vinculo"]] = relationship(back_populates="empresa")
+
+
+class Vinculo(Base):
+    """Pessoa <-> empresa, com papel e alçada (valor máximo por operação sem
+    precisar de aprovação de outra pessoa). Alçada nula = sem limite (admin)."""
+
+    __tablename__ = "vinculos"
+    __table_args__ = (UniqueConstraint("usuario_id", "empresa_id", name="uq_vinculo_usuario_empresa"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False, index=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), nullable=False, index=True)
+    papel: Mapped[PapelVinculo] = mapped_column(Enum(PapelVinculo, name="papel_vinculo"), nullable=False)
+    alcada: Mapped[Decimal | None] = mapped_column(Dinheiro, nullable=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    usuario: Mapped["Usuario"] = relationship(back_populates="vinculos")
+    empresa: Mapped["Empresa"] = relationship(back_populates="vinculos")
+
+
+# =============================================================================
+# Carteiras e movimentação
+# =============================================================================
 
 
 class Carteira(Base):
     __tablename__ = "carteiras"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
-    # "chave" = o carteira_id público (o número que o usuário escolhe). String de
-    # propósito, pra migrar pra chave estilo PIX sem outra migração.
-    chave: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
-    saldo: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
-    # Crédito de IBS/CBS acumulado nas compras de insumo. No split inteligente
-    # (B2B) abate o imposto devido nas vendas antes de reter (LC 214/2025).
-    creditos: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    titular_tipo: Mapped[TipoPessoa] = mapped_column(Enum(TipoPessoa, name="tipo_pessoa"), nullable=False)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), nullable=True, index=True)
+    # CAIXA | TRIBUTOS para as contas de sistema; nulo para PF/PJ.
+    sistema: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
+    agencia: Mapped[str] = mapped_column(String(4), nullable=False, default="0001")
+    # Número da conta com dígito ("12345678-9"), gerado pelo banco.
+    numero: Mapped[str] = mapped_column(String(12), unique=True, nullable=False, index=True)
+    saldo: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
+    # Valor recebido mas em bloqueio cautelar (não pode ser gasto).
+    saldo_bloqueado: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    usuario: Mapped["Usuario"] = relationship(back_populates="carteiras")
+    usuario: Mapped["Usuario | None"] = relationship()
+    empresa: Mapped["Empresa | None"] = relationship()
     cartoes: Mapped[list["Cartao"]] = relationship(back_populates="carteira")
 
 
@@ -124,34 +193,259 @@ class Transacao(Base):
     __tablename__ = "transacoes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    origem_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
-    destino_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
+    origem_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
+    destino_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
+    # transferencia | cobranca | deposito | rendimento | repasse_tributo | devolucao | estorno
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False, default="transferencia")
     # valor_bruto = o que a origem paga. liquido = o que o destino recebe.
-    # cbs + ibs = o que foi retido e enviado à conta Governo (0 se destino não é PJ).
-    valor_bruto: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    cbs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
-    ibs: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
-    liquido: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    tipo_destino: Mapped[TipoPessoa] = mapped_column(
-        Enum(TipoPessoa, name="tipo_pessoa"), nullable=False
-    )
+    # cbs + ibs = retido para a conta TRIBUTOS (só em cobrança com NF-e).
+    valor_bruto: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    cbs: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
+    ibs: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
+    liquido: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    tipo_destino: Mapped[TipoPessoa] = mapped_column(Enum(TipoPessoa, name="tipo_pessoa"), nullable=False)
     aplicou_split: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     auth_metodo: Mapped[AuthMetodo] = mapped_column(
         Enum(AuthMetodo, name="auth_metodo"), nullable=False, default=AuthMetodo.SENHA
     )
-    # Resultado do MFA facial (quando houve) -- distancia, limite, confianca, modelo.
+    status: Mapped[StatusTransacao] = mapped_column(
+        Enum(StatusTransacao, name="status_transacao"), nullable=False, default=StatusTransacao.CONCLUIDA
+    )
+    bloqueio_ate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Quem disparou (pessoa). Nulo em operações de sistema.
+    autor_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    # Aparelho de onde saiu (soma do teto diário de aparelho novo).
+    dispositivo_id: Mapped[int | None] = mapped_column(ForeignKey("dispositivos.id"), nullable=True)
+    descricao: Mapped[str | None] = mapped_column(String(140), nullable=True)
     verificacao_facial: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
-    # Chave de idempotência enviada pelo cliente: um retry/double-click com a mesma
-    # chave devolve a MESMA transação em vez de criar outra (item #11).
     idempotency_key: Mapped[str | None] = mapped_column(String(80), unique=True, nullable=True)
+    # Devolução/estorno aponta para a transação original.
+    transacao_original_id: Mapped[int | None] = mapped_column(ForeignKey("transacoes.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+class HistoricoSaldo(Base):
+    """Ledger de toda mudança de saldo (livre ou bloqueado)."""
+
+    __tablename__ = "historico_saldo"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
+    saldo_anterior: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    saldo_novo: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    bloqueado_anterior: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
+    bloqueado_novo: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
+    motivo: Mapped[str] = mapped_column(String(40), nullable=False, default="transferencia")
+    transacao_id: Mapped[int | None] = mapped_column(ForeignKey("transacoes.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SplitLiquidacao(Base):
+    """Uma linha por perna da divisão (CBS -> TRIBUTOS, IBS -> TRIBUTOS, LIQUIDO
+    -> recebedor). As pernas de tributo recebem `repasse_id` quando o repasse
+    diário as leva ao fisco."""
+
+    __tablename__ = "split_liquidacoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transacao_id: Mapped[int] = mapped_column(ForeignKey("transacoes.id"), nullable=False, index=True)
+    natureza: Mapped[str] = mapped_column(String(20), nullable=False)  # CBS | IBS | LIQUIDO
+    carteira_destino_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    repasse_id: Mapped[int | None] = mapped_column(ForeignKey("repasses_tributo.id"), nullable=True, index=True)
+    # Perna devolvida ao pagador num estorno antes do repasse.
+    estornada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RepasseTributo(Base):
+    """Repasse (normalmente D+1) do que está na conta TRIBUTOS para o fisco."""
+
+    __tablename__ = "repasses_tributo"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cbs_total: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    ibs_total: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    # Pernas consideradas: criadas antes deste instante.
+    corte: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CreditoTributario(Base):
+    """Crédito de IBS/CBS de uma empresa como INFORMAÇÃO (não é dinheiro do banco).
+    fonte: declarado (informado pela empresa) | plataforma_publica (consultado na
+    Receita/CGIBS, quando houver integração) | estorno (gerado por devolução já
+    repassada ao fisco)."""
+
+    __tablename__ = "creditos_tributarios"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), nullable=False, index=True)
+    tributo: Mapped[str] = mapped_column(String(4), nullable=False)  # CBS | IBS
+    valor: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    fonte: Mapped[str] = mapped_column(String(20), nullable=False)
+    referencia: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    consultado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Cobranca(Base):
+    """Cobrança emitida por uma PJ (Pix com QR dinâmico + boleto). É aqui que o
+    split acontece: o pagamento de uma cobrança com NF-e retém a CBS e o IBS
+    destacados na nota."""
+
+    __tablename__ = "cobrancas"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Identificador público (txid do Pix dinâmico), 26-35 caracteres alfanuméricos.
+    txid: Mapped[str] = mapped_column(String(35), unique=True, nullable=False, index=True)
+    recebedor_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
+    valor: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    descricao: Mapped[str | None] = mapped_column(String(140), nullable=True)
+    vencimento: Mapped[date | None] = mapped_column(Date, nullable=True)
+    pagador_documento: Mapped[str | None] = mapped_column(String(14), nullable=True)
+    # Documento fiscal: chave de acesso da NF-e/NFS-e (44 dígitos) e o imposto
+    # destacado NELA. O banco não recalcula -- retém o que a nota diz.
+    nfe_chave: Mapped[str | None] = mapped_column(String(44), nullable=True, index=True)
+    cbs: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
+    ibs: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
+    linha_digitavel: Mapped[str] = mapped_column(String(60), nullable=False)
+    # aberta | paga | cancelada | estornada
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="aberta")
+    grupo_parcelamento: Mapped[str | None] = mapped_column(String(35), nullable=True, index=True)
+    parcela_numero: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    parcelas_total: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    autorizacao_id: Mapped[int | None] = mapped_column(ForeignKey("autorizacoes_recorrentes.id"), nullable=True)
+    transacao_id: Mapped[int | None] = mapped_column(ForeignKey("transacoes.id"), nullable=True)
+    paga_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    criado_por_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AutorizacaoRecorrente(Base):
+    """Pix Automático: o pagador autoriza uma vez; a empresa gera cobranças até
+    `valor_maximo` na periodicidade combinada e elas são pagas sozinhas."""
+
+    __tablename__ = "autorizacoes_recorrentes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    recebedor_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
+    pagador_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
+    descricao: Mapped[str] = mapped_column(String(140), nullable=False)
+    valor_maximo: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    periodicidade: Mapped[str] = mapped_column(String(10), nullable=False)  # semanal | mensal | anual
+    # pendente (aguarda o pagador) | ativa | cancelada | recusada
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pendente")
+    aceita_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChavePix(Base):
+    __tablename__ = "chaves_pix"
+    __table_args__ = (UniqueConstraint("tipo", "valor", name="uq_chave_tipo_valor"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(10), nullable=False)  # cpf | cnpj | email | celular | aleatoria
+    valor: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class OperacaoPendente(Base):
+    """Operação PJ acima da alçada de quem lançou: espera a aprovação de outra
+    pessoa vinculada (maker-checker)."""
+
+    __tablename__ = "operacoes_pendentes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)  # transferencia
+    valor: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONTipo, nullable=False)
+    criado_por_usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
+    # pendente | aprovada | rejeitada | falhou
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pendente")
+    decidido_por_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    decidido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resultado: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Contestacao(Base):
+    """Pedido de devolução de uma transação (espelha o MED do Pix)."""
+
+    __tablename__ = "contestacoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transacao_id: Mapped[int] = mapped_column(ForeignKey("transacoes.id"), nullable=False, unique=True)
+    aberta_por_usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
+    motivo: Mapped[str] = mapped_column(String(280), nullable=False)
+    # aberta | procedente | improcedente
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="aberta")
+    valor_devolvido: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
+    decidida_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# =============================================================================
+# Segurança
+# =============================================================================
+
+
+class Dispositivo(Base):
+    """Aparelho de uma pessoa. Só vira confiável depois de uma verificação facial
+    nele; até lá vale o teto de aparelho novo (IN BCB 491/2024)."""
+
+    __tablename__ = "dispositivos"
+    __table_args__ = (UniqueConstraint("usuario_id", "id_hash", name="uq_dispositivo_usuario"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False, index=True)
+    # SHA-256 do id enviado pelo app no header X-Dispositivo-Id.
+    id_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    nome: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    confiavel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    confiavel_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ultimo_uso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Limite(Base):
+    """Limites de saída de uma carteira. Aumento fica agendado (`pendente_*`) até
+    `pendente_vigente_em` (carência); redução vale na hora."""
+
+    __tablename__ = "limites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, unique=True)
+    por_transacao: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    diurno: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    noturno: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    pendente_por_transacao: Mapped[Decimal | None] = mapped_column(Dinheiro, nullable=True)
+    pendente_diurno: Mapped[Decimal | None] = mapped_column(Dinheiro, nullable=True)
+    pendente_noturno: Mapped[Decimal | None] = mapped_column(Dinheiro, nullable=True)
+    pendente_vigente_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DesafioBiometria(Base):
+    """Desafio de liveness gerado pelo SERVIDOR (nonce + ação pedida). A prova
+    biométrica só vale com um desafio válido, não expirado e não usado -- o app
+    não decide sozinho se o rosto está vivo."""
+
+    __tablename__ = "desafios_biometria"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    publico_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
+    acao: Mapped[str] = mapped_column(String(20), nullable=False)  # virar_esquerda | virar_direita
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    usado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class RefreshToken(Base):
-    """Refresh tokens emitidos no login. Guardamos só o HASH (SHA-256) do token,
-    nunca o token em si. Rotação: a cada /auth/refresh o token usado é marcado
-    `revogado` e `substituido_por` aponta pro novo -- se um refresh já usado
-    reaparecer, dá pra detectar reuso (possível roubo) e revogar a cadeia."""
+    """Refresh tokens emitidos no login. Só o HASH (SHA-256) é guardado."""
 
     __tablename__ = "refresh_tokens"
 
@@ -166,37 +460,21 @@ class RefreshToken(Base):
 
 
 class SessaoMfa(Base):
-    """Sessoes/MFA no DER -- um registro por TENTATIVA (login OU biometria),
-    sucesso ou falha. Agora de fato gravado (item #5) e usado como fonte do
-    rate-limit (ver core rate limit em services)."""
+    """Um registro por TENTATIVA (login, biometria, consulta de chave), sucesso
+    ou falha. É a fonte dos rate limits."""
 
     __tablename__ = "sessoes_mfa"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
-    # identificador usado quando ainda não há usuario_id (ex: e-mail no login que falhou)
     referencia: Mapped[str | None] = mapped_column(String(180), nullable=True, index=True)
-    tipo: Mapped[str] = mapped_column(String(40), nullable=False)  # login|cadastro|transferencia
+    tipo: Mapped[str] = mapped_column(String(40), nullable=False)
     sucesso: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
     detalhe: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (Index("ix_sessoes_tipo_criado", "tipo", "criado_em"),)
-
-
-class HistoricoSaldo(Base):
-    """Ledger de toda mudança de saldo (inclui o depósito inicial -- item #6)."""
-
-    __tablename__ = "historico_saldo"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
-    saldo_anterior: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    saldo_novo: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    motivo: Mapped[str] = mapped_column(String(40), nullable=False, default="transferencia")
-    transacao_id: Mapped[int | None] = mapped_column(ForeignKey("transacoes.id"), nullable=True)
-    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LogAuditoria(Base):
@@ -210,55 +488,71 @@ class LogAuditoria(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class SplitRegra(Base):
-    """Alíquotas de IBS/CBS por vigência. Seedadas no boot (ver split_service).
-    percentual_* em pontos percentuais (ex: 8.80 = 8,8%)."""
+# =============================================================================
+# Integrações e produtos
+# =============================================================================
 
-    __tablename__ = "split_regras"
+
+class Webhook(Base):
+    __tablename__ = "webhooks"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    vigencia: Mapped[str] = mapped_column(String(10), unique=True, nullable=False)  # "2026" | "2027"
-    descricao: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    aliquota_cbs: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
-    aliquota_ibs: Mapped[Decimal] = mapped_column(Numeric(6, 4), nullable=False)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), nullable=False, index=True)
+    url: Mapped[str] = mapped_column(String(300), nullable=False)
+    # Segredo para assinar o corpo (HMAC-SHA256). Mostrado só na criação.
+    segredo: Mapped[str] = mapped_column(String(80), nullable=False)
+    eventos: Mapped[list] = mapped_column(JSONTipo, nullable=False)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class SplitLiquidacao(Base):
-    """Uma linha por perna da divisão de uma transação (CBS -> GOV, IBS -> GOV,
-    LIQUIDO -> destino). Torna a divisão fiscal reconstruível pra auditoria."""
-
-    __tablename__ = "split_liquidacoes"
+class WebhookEntrega(Base):
+    __tablename__ = "webhook_entregas"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    transacao_id: Mapped[int] = mapped_column(ForeignKey("transacoes.id"), nullable=False, index=True)
-    natureza: Mapped[str] = mapped_column(String(20), nullable=False)  # CBS|IBS|LIQUIDO
-    carteira_destino_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
-    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    webhook_id: Mapped[int] = mapped_column(ForeignKey("webhooks.id"), nullable=False, index=True)
+    evento: Mapped[str] = mapped_column(String(40), nullable=False)
+    payload: Mapped[dict] = mapped_column(JSONTipo, nullable=False)
+    # pendente | entregue | falhou
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="pendente")
+    tentativas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ultima_resposta: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    atualizado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Rendimento(Base):
+    """Rendimento creditado numa carteira em um dia útil (um por carteira/dia)."""
+
+    __tablename__ = "rendimentos"
+    __table_args__ = (UniqueConstraint("carteira_id", "data", name="uq_rendimento_carteira_dia"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
+    data: Mapped[date] = mapped_column(Date, nullable=False)
+    saldo_base: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    taxa_diaria: Mapped[Decimal] = mapped_column(Numeric(12, 10), nullable=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Cartao(Base):
-    """Cartão virtual (100% digital) de uma carteira. Estado + travas de
-    segurança + limite. O CVV é dinâmico (gerado on-demand), então NÃO é
-    persistido aqui. Espelha o shape do frontend (src/lib/types.ts Cartao)."""
+    """Cartão virtual de uma carteira. CVV dinâmico (não persistido); só a
+    máscara do número fica guardada (PCI)."""
 
     __tablename__ = "cartoes"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
     apelido: Mapped[str] = mapped_column(String(60), nullable=False, default="Cartão virtual")
-    # Guardamos só a máscara (•••• 4921). O PAN completo nunca fica no app/DB (PCI).
     numero_masc: Mapped[str] = mapped_column(String(32), nullable=False)
     bandeira: Mapped[str] = mapped_column(String(20), nullable=False, default="Visa")
     validade: Mapped[str] = mapped_column(String(5), nullable=False)  # MM/AA
     virtual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
-    # ativo | congelado | cancelado
     estado: Mapped[str] = mapped_column(String(12), nullable=False, default="ativo")
     compras_online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     compras_internacionais: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    limite: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    limite: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False, default=0)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     carteira: Mapped["Carteira"] = relationship(back_populates="cartoes")

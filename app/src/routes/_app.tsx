@@ -10,7 +10,10 @@ import {
   type LucideProps,
 } from "lucide-react";
 import type { ComponentType } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { MODO_API } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import type { Conta } from "@/lib/types";
 import { Wordmark } from "@/components/payflow/ui";
 
 export const Route = createFileRoute("/_app")({ component: AppLayout });
@@ -18,26 +21,39 @@ export const Route = createFileRoute("/_app")({ component: AppLayout });
 type NavItem = { to: string; label: string; icon: ComponentType<LucideProps> };
 
 // Conta PF (consumidor) e PJ (empresa) têm navegações diferentes — como num banco real.
-const NAV_PF: NavItem[] = [
-  { to: "/inicio", label: "Início", icon: Home },
-  { to: "/loja", label: "Loja", icon: ShoppingBag },
-  { to: "/viagens", label: "Viagens", icon: Plane },
-  { to: "/extrato", label: "Extrato", icon: ListOrdered },
-];
+// Loja e Viagens só existem no modo demonstração (sem endpoint no backend ainda).
+const NAV_PF: NavItem[] = MODO_API
+  ? [
+      { to: "/inicio", label: "Início", icon: Home },
+      { to: "/transferir", label: "Pix", icon: ArrowUpRight },
+      { to: "/extrato", label: "Extrato", icon: ListOrdered },
+    ]
+  : [
+      { to: "/inicio", label: "Início", icon: Home },
+      { to: "/loja", label: "Loja", icon: ShoppingBag },
+      { to: "/viagens", label: "Viagens", icon: Plane },
+      { to: "/extrato", label: "Extrato", icon: ListOrdered },
+    ];
 const NAV_PJ: NavItem[] = [
   { to: "/inicio", label: "Início", icon: Home },
   { to: "/transferir", label: "Pagar", icon: ArrowUpRight },
-  { to: "/contas", label: "Contas", icon: FileText },
+  { to: "/contas", label: "Cobranças", icon: FileText },
   { to: "/extrato", label: "Extrato", icon: ListOrdered },
 ];
 
 function AppLayout() {
-  const { ready, conta, sair } = useAuth();
+  const { ready, conta, contas, trocarConta, sair } = useAuth();
   const nav = useNavigate();
+  const qc = useQueryClient();
   if (!ready) return null;
   if (!conta) return <Navigate to="/login" replace />;
 
   const items = conta.tipo === "PJ" ? NAV_PJ : NAV_PF;
+  const trocar = (c: Conta) => {
+    trocarConta(c);
+    qc.clear(); // dados da conta anterior não podem aparecer na nova
+    nav({ to: "/inicio" });
+  };
 
   return (
     <div className="min-h-screen bg-page md:flex">
@@ -61,6 +77,7 @@ function AppLayout() {
           <p className="truncate text-sm font-semibold text-ink">{conta.nome}</p>
           <p className="text-xs text-muted-foreground">
             Conta {conta.tipo === "PJ" ? "Empresa (PJ)" : "Pessoa física"}
+            {conta.numero ? ` · ${conta.numero}` : ""}
           </p>
           <button
             onClick={() => {
@@ -75,6 +92,7 @@ function AppLayout() {
       </aside>
 
       <main className="mx-auto w-full max-w-3xl px-4 pb-28 pt-6 md:px-10 md:pb-12 md:pt-10">
+        {contas.length > 1 && <SeletorConta atual={conta} contas={contas} onTrocar={trocar} />}
         <Outlet />
       </main>
 
@@ -95,6 +113,38 @@ function AppLayout() {
           ))}
         </div>
       </nav>
+    </div>
+  );
+}
+
+/** Troca entre a conta pessoal e as das empresas em que a pessoa tem vínculo. */
+function SeletorConta({
+  atual,
+  contas,
+  onTrocar,
+}: {
+  atual: Conta;
+  contas: Conta[];
+  onTrocar: (c: Conta) => void;
+}) {
+  return (
+    <div role="tablist" aria-label="Conta em uso" className="mb-5 flex gap-2 overflow-x-auto pb-1">
+      {contas.map((c) => {
+        const ativa = c.carteira_id === atual.carteira_id;
+        return (
+          <button
+            key={c.carteira_id}
+            role="tab"
+            aria-selected={ativa}
+            onClick={() => !ativa && onTrocar(c)}
+            className={`shrink-0 rounded-full px-4 py-2 text-sm font-medium transition ${
+              ativa ? "bg-ink text-ink-foreground" : "bg-tint text-mut2 hover:text-ink"
+            }`}
+          >
+            {c.tipo === "PJ" ? c.nome : "Conta pessoal"}
+          </button>
+        );
+      })}
     </div>
   );
 }

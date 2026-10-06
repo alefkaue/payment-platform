@@ -28,19 +28,22 @@ simulador do site:
 | Reduzido 60% | 40% (≈ 10,6%) | saúde, educação, agro, cultura |
 | Zero | 0% | cesta básica nacional |
 
-**Próximo:** alíquotas específicas/monofásicas (combustíveis, financeiro),
-split inteligente usando o **crédito** (já modelado) para abater o devido no ato,
-e trazer a alíquota real por **CNAE** quando a tabela oficial sair.
+**Importante (revisão 2026-10-06):** essa tabela serve só para o **simulador**. No
+pagamento real, o imposto vem **da nota fiscal** (calculado por produto/serviço,
+NCM/NBS), e o banco retém o que a nota destaca. Transferência comum **não** tem split.
+O split "superinteligente" (abater crédito no ato) depende da plataforma pública
+da Receita/CGIBS; hoje fazemos o "inteligente" (retém o bruto da nota) e mostramos
+a restituição prevista como estimativa.
 
 ## 3. "O split não é roubo" (mensagem — a reforçar na apresentação)
 
 Objeção esperada: *"isso é o banco/governo tirando meu dinheiro"*. Não é.
 - O split **não cobra nada a mais** — é exatamente o imposto que **já era devido**.
-- Ele só **recolhe na hora** em vez de depois, acabando com a burocracia da apuração
-  e dificultando a **sonegação** (quem não sonega não perde nada).
-- **PF nunca sofre retenção** — recebe o valor cheio.
-- Para a empresa, o ganho é **fluxo de caixa** (o imposto não fica parado no caixa) e
-  **zero apuração**. Onde comunicar: hero do site, onboarding PJ e um "por quê?" no
+- Ele só **recolhe na hora** em vez de depois: a apuração continua (assistida pela
+  Receita), mas sai quase pronta, e a **sonegação** fica mais difícil.
+- **Transferência nunca sofre retenção** (PF ou PJ). Só a venda com nota tem split.
+- Para a empresa, o ganho é **previsibilidade de caixa** (o imposto não fica no caixa
+  esperando a guia) e **apuração quase pronta** — evitar prometer "zero apuração". Onde comunicar: hero do site, onboarding PJ e um "por quê?" no
   card de Apuração.
 
 ## 4. Atrair PF (diferencial além de loja/viagens/split)
@@ -85,8 +88,10 @@ O `split_service.py` já bate com o `split.ts` (alíquotas/arredondamento).
 ## 8. Apresentação Mercedes/Scania
 
 Montadoras/autopeças = regime **padrão** e **muito crédito** de insumo. História:
-"você recebe já líquido, o crédito abate o imposto no ato, zero apuração, caixa
-preservado, acesso por e‑CNPJ com dupla assinatura". Tudo já visível no painel PJ.
+"você cobra com a nota, recebe já líquido, o imposto sai conciliado à nota, os
+créditos aparecem para a apuração, e cada pessoa opera com alçada e dupla aprovação".
+Usar as alíquotas do ANO (2026 = 1%) e mostrar a projeção de 2033 separada.
+Cronograma: split opcional em 2027, obrigatório no B2B a partir de 2028.
 
 ## 9. Roadmap priorizado
 

@@ -3,11 +3,16 @@
 import { useEffect, useState, type CSSProperties } from "react";
 
 type Tipo = "PF" | "PJ";
-type Vigencia = "2026" | "2027";
+type Vigencia = "2026" | "2027" | "2029" | "2031" | "2033";
 
+// Tabela de transição da Reforma (mesma do app e do backend). CBS/IBS de
+// referência (8,8% / 17,7%) ainda são estimativas oficiais em definição.
 const ALIQUOTAS: Record<Vigencia, { cbs: number; ibs: number; rotulo: string }> = {
-  "2026": { cbs: 0.009, ibs: 0.001, rotulo: "2026 (fase de teste)" },
-  "2027": { cbs: 0.088, ibs: 0.177, rotulo: "2027+ (regime cheio)" },
+  "2026": { cbs: 0.009, ibs: 0.001, rotulo: "2026 — ano-teste (0,9% + 0,1%)" },
+  "2027": { cbs: 0.088, ibs: 0.001, rotulo: "2027–2028 — CBS cheia, IBS 0,1%" },
+  "2029": { cbs: 0.088, ibs: 0.0177, rotulo: "2029 — IBS em 10% da referência" },
+  "2031": { cbs: 0.088, ibs: 0.0531, rotulo: "2031 — IBS em 30% da referência" },
+  "2033": { cbs: 0.088, ibs: 0.177, rotulo: "2033 — regime pleno (≈26,5%)" },
 };
 
 type Regime = "padrao" | "reduzido_30" | "reduzido_60" | "zero";
@@ -59,7 +64,7 @@ function useReveal() {
 function Calculadora() {
   const [valor, setValor] = useState("10000");
   const [tipo, setTipo] = useState<Tipo>("PJ");
-  const [vig, setVig] = useState<Vigencia>("2027");
+  const [vig, setVig] = useState<Vigencia>("2033");
   const [regime, setRegime] = useState<Regime>("padrao");
   const r = calcularSplit(valor, tipo, vig, REGIMES[regime].fator);
   const pLiq = r.bruto > 0 ? (r.liquido / r.bruto) * 100 : 100;
@@ -71,15 +76,15 @@ function Calculadora() {
           <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} />
         </div>
         <div>
-          <label className="eyebrow">Destino</label>
+          <label className="eyebrow">Quem vende</label>
           <select value={tipo} onChange={(e) => setTipo(e.target.value as Tipo)}>
             <option value="PF">Pessoa (PF)</option>
-            <option value="PJ">Empresa (PJ)</option>
+            <option value="PJ">Empresa com nota (PJ)</option>
           </select>
         </div>
       </div>
       <div style={{ marginTop: 14 }}>
-        <label className="eyebrow">Vigência</label>
+        <label className="eyebrow">Ano</label>
         <select value={vig} onChange={(e) => setVig(e.target.value as Vigencia)}>
           {(Object.entries(ALIQUOTAS) as [Vigencia, (typeof ALIQUOTAS)[Vigencia]][]).map(([k, a]) => (
             <option key={k} value={k}>
@@ -128,11 +133,12 @@ function Calculadora() {
       </div>
       {!r.split ? (
         <p className="lead" style={{ fontSize: 14, marginTop: 8 }}>
-          Pessoa física não sofre retenção — recebe o valor cheio.
+          Sem nota de empresa, não há split: transferências entre contas chegam cheias.
         </p>
       ) : (
         <p className="lead" style={{ fontSize: 14, marginTop: 8 }}>
-          Na empresa, o imposto pode ser abatido pelos créditos de IBS/CBS acumulados nas compras.
+          Estimativa. No pagamento real, o banco separa a CBS e o IBS que estão na nota fiscal.
+          Os créditos das suas compras entram na apuração.
         </p>
       )}
     </div>
@@ -152,19 +158,19 @@ export default function Home() {
   const faqs: [string, string][] = [
     [
       "Serve para mim ou para minha empresa?",
-      "Para os dois. Pessoa física tem conta, Pix, cartão, loja e viagens — sem retenção de imposto. Empresa (PJ) recebe com o IBS/CBS separado no ato e ainda usa os créditos tributários para abater o que deve.",
+      "Para os dois. Pessoa física tem conta, Pix e cartão — transferências nunca têm retenção. Empresa (PJ) cobra com a nota fiscal e recebe o pagamento já com a CBS e o IBS da nota separados.",
     ],
     [
       "O que é o split de IBS/CBS?",
-      "É a divisão automática do pagamento prevista na Reforma (LC 214/2025): quando o destino é uma empresa, o imposto é separado no momento da liquidação e vai ao Fisco; a empresa recebe o líquido. No B2B, o split é inteligente — consulta seus créditos antes de reter.",
+      "É a divisão do pagamento prevista na Reforma (LC 214/2025): quando um cliente paga uma venda com nota fiscal, o banco separa a CBS e o IBS destacados na nota e os envia ao Fisco; a empresa recebe o líquido. Transferência comum (sócio, reembolso, empréstimo) não tem split. Em 2027 o split é opcional e, a partir de 2028, obrigatório no B2B.",
     ],
     [
       "As alíquotas são reais?",
-      "Seguem o cronograma da Reforma: 2026 é fase de teste (CBS 0,9% + IBS 0,1%) e 2027+ é o regime cheio (CBS 8,8% + IBS 17,7% ≈ 26,5%).",
+      "Seguem a transição da Reforma: 2026 é ano-teste (CBS 0,9% + IBS 0,1%); em 2027–2028 a CBS fica cheia (≈8,8%) e o IBS segue em 0,1%; o IBS sobe aos poucos de 2029 a 2032 e chega ao pleno (≈17,7%) em 2033. As alíquotas de referência ainda serão fixadas oficialmente.",
     ],
     [
       "Como a empresa entra na conta?",
-      "Depende do porte. MEI usa biometria do titular. Pequenas, médias e grandes usam certificado digital e-CNPJ (ICP-Brasil) — o mesmo que assina a nota fiscal — com múltiplos assinantes e dupla autorização por alçada.",
+      "Como nos bancos digitais: cada pessoa entra com o próprio login e verificação facial e escolhe a empresa. O sócio que abre a conta (conferimos o CNPJ e o quadro de sócios na Receita) adiciona outras pessoas com papéis e alçadas; acima da alçada, outra pessoa aprova.",
     ],
     [
       "Precisa instalar algo?",
@@ -173,12 +179,12 @@ export default function Home() {
   ];
 
   const feats: [string, string, string][] = [
-    ["🪙", "Créditos de IBS/CBS", "O crédito das suas compras abate o imposto das vendas em tempo real — não fica preso para recuperar depois."],
-    ["⚡", "Apuração automática", "O imposto é calculado e separado em cada venda. Sem fechamento mensal, sem contador apurando depois."],
-    ["🛡️", "Fluxo de caixa protegido", "O dinheiro do imposto nunca passa pelo seu caixa. Você recebe o líquido e não precisa provisionar."],
-    ["🧾", "Contas a pagar e receber", "Faturas B2B conciliadas com a NF-e, a receber e a pagar, dentro do mesmo app."],
-    ["🔐", "Acesso por e-CNPJ", "Certificado digital ICP-Brasil, múltiplos assinantes e dupla autorização por alçada."],
-    ["📊", "Pronta para o porte", "Do MEI (biometria) à grande empresa (certificado + maker-checker)."],
+    ["🧾", "Cobrança com nota", "Pix com QR dinâmico e boleto vinculados à NF-e. No pagamento, a CBS e o IBS da nota são separados."],
+    ["⚡", "Apuração quase pronta", "Cada recebimento chega conciliado com a nota e com o imposto separado. A apuração continua, mas sem garimpo."],
+    ["🛡️", "Fluxo de caixa sem susto", "O imposto da venda não fica no seu caixa esperando a guia: você recebe o líquido."],
+    ["🪙", "Créditos acompanhados", "Veja os créditos de IBS/CBS das suas compras e a estimativa do que volta na apuração."],
+    ["🔐", "Alçadas e dupla aprovação", "Cada pessoa com seu papel e limite. Acima da alçada, outra pessoa aprova com verificação facial."],
+    ["🔁", "Pix Automático e lote", "Cobranças recorrentes autorizadas uma vez, pagamentos em lote e webhooks para o seu ERP."],
   ];
 
   const cardWhite: CSSProperties = { background: "#fff" };
@@ -207,11 +213,11 @@ export default function Home() {
               <span className="dot-gold" /> Feito para a Reforma Tributária
             </span>
             <h1 className="h-hero" style={{ marginTop: 16 }}>
-              O banco onde o imposto se resolve sozinho.
+              O banco onde o imposto se resolve na hora da venda.
             </h1>
             <p className="lead" style={{ marginTop: 18, maxWidth: "52ch" }}>
-              Conta digital para pessoas e empresas. No B2B, o IBS/CBS é separado no ato e abatido
-              pelos seus créditos — sem planilha, sem apuração depois.
+              Conta digital para pessoas e empresas. Cobre com a nota fiscal e receba com a CBS e o
+              IBS já separados no pagamento — o imposto resolvido na hora da venda.
             </p>
             <div style={{ marginTop: 28 }}>
               <a className="btn btn-gold" href="#comecar">
@@ -226,7 +232,7 @@ export default function Home() {
             <img src="/fotos/pj.jpg" alt="Logística e indústria" />
             <div className="hero-card">
               <div style={{ fontSize: 13, color: "var(--mut2)", marginBottom: 8 }}>
-                Recebimento de {brl(10000)} · empresa
+                Venda de {brl(10000)} com nota · alíquotas de 2033
               </div>
               <div className="split-bar">
                 <div className="liq" style={{ width: "73.5%" }} />
@@ -255,16 +261,16 @@ export default function Home() {
               <div className="feat-ico">🙂</div>
               <h3 style={{ fontSize: 22, fontWeight: 600 }}>Pessoa física</h3>
               <p className="lead" style={{ marginTop: 10, fontSize: 16 }}>
-                Conta e Pix sem mensalidade, cartão, loja e viagens com pontos. O imposto já vem
-                embutido — você nunca sofre retenção.
+                Conta e Pix sem mensalidade, cartão virtual e saldo que rende. Transferências
+                nunca têm retenção de imposto.
               </p>
             </div>
             <div className="card reveal">
               <div className="feat-ico">🏭</div>
               <h3 style={{ fontSize: 22, fontWeight: 600 }}>Empresa (PJ)</h3>
               <p className="lead" style={{ marginTop: 10, fontSize: 16 }}>
-                Recebe com o IBS/CBS separado no ato, usa os créditos tributários para abater o
-                imposto e zera a apuração. Do MEI à indústria.
+                Cobra com a nota, recebe com o IBS/CBS separado no ato e acompanha os créditos
+                para a apuração. Do MEI à indústria.
               </p>
             </div>
           </div>
@@ -280,7 +286,8 @@ export default function Home() {
           </h2>
           <p className="lead reveal" style={{ marginBottom: 32, maxWidth: "60ch" }}>
             Montadoras, autopeças e indústria acumulam crédito de IBS/CBS nas compras de insumo. O
-            PayFlow usa esse crédito automaticamente — o split inteligente da LC 214/2025.
+            PayFlow separa o imposto de cada venda pela nota e mostra os créditos que entram na
+            apuração — preparado para o split da LC 214/2025.
           </p>
           <div className="grid-3">
             {feats.map(([ic, t, d]) => (
@@ -330,7 +337,7 @@ export default function Home() {
               [
                 ["1 · Baixe ou abra", "No navegador agora, ou instale o app no Android (.apk)."],
                 ["2 · Crie sua conta", "PF com biometria; empresa com certificado digital e-CNPJ."],
-                ["3 · Receba já líquido", "O split acontece sozinho — o imposto nunca passa pelo seu caixa."],
+                ["3 · Receba já líquido", "O cliente paga a cobrança e o imposto da nota já sai separado: você recebe o líquido."],
               ] as [string, string][]
             ).map(([t, d]) => (
               <div className="card reveal" key={t} style={cardWhite}>

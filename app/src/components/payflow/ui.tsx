@@ -5,9 +5,12 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   Camera,
+  FileText,
   Inbox,
   Plane,
   Receipt,
+  RotateCcw,
+  TrendingUp,
   ShoppingBag,
   Wallet,
   type LucideProps,
@@ -103,6 +106,9 @@ const ICONE_CAT: Record<CategoriaTx, ComponentType<LucideProps>> = {
   viagem: Plane,
   deposito: ArrowDownLeft,
   recebimento: ArrowDownLeft,
+  cobranca: FileText,
+  rendimento: TrendingUp,
+  estorno: RotateCcw,
 };
 
 export function TxItem({ t, minha }: { t: Transacao; minha: number }) {
@@ -132,11 +138,14 @@ export function TxItem({ t, minha }: { t: Transacao; minha: number }) {
                 : `Para ${fmtId(t.destino_carteira_id)}`)}
           </p>
           <p className="text-sm text-mut3">{fmtData(t.criado_em)}</p>
+          {t.status === "retida" && (
+            <p className="mt-1 text-sm text-tax">Em análise de segurança (bloqueio cautelar)</p>
+          )}
           {t.aplicou_split && (
             <p className="mt-1 text-sm text-tax">
               {entrada
-                ? `Imposto ${fmtBRL(imposto)} retido no ato`
-                : `Imposto ${fmtBRL(imposto)} → Fisco`}
+                ? `Imposto da nota ${fmtBRL(imposto)} retido no ato`
+                : `Imposto da nota ${fmtBRL(imposto)} → Fisco`}
             </p>
           )}
         </div>
@@ -379,7 +388,13 @@ export interface Banner {
 }
 
 /** Banner rotativo com auto-play, dots e navegação por toque/clique. */
-export function BannerCarousel({ banners, interval = 4500 }: { banners: Banner[]; interval?: number }) {
+export function BannerCarousel({
+  banners,
+  interval = 4500,
+}: {
+  banners: Banner[];
+  interval?: number;
+}) {
   const [i, setI] = useState(0);
   const [paused, setPaused] = useState(false);
   const n = banners.length;

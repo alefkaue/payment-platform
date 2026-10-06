@@ -1,11 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, X } from "lucide-react";
+import { pedirDesafio } from "@/lib/api";
+import type { Desafio, ProvaBiometrica } from "@/lib/types";
 
 /**
- * Verificação facial com PROVA DE VIDA (liveness) — feita DENTRO do app, pela
- * câmera ao vivo, não por foto. Usa o FaceLandmarker (MediaPipe) para detectar
- * desafios aleatórios (piscar, virar o rosto). O vídeo nunca sai do dispositivo
- * e nenhuma imagem é enviada/salva — só o resultado (passou/não passou).
+ * Verificação facial com prova de vida, guiada por um DESAFIO DO SERVIDOR.
+ *
+ * 1. Pede o desafio (POST /biometria/desafios): ação sorteada + validade, uso único.
+ * 2. Com a câmera ao vivo e o FaceLandmarker (MediaPipe), guia a pessoa: primeiro
+ *    de frente, depois virando o rosto para o lado pedido.
+ * 3. Captura os quadros nesses momentos (sem espelhamento) e devolve a prova
+ *    {desafio_id, quadros}. QUEM DECIDE é o servidor: ele confere o desafio, faz
+ *    anti-spoofing, mede o giro e compara o rosto. A checagem daqui só guia.
  *
  * No webview do apk (Capacitor) exige a permissão CAMERA no AndroidManifest.
  */
@@ -14,53 +20,72 @@ const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
 const MODELO =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
-type DesafioId = "piscar" | "esquerda" | "direita";
-const TEXTO: Record<DesafioId, string> = {
-  piscar: "Pisque os dois olhos",
-  esquerda: "Vire o rosto para a esquerda",
-  direita: "Vire o rosto para a direita",
+type Passo = "frente" | "esquerda" | "direita";
+const TEXTO: Record<Passo, string> = {
+  frente: "Olhe de frente para a câmera",
+  esquerda: "Agora vire devagar o rosto para a sua esquerda",
+  direita: "Agora vire devagar o rosto para a sua direita",
 };
+// Limiares do guia (o servidor tem os dele). yaw > 0 = nariz à direita da imagem
+// sem espelho = pessoa virando para a esquerda dela.
+const FRONTAL = 0.05;
+const GIRO = 0.12;
 
 type Fase = "carregando" | "ativo" | "ok" | "erro";
+
+function capturar(v: HTMLVideoElement): string {
+  const escala = Math.min(1, 480 / (v.videoWidth || 480));
+  const c = document.createElement("canvas");
+  c.width = Math.round((v.videoWidth || 480) * escala);
+  c.height = Math.round((v.videoHeight || 640) * escala);
+  c.getContext("2d")?.drawImage(v, 0, 0, c.width, c.height);
+  return c.toDataURL("image/jpeg", 0.85);
+}
 
 export function LivenessCheck({
   onSuccess,
   onClose,
 }: {
-  onSuccess: () => void;
+  onSuccess: (prova: ProvaBiometrica) => void;
   onClose: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [fase, setFase] = useState<Fase>("carregando");
   const [erro, setErro] = useState<string | null>(null);
-  const [passo, setPasso] = useState(0);
+  const [desafio, setDesafio] = useState<Desafio | null>(null);
+  const [passoIdx, setPassoIdx] = useState(0);
   const [temRosto, setTemRosto] = useState(false);
+  const onSuccessRef = useRef(onSuccess);
+  onSuccessRef.current = onSuccess;
 
-  // Sequência de desafios aleatória (sempre começa pelo piscar).
-  const desafiosRef = useRef<DesafioId[]>(
-    Math.random() > 0.5 ? ["piscar", "esquerda", "direita"] : ["piscar", "direita", "esquerda"],
-  );
-  const desafios = desafiosRef.current;
+  const passos: Passo[] = desafio
+    ? ["frente", desafio.acao === "virar_esquerda" ? "esquerda" : "direita"]
+    : ["frente"];
 
   useEffect(() => {
     let parar = false;
     let stream: MediaStream | null = null;
     let landmarker: import("@mediapipe/tasks-vision").FaceLandmarker | null = null;
     let raf = 0;
-    let olhosAbertosAntes = false; // para exigir "fechar depois de aberto" no piscar
+    let passo = 0;
+    let roteiro: Passo[] = ["frente"];
+    let ultimoDesafio: Desafio | null = null;
+    const quadros: string[] = [];
 
     async function iniciar() {
       try {
+        ultimoDesafio = await pedirDesafio();
+        if (parar) return;
+        setDesafio(ultimoDesafio);
+        roteiro = ["frente", ultimoDesafio.acao === "virar_esquerda" ? "esquerda" : "direita"];
+
         const vision = await import("@mediapipe/tasks-vision");
         const fileset = await vision.FilesetResolver.forVisionTasks(WASM);
         landmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
           baseOptions: { modelAssetPath: MODELO, delegate: "GPU" },
           runningMode: "VIDEO",
           numFaces: 1,
-          outputFaceBlendshapes: true,
-          outputFacialTransformationMatrixes: true,
         });
-
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "user", width: 480, height: 640 },
           audio: false,
@@ -78,7 +103,9 @@ export function LivenessCheck({
         setErro(
           /denied|permission|NotAllowed/i.test(msg)
             ? "Precisamos da câmera para a verificação. Permita o acesso e tente de novo."
-            : "Não foi possível iniciar a câmera neste dispositivo.",
+            : msg && !/getUserMedia|camera/i.test(msg)
+              ? msg
+              : "Não foi possível iniciar a câmera neste dispositivo.",
         );
         setFase("erro");
       }
@@ -86,63 +113,58 @@ export function LivenessCheck({
 
     function loop() {
       const v = videoRef.current;
-      if (parar || !landmarker || !v || v.readyState < 2) {
+      if (parar) return;
+      if (!landmarker || !v || v.readyState < 2) {
         raf = requestAnimationFrame(loop);
         return;
       }
       const r = landmarker.detectForVideo(v, performance.now());
-      const temFace = !!r.faceLandmarks?.length;
-      setTemRosto(temFace);
-
-      if (temFace) {
-        const bs = r.faceBlendshapes?.[0]?.categories ?? [];
-        const val = (name: string) => bs.find((c) => c.categoryName === name)?.score ?? 0;
-        const piscou = val("eyeBlinkLeft") > 0.45 && val("eyeBlinkRight") > 0.45;
-        if (val("eyeBlinkLeft") < 0.2 && val("eyeBlinkRight") < 0.2) olhosAbertosAntes = true;
-
-        // Yaw (virar) a partir dos landmarks: nariz vs. laterais do rosto.
-        const lm = r.faceLandmarks[0]!;
+      const lm = r.faceLandmarks?.[0];
+      setTemRosto(Boolean(lm));
+      if (lm) {
         const nariz = lm[1];
         const ladoE = lm[234];
         const ladoD = lm[454];
         let yaw = 0;
         if (nariz && ladoE && ladoD) {
           const meio = (ladoE.x + ladoD.x) / 2;
-          const largura = Math.abs(ladoD.x - ladoE.x) || 1;
-          yaw = (nariz.x - meio) / largura; // >0 e <0 conforme o lado
+          yaw = (nariz.x - meio) / (Math.abs(ladoD.x - ladoE.x) || 1);
         }
-
-        const atual = desafios[passo];
-        let cumpriu = false;
-        if (atual === "piscar") cumpriu = olhosAbertosAntes && piscou;
-        else if (atual === "esquerda") cumpriu = yaw > 0.12;
-        else if (atual === "direita") cumpriu = yaw < -0.12;
-
+        const atual = roteiro[passo];
+        const cumpriu =
+          atual === "frente"
+            ? Math.abs(yaw) < FRONTAL
+            : atual === "esquerda"
+              ? yaw > GIRO
+              : yaw < -GIRO;
         if (cumpriu) {
-          olhosAbertosAntes = false;
-          if (passo + 1 >= desafios.length) {
+          quadros.push(capturar(v));
+          if (atual !== "frente") quadros.push(capturar(v));
+          passo += 1;
+          setPassoIdx(passo);
+          if (passo >= roteiro.length && ultimoDesafio) {
             setFase("ok");
-            setPasso(desafios.length);
+            const prova = { desafio_id: ultimoDesafio.desafio_id, quadros: quadros.slice(0, 5) };
             setTimeout(() => {
-              if (!parar) onSuccess();
-            }, 900);
-            return; // para o loop
+              if (!parar) onSuccessRef.current(prova);
+            }, 700);
+            return;
           }
-          setPasso((p) => p + 1);
         }
       }
       raf = requestAnimationFrame(loop);
     }
 
-    iniciar();
+    void iniciar();
     return () => {
       parar = true;
       cancelAnimationFrame(raf);
       stream?.getTracks().forEach((t) => t.stop());
       landmarker?.close();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [passo]);
+  }, []);
+
+  const atual = passos[Math.min(passoIdx, passos.length - 1)] ?? "frente";
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-ink text-ink-foreground">
@@ -160,7 +182,6 @@ export function LivenessCheck({
           playsInline
           className="h-full w-full -scale-x-100 object-cover"
         />
-        {/* Moldura oval */}
         <div
           className={`pointer-events-none absolute inset-6 rounded-[50%] border-2 transition-colors ${
             fase === "ok" ? "border-pos" : temRosto ? "border-marca" : "border-ink-foreground/30"
@@ -182,7 +203,6 @@ export function LivenessCheck({
         )}
       </div>
 
-      {/* Desafio atual + progresso */}
       <div className="mt-7 px-6 text-center">
         {fase === "erro" ? (
           <>
@@ -192,20 +212,18 @@ export function LivenessCheck({
             </button>
           </>
         ) : fase === "ok" ? (
-          <p className="text-lg font-semibold text-pos">Rosto confirmado!</p>
+          <p className="text-lg font-semibold text-pos">Pronto! Conferindo com o banco…</p>
         ) : (
           <>
-            <p className="text-xl font-semibold">
-              {TEXTO[desafios[Math.min(passo, desafios.length - 1)]!]}
-            </p>
+            <p className="text-xl font-semibold">{TEXTO[atual]}</p>
             <p className="mt-2 text-sm text-ink-foreground/60">
               {temRosto ? "Siga a instrução acima" : "Posicione o rosto dentro do oval"}
             </p>
             <div className="mt-5 flex justify-center gap-2">
-              {desafios.map((d, i) => (
+              {passos.map((p, i) => (
                 <span
-                  key={d}
-                  className={`h-1.5 w-8 rounded-full ${i < passo ? "bg-pos" : i === passo ? "bg-marca" : "bg-ink-foreground/20"}`}
+                  key={p}
+                  className={`h-1.5 w-8 rounded-full ${i < passoIdx ? "bg-pos" : i === passoIdx ? "bg-marca" : "bg-ink-foreground/20"}`}
                 />
               ))}
             </div>
@@ -214,7 +232,8 @@ export function LivenessCheck({
       </div>
 
       <p className="mt-auto px-6 pb-8 pt-6 text-center text-xs text-ink-foreground/45">
-        A imagem é processada no seu aparelho e não é armazenada.
+        Enviamos alguns quadros só para esta verificação. Eles não são guardados: o banco mantém
+        apenas um código matemático do seu rosto, criptografado.
       </p>
     </div>
   );

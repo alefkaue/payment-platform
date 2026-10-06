@@ -17,16 +17,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Node 20
+      - name: Node 22
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22"
 
-      - name: Java 17 (Temurin)
+      - name: Java 21 (Temurin) — Capacitor 7+ e AGP 8.13 exigem JDK 21
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Android SDK (cmdline-tools fixo + pacotes)
         uses: android-actions/setup-android@v3
