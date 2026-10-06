@@ -1,9 +1,50 @@
+# === Dependências ===
+**/node_modules/
+
+# === Ambiente / segredos ===
 .env
+**/.env
+!**/.env.example
+!**/.env.docker.example
+
+# === Python (backend) ===
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 .pytest_cache/
+*.sqlite3
+*.db
+
+# === App web (Vite + TanStack) ===
+app/.output/
+app/dist/
+app/www/
+app/.nitro/
+app/.tanstack/
+app/.wrangler/
+
+# === Mobile (Capacitor / Android) — mantém o projeto, ignora builds ===
+app/android/.gradle/
+app/android/build/
+app/android/app/build/
+app/android/capacitor-cordova-android-plugins/build/
+app/android/local.properties
+*.keystore
+
+# === Site (Next.js) ===
+site/.next/
+site/out/
+
+# === Editores / SO ===
 .idea/
 .vscode/
 .DS_Store
+
+# === Legados mantidos em disco, fora do repositório ===
+_legacy_backend/
+_legacy_frontend/
+_extract_pixel/
+payment/
+/inicio.jpeg
+*.zip
