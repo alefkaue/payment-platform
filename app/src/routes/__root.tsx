@@ -8,12 +8,11 @@ import {
   Scripts,
   type ErrorComponentProps,
 } from "@tanstack/react-router";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthProvider } from "@/lib/auth";
-import { SplashIntro } from "@/components/payflow/splash";
 
 function NotFoundComponent() {
   return (
@@ -110,25 +109,10 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  const [splash, setSplash] = useState(false);
-
-  // Só no cliente e uma vez por sessão (cada cold-open do app).
-  useEffect(() => {
-    try {
-      if (!sessionStorage.getItem("pf-splash")) {
-        sessionStorage.setItem("pf-splash", "1");
-        setSplash(true);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
         <Outlet />
-        {splash && <SplashIntro onDone={() => setSplash(false)} />}
       </AuthProvider>
     </QueryClientProvider>
   );
