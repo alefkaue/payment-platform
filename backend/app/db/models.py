@@ -92,6 +92,11 @@ class Usuario(Base):
     # Template biométrico CIFRADO (Fernet). Nunca a foto, nunca o vetor em texto puro.
     embedding_facial_cifrado: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Porte da empresa (PJ): MEI | PME | GRANDE. Define a verificação de acesso
+    # (MEI = biometria; PME/GRANDE = certificado digital e-CNPJ). Nulo para PF.
+    porte: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Regime de alíquota do setor: padrao | reduzido_30 | reduzido_60 | zero.
+    regime_tributario: Mapped[str] = mapped_column(String(20), nullable=False, default="padrao")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     carteiras: Mapped[list["Carteira"]] = relationship(back_populates="usuario")
@@ -106,9 +111,13 @@ class Carteira(Base):
     # propósito, pra migrar pra chave estilo PIX sem outra migração.
     chave: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
     saldo: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    # Crédito de IBS/CBS acumulado nas compras de insumo. No split inteligente
+    # (B2B) abate o imposto devido nas vendas antes de reter (LC 214/2025).
+    creditos: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     usuario: Mapped["Usuario"] = relationship(back_populates="carteiras")
+    cartoes: Mapped[list["Cartao"]] = relationship(back_populates="carteira")
 
 
 class Transacao(Base):
@@ -228,3 +237,28 @@ class SplitLiquidacao(Base):
     carteira_destino_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Cartao(Base):
+    """Cartão virtual (100% digital) de uma carteira. Estado + travas de
+    segurança + limite. O CVV é dinâmico (gerado on-demand), então NÃO é
+    persistido aqui. Espelha o shape do frontend (src/lib/types.ts Cartao)."""
+
+    __tablename__ = "cartoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False, index=True)
+    apelido: Mapped[str] = mapped_column(String(60), nullable=False, default="Cartão virtual")
+    # Guardamos só a máscara (•••• 4921). O PAN completo nunca fica no app/DB (PCI).
+    numero_masc: Mapped[str] = mapped_column(String(32), nullable=False)
+    bandeira: Mapped[str] = mapped_column(String(20), nullable=False, default="Visa")
+    validade: Mapped[str] = mapped_column(String(5), nullable=False)  # MM/AA
+    virtual: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # ativo | congelado | cancelado
+    estado: Mapped[str] = mapped_column(String(12), nullable=False, default="ativo")
+    compras_online: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    compras_internacionais: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    limite: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    carteira: Mapped["Carteira"] = relationship(back_populates="cartoes")

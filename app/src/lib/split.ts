@@ -14,6 +14,49 @@ export const VIGENCIA_ATUAL: Vigencia = "2026";
  */
 export const ALIQUOTA_PLENA = 0.265;
 
+/**
+ * Regimes de alíquota da Reforma — cada setor paga uma fração da alíquota cheia.
+ * (LC 214/2025): padrão 100%, reduzido 30% (paga 70%), reduzido 60% (paga 40%),
+ * e alíquota zero (cesta básica). É o que faz o split ser "correto por negócio".
+ */
+export type RegimeTributario = "padrao" | "reduzido_30" | "reduzido_60" | "zero";
+
+export const REGIMES: Record<
+  RegimeTributario,
+  { label: string; fator: number; exemplos: string }
+> = {
+  padrao: {
+    label: "Padrão",
+    fator: 1,
+    exemplos: "Indústria, comércio, autopeças, serviços em geral",
+  },
+  reduzido_30: {
+    label: "Reduzido 30%",
+    fator: 0.7,
+    exemplos: "Profissões regulamentadas: advocacia, contabilidade, engenharia, medicina…",
+  },
+  reduzido_60: {
+    label: "Reduzido 60%",
+    fator: 0.4,
+    exemplos: "Saúde, educação, produção agropecuária, cultura",
+  },
+  zero: { label: "Alíquota zero", fator: 0, exemplos: "Cesta básica nacional" },
+};
+
+/** Alíquota efetiva (fração, ex.: 0.106) para um regime sobre a alíquota cheia. */
+export function aliquotaRegime(regime: RegimeTributario, aliquotaCheia = ALIQUOTA_PLENA): number {
+  return Math.round(aliquotaCheia * REGIMES[regime].fator * 10000) / 10000;
+}
+
+/** Descobre o regime a partir do setor/atividade da empresa (heurística de rótulo). */
+export function regimeDoSetor(setor?: string): RegimeTributario {
+  const s = (setor ?? "").toLowerCase();
+  if (/sa[úu]de|educa|agro|cultura|hospital|cl[íi]nica|escola/.test(s)) return "reduzido_60";
+  if (/advoc|contab|engenharia|medic|arquitet|regulamentad|consultoria/.test(s)) return "reduzido_30";
+  if (/cesta b[áa]sica/.test(s)) return "zero";
+  return "padrao";
+}
+
 const r2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 
 /**

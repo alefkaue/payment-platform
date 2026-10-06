@@ -1,4 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { Settings, TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -21,7 +22,7 @@ import {
 import { apuracaoPJ, listarFaturas, minhaConta, transacoes } from "@/lib/api";
 import { PORTES } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
-import { fmtBRL, fmtData, fmtPontos } from "@/lib/format";
+import { fmtBRL, fmtData, fmtPontos, iniciais, primeiroNome } from "@/lib/format";
 import type { Conta, Fatura } from "@/lib/types";
 import {
   type Banner,
@@ -47,39 +48,40 @@ export const Route = createFileRoute("/_app/inicio")({
 });
 
 function Inicio() {
-  const { conta: sessaoConta, sair } = useAuth();
-  const nav = useNavigate();
+  const { conta: sessaoConta } = useAuth();
   const conta = useQuery({ queryKey: ["conta"], queryFn: minhaConta });
   const ehPJ = sessaoConta?.tipo === "PJ";
 
   return (
     <div className="enter space-y-7">
-      <header className="flex items-center justify-between">
-        <div className="min-w-0">
-          <p className="text-sm text-muted-foreground">Olá,</p>
-          <h1 className={`truncate text-ink ${ehPJ ? "text-xl" : "text-2xl"}`}>
-            {conta.data?.nome ?? "…"}
+      <header className="flex items-center gap-3">
+        <span
+          aria-hidden
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-ink text-sm font-semibold text-ink-foreground"
+        >
+          {iniciais(conta.data?.nome)}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-muted-foreground">Olá,</p>
+          <h1 className="truncate text-lg font-semibold leading-tight text-ink">
+            {primeiroNome(conta.data?.nome) ?? "…"}
           </h1>
-          {ehPJ && conta.data?.setor && (
-            <p className="mt-0.5 flex items-center gap-1.5 text-xs text-mut3">
-              <Building2 size={13} className="shrink-0" />
+          {ehPJ && conta.data?.porte && (
+            <p className="mt-0.5 flex items-center gap-1 text-[11px] text-mut3">
+              <Building2 size={12} className="shrink-0" />
               <span className="truncate">
-                {conta.data.setor}
-                {conta.data.porte ? ` · ${PORTES[conta.data.porte].label}` : ""} · CNPJ{" "}
-                {conta.data.cnpj}
+                {conta.data.setor} · {PORTES[conta.data.porte].label}
               </span>
             </p>
           )}
         </div>
-        <button
-          onClick={() => {
-            sair();
-            nav({ to: "/login" });
-          }}
-          className="btn btn-ghost h-10 px-4 text-sm md:hidden"
+        <Link
+          to="/config"
+          aria-label="Configurações"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line2 text-mut2 transition hover:bg-tint hover:text-ink md:hidden"
         >
-          Sair
-        </button>
+          <Settings size={18} />
+        </Link>
       </header>
 
       {ehPJ ? <InicioPJ /> : <InicioPF />}
@@ -92,6 +94,17 @@ function Inicio() {
 /* ========================================================================== */
 
 const BANNERS_PF: Banner[] = [
+  {
+    id: "rende",
+    eyebrow: "Dinheiro parado rende",
+    title: "Seu saldo rende 100% do CDI",
+    desc: "Sem aplicar nada: o dinheiro na conta rende sozinho, todo dia.",
+    cta: "Criar uma caixinha",
+    to: "/depositar",
+    emoji: "📈",
+    bg: "bg-ink",
+    light: true,
+  },
   {
     id: "pontos",
     eyebrow: "Viagens",
@@ -155,9 +168,14 @@ function InicioPF() {
           )}
         </p>
         {conta.data && (
-          <p className="mt-2 inline-flex items-center gap-1.5 text-sm text-marca">
-            <Sparkles size={14} /> {fmtPontos(conta.data.pontos)} pontos
-          </p>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            <span className="inline-flex items-center gap-1.5 text-marca">
+              <Sparkles size={14} /> {fmtPontos(conta.data.pontos)} pontos
+            </span>
+            <span className="inline-flex items-center gap-1.5 text-pos">
+              <TrendingUp size={14} /> Rende 100% do CDI
+            </span>
+          </div>
         )}
         <div className="mt-6 flex justify-between">
           <QuickAction icon={ArrowUpRight} label="Transferir" to="/transferir" />
@@ -259,7 +277,8 @@ function ApuracaoCard() {
       ) : (
         <>
           <p className="mt-1 text-sm text-muted-foreground">
-            {q.data.periodo} · alíquota de referência {q.data.aliquota_pct.toLocaleString("pt-BR")}%
+            {q.data.periodo} · regime {q.data.regime} ({q.data.aliquota_pct.toLocaleString("pt-BR")}
+            %)
           </p>
 
           <p className="mt-4 text-sm text-mut2">Imposto recolhido ao Fisco</p>

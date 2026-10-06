@@ -153,7 +153,34 @@ export interface ApuracaoPJ {
   imposto_recolhido: number; // o que efetivamente foi ao Fisco (devido − crédito)
   credito_saldo: number; // crédito tributário que sobrou acumulado
   caixa_preservado: number; // imposto que nunca passou pelo caixa da empresa
-  aliquota_pct: number; // alíquota de referência do regime (ex.: 26.5)
+  aliquota_pct: number; // alíquota efetiva do regime da empresa (ex.: 26.5)
+  regime: string; // rótulo do regime ("Padrão", "Reduzido 60%"...)
+}
+
+export type EstadoCartao = "ativo" | "congelado";
+
+/**
+ * Cartão virtual (100% digital). Modela estado, segurança e limite — o mesmo
+ * shape que o backend persiste na tabela `cartoes`.
+ */
+export interface Cartao {
+  id: number;
+  carteira_id: number;
+  apelido: string; // "Cartão virtual"
+  numero_masc: string; // "•••• •••• •••• 4921"
+  bandeira: string; // "Visa"
+  validade: string; // "12/30"
+  virtual: boolean;
+  estado: EstadoCartao;
+  compras_online: boolean; // trava de segurança
+  compras_internacionais: boolean; // trava de segurança
+  limite: number; // limite do cartão
+}
+
+/** CVV dinâmico (gira a cada janela) — reduz fraude em compra online. */
+export interface CvvDinamico {
+  cvv: string;
+  expira_em: number; // epoch ms
 }
 
 export type DirecaoFatura = "receber" | "pagar";

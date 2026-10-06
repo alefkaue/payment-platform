@@ -35,6 +35,7 @@ app/android/local.properties
 # === Site (Next.js) ===
 site/.next/
 site/out/
+*.tsbuildinfo
 
 # === Editores / SO ===
 .idea/

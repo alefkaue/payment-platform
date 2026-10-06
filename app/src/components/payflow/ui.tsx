@@ -136,7 +136,7 @@ export function TxItem({ t, minha }: { t: Transacao; minha: number }) {
             <p className="mt-1 text-sm text-tax">
               {entrada
                 ? `Imposto ${fmtBRL(imposto)} retido no ato`
-                : `Imposto ${fmtBRL(imposto)} → Governo`}
+                : `Imposto ${fmtBRL(imposto)} → Fisco`}
             </p>
           )}
         </div>

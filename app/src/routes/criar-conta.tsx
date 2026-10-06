@@ -1,12 +1,13 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, ShieldCheck } from "lucide-react";
+import { Check, ScanFace, ShieldCheck } from "lucide-react";
 import { registrar } from "@/lib/api";
 import { PORTES } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
 import { maskDoc } from "@/lib/format";
 import type { PortePJ } from "@/lib/types";
-import { ErrorBox, Field, SelfieCapture, Wordmark } from "@/components/payflow/ui";
+import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
+import { LivenessCheck } from "@/components/payflow/liveness";
 import { cn } from "@/lib/utils";
 
 type Busca = { tipo?: "PF" | "PJ" };
@@ -40,7 +41,8 @@ function CriarConta() {
   const [doc, setDoc] = useState("");
   const [setor, setSetor] = useState(SETORES[0]);
   const [porte, setPorte] = useState<PortePJ>("PME");
-  const [selfie, setSelfie] = useState<File | null>(null);
+  const [facialOk, setFacialOk] = useState(false);
+  const [liveness, setLiveness] = useState(false);
   const [certOk, setCertOk] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -56,7 +58,8 @@ function CriarConta() {
     if (senha.length < 8) return setErro("A senha precisa ter ao menos 8 caracteres.");
     if (digits.length !== (tipo === "PF" ? 11 : 14))
       return setErro(`${tipo === "PF" ? "CPF" : "CNPJ"} incompleto.`);
-    if (usaBiometria && !selfie) return setErro("Envie a selfie de cadastro.");
+    if (usaBiometria && !facialOk)
+      return setErro("Conclua a verificação facial (prova de vida).");
     if (!usaBiometria && !certOk)
       return setErro("Conecte o certificado digital e-CNPJ da empresa.");
     setLoading(true);
@@ -67,7 +70,7 @@ function CriarConta() {
         email,
         senha,
         documento: digits,
-        selfie: usaBiometria ? selfie : null,
+        selfie: null,
       });
       entrar(r.conta);
       nav({ to: "/inicio" });
@@ -168,7 +171,7 @@ function CriarConta() {
                     value={porte}
                     onChange={(e) => {
                       setPorte(e.target.value as PortePJ);
-                      setSelfie(null);
+                      setFacialOk(false);
                       setCertOk(false);
                     }}
                   >
@@ -183,11 +186,7 @@ function CriarConta() {
             )}
 
             {usaBiometria ? (
-              <SelfieCapture
-                value={selfie}
-                onChange={setSelfie}
-                title={tipo === "PJ" ? "Biometria do titular (MEI)" : "Selfie de cadastro"}
-              />
+              <FacialStep ok={facialOk} onStart={() => setLiveness(true)} />
             ) : (
               <CertificadoDigital
                 ok={certOk}
@@ -208,7 +207,52 @@ function CriarConta() {
           </p>
         </div>
       </div>
+
+      {liveness && (
+        <LivenessCheck
+          onClose={() => setLiveness(false)}
+          onSuccess={() => {
+            setLiveness(false);
+            setFacialOk(true);
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+/** Passo de verificação facial com prova de vida (PF e MEI). */
+function FacialStep({ ok, onStart }: { ok: boolean; onStart: () => void }) {
+  return (
+    <div className="rounded-[18px] border border-dashed border-line2 bg-background p-4">
+      <div className="flex items-start gap-3">
+        <span
+          className={cn(
+            "grid h-11 w-11 shrink-0 place-items-center rounded-full",
+            ok ? "bg-[color-mix(in_oklab,var(--pos)_16%,transparent)] text-pos" : "bg-tint text-ink",
+          )}
+        >
+          {ok ? <Check size={22} strokeWidth={3} /> : <ScanFace size={22} />}
+        </span>
+        <div className="min-w-0">
+          <p className="font-medium text-ink">
+            {ok ? "Verificação facial concluída" : "Verificação facial (prova de vida)"}
+          </p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Pela câmera, ao vivo — você vai piscar e virar o rosto. Sem foto, nada é armazenado.
+          </p>
+          {!ok && (
+            <button
+              type="button"
+              onClick={onStart}
+              className="mt-2 text-sm font-semibold text-ink underline underline-offset-4"
+            >
+              Iniciar verificação
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 

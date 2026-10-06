@@ -10,6 +10,22 @@ export const fmtData = (iso: string) =>
 export const fmtId = (n: number) => `#${String(n).padStart(6, "0")}`;
 export const fmtPontos = (n: number) => new Intl.NumberFormat("pt-BR").format(n);
 
+/** Iniciais (até 2) para avatar. "Rodoforte Autopeças Ltda" -> "RA". */
+export function iniciais(nome?: string): string {
+  const partes = (nome ?? "").trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return "·";
+  return partes
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() ?? "")
+    .join("");
+}
+
+/** Primeiro nome / nome curto para a saudação. */
+export function primeiroNome(nome?: string): string | undefined {
+  const p = (nome ?? "").trim().split(/\s+/).filter(Boolean)[0];
+  return p || undefined;
+}
+
 export function maskDoc(v: string, tipo: "PF" | "PJ") {
   const d = v.replace(/\D/g, "").slice(0, tipo === "PF" ? 11 : 14);
   if (tipo === "PF")

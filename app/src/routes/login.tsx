@@ -5,6 +5,7 @@ import { login } from "@/lib/api";
 import { authPorConta } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
 import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
+import { LivenessCheck } from "@/components/payflow/liveness";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -25,6 +26,7 @@ function Login() {
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState<null | "senha" | "bio">(null);
+  const [liveness, setLiveness] = useState(false);
 
   async function entrarCom(credenciais: { email: string; senha: string }, modo: "senha" | "bio") {
     setErro(null);
@@ -97,12 +99,14 @@ function Login() {
                 <button
                   type="button"
                   disabled={loading !== null}
-                  onClick={() =>
-                    void entrarCom(
-                      { email: email || "voce@email.com", senha: cert ? "certificado" : "biometria" },
-                      "bio",
-                    )
-                  }
+                  onClick={() => {
+                    if (cert)
+                      void entrarCom(
+                        { email: email || "voce@email.com", senha: "certificado" },
+                        "bio",
+                      );
+                    else setLiveness(true);
+                  }}
                   className="btn btn-ghost w-full gap-2"
                 >
                   {cert ? <ShieldCheck size={20} /> : <Fingerprint size={20} />}
@@ -134,6 +138,16 @@ function Login() {
           como empresa (PJ).
         </p>
       </div>
+
+      {liveness && (
+        <LivenessCheck
+          onClose={() => setLiveness(false)}
+          onSuccess={() => {
+            setLiveness(false);
+            void entrarCom({ email: email || "voce@email.com", senha: "biometria" }, "bio");
+          }}
+        />
+      )}
     </main>
   );
 }

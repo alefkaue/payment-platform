@@ -14,6 +14,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as BemVindoRouteImport } from './routes/bem-vindo'
 import { Route as CriarContaRouteImport } from './routes/criar-conta'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as AppConfigRouteImport } from './routes/_app.config'
 import { Route as AppContasRouteImport } from './routes/_app.contas'
 import { Route as AppDepositarRouteImport } from './routes/_app.depositar'
 import { Route as AppExtratoRouteImport } from './routes/_app.extrato'
@@ -47,6 +48,11 @@ const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppConfigRoute = AppConfigRouteImport.update({
+  id: '/config',
+  path: '/config',
+  getParentRoute: () => AppRoute,
 } as any)
 const AppContasRoute = AppContasRouteImport.update({
   id: '/contas',
@@ -99,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/bem-vindo': typeof BemVindoRoute
   '/criar-conta': typeof CriarContaRoute
   '/login': typeof LoginRoute
+  '/config': typeof AppConfigRoute
   '/contas': typeof AppContasRoute
   '/depositar': typeof AppDepositarRoute
   '/extrato': typeof AppExtratoRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByTo {
   '/bem-vindo': typeof BemVindoRoute
   '/criar-conta': typeof CriarContaRoute
   '/login': typeof LoginRoute
+  '/config': typeof AppConfigRoute
   '/contas': typeof AppContasRoute
   '/depositar': typeof AppDepositarRoute
   '/extrato': typeof AppExtratoRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   '/bem-vindo': typeof BemVindoRoute
   '/criar-conta': typeof CriarContaRoute
   '/login': typeof LoginRoute
+  '/_app/config': typeof AppConfigRoute
   '/_app/contas': typeof AppContasRoute
   '/_app/depositar': typeof AppDepositarRoute
   '/_app/extrato': typeof AppExtratoRoute
@@ -148,6 +157,7 @@ export interface FileRouteTypes {
     | '/bem-vindo'
     | '/criar-conta'
     | '/login'
+    | '/config'
     | '/contas'
     | '/depositar'
     | '/extrato'
@@ -163,6 +173,7 @@ export interface FileRouteTypes {
     | '/bem-vindo'
     | '/criar-conta'
     | '/login'
+    | '/config'
     | '/contas'
     | '/depositar'
     | '/extrato'
@@ -179,6 +190,7 @@ export interface FileRouteTypes {
     | '/bem-vindo'
     | '/criar-conta'
     | '/login'
+    | '/_app/config'
     | '/_app/contas'
     | '/_app/depositar'
     | '/_app/extrato'
@@ -234,6 +246,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/config': {
+      id: '/_app/config'
+      path: '/config'
+      fullPath: '/config'
+      preLoaderRoute: typeof AppConfigRouteImport
+      parentRoute: typeof AppRoute
     }
     '/_app/contas': {
       id: '/_app/contas'
@@ -313,6 +332,7 @@ const AppLojaRouteWithChildren =
   AppLojaRoute._addFileChildren(AppLojaRouteChildren)
 
 interface AppRouteChildren {
+  AppConfigRoute: typeof AppConfigRoute
   AppContasRoute: typeof AppContasRoute
   AppDepositarRoute: typeof AppDepositarRoute
   AppExtratoRoute: typeof AppExtratoRoute
@@ -324,6 +344,7 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppConfigRoute: AppConfigRoute,
   AppContasRoute: AppContasRoute,
   AppDepositarRoute: AppDepositarRoute,
   AppExtratoRoute: AppExtratoRoute,

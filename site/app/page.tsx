@@ -10,6 +10,14 @@ const ALIQUOTAS: Record<Vigencia, { cbs: number; ibs: number; rotulo: string }> 
   "2027": { cbs: 0.088, ibs: 0.177, rotulo: "2027+ (regime cheio)" },
 };
 
+type Regime = "padrao" | "reduzido_30" | "reduzido_60" | "zero";
+const REGIMES: Record<Regime, { fator: number; rotulo: string }> = {
+  padrao: { fator: 1, rotulo: "Padrão — indústria, comércio, autopeças" },
+  reduzido_30: { fator: 0.7, rotulo: "Reduzido 30% — profissões regulamentadas" },
+  reduzido_60: { fator: 0.4, rotulo: "Reduzido 60% — saúde, educação, agro" },
+  zero: { fator: 0, rotulo: "Zero — cesta básica" },
+};
+
 const brl = (n: number) =>
   Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -21,12 +29,12 @@ function Wordmark({ cor }: { cor?: string }) {
   );
 }
 
-function calcularSplit(valor: string | number, tipo: Tipo, vigencia: Vigencia) {
+function calcularSplit(valor: string | number, tipo: Tipo, vigencia: Vigencia, fator = 1) {
   const v = Math.round(Number(valor || 0) * 100) / 100;
   if (tipo !== "PJ") return { bruto: v, cbs: 0, ibs: 0, liquido: v, split: false };
   const a = ALIQUOTAS[vigencia];
-  const cbs = Math.round(v * a.cbs * 100) / 100;
-  const ibs = Math.round(v * a.ibs * 100) / 100;
+  const cbs = Math.round(v * a.cbs * fator * 100) / 100;
+  const ibs = Math.round(v * a.ibs * fator * 100) / 100;
   return { bruto: v, cbs, ibs, liquido: Math.round((v - cbs - ibs) * 100) / 100, split: true };
 }
 
@@ -52,7 +60,8 @@ function Calculadora() {
   const [valor, setValor] = useState("10000");
   const [tipo, setTipo] = useState<Tipo>("PJ");
   const [vig, setVig] = useState<Vigencia>("2027");
-  const r = calcularSplit(valor, tipo, vig);
+  const [regime, setRegime] = useState<Regime>("padrao");
+  const r = calcularSplit(valor, tipo, vig, REGIMES[regime].fator);
   const pLiq = r.bruto > 0 ? (r.liquido / r.bruto) * 100 : 100;
   return (
     <div className="card">
@@ -79,6 +88,18 @@ function Calculadora() {
           ))}
         </select>
       </div>
+      {tipo === "PJ" ? (
+        <div style={{ marginTop: 14 }}>
+          <label className="eyebrow">Regime do setor</label>
+          <select value={regime} onChange={(e) => setRegime(e.target.value as Regime)}>
+            {(Object.entries(REGIMES) as [Regime, (typeof REGIMES)[Regime]][]).map(([k, g]) => (
+              <option key={k} value={k}>
+                {g.rotulo}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
       <div className="split-bar" style={{ marginTop: 22 }}>
         <div className="liq" style={{ width: `${pLiq}%` }} />
         <div className="tax" style={{ flex: 1 }} />

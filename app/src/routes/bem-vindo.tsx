@@ -1,5 +1,6 @@
 import { createFileRoute, Link, Navigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { HelpCircle } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { Wordmark } from "@/components/payflow/ui";
 import { cn } from "@/lib/utils";
@@ -46,8 +47,9 @@ function BemVindo() {
   if (ready && conta) return <Navigate to="/inicio" replace />;
 
   return (
-    <main className="relative h-[100dvh] w-full overflow-hidden bg-ink text-white">
-      <style>{`@keyframes pfbar{from{transform:scaleX(0)}to{transform:scaleX(1)}}`}</style>
+    <div className="flex min-h-[100dvh] w-full justify-center bg-black">
+      <main className="relative mx-auto h-[100dvh] w-full max-w-[460px] overflow-hidden bg-ink text-white shadow-2xl">
+        <style>{`@keyframes pfbar{from{transform:scaleX(0)}to{transform:scaleX(1)}}`}</style>
 
       {/* Fotos em tela cheia (crossfade) */}
       {SLIDES.map((s, idx) => (
@@ -95,6 +97,16 @@ function BemVindo() {
         ))}
       </div>
 
+      {/* Ícone de ajuda (canto superior direito) */}
+      <Link
+        to="/login"
+        aria-label="Ajuda"
+        title="Ajuda"
+        className="absolute right-5 top-7 z-30 grid h-9 w-9 place-items-center rounded-full border border-white/20 bg-white/10 text-white backdrop-blur transition hover:bg-white/20"
+      >
+        <HelpCircle size={18} />
+      </Link>
+
       {/* Marca + título */}
       <div className="absolute inset-x-0 top-0 z-20 px-6 pt-8">
         <Wordmark tone="light" size="sm" />
@@ -103,21 +115,22 @@ function BemVindo() {
         </h1>
       </div>
 
-      {/* Ações */}
-      <div className="absolute inset-x-0 bottom-0 z-20 px-5 pb-10">
+      {/* Ações: dois botões separados */}
+      <div className="absolute inset-x-0 bottom-0 z-20 space-y-3 px-5 pb-10">
         <Link
-          to="/login"
-          className="flex h-14 w-full items-center justify-center rounded-full bg-white text-base font-semibold text-ink shadow-[0_12px_32px_-8px_rgba(0,0,0,0.5)] transition active:scale-[0.99]"
+          to="/criar-conta"
+          className="flex h-14 w-full items-center justify-center rounded-full bg-marca text-base font-semibold text-ink shadow-[0_12px_32px_-8px_rgba(0,0,0,0.5)] transition hover:brightness-95 active:scale-[0.99]"
         >
-          Entrar ou criar conta
+          Criar conta
         </Link>
         <Link
           to="/login"
-          className="mt-4 block text-center text-sm font-medium text-white/90 hover:text-white"
+          className="flex h-14 w-full items-center justify-center rounded-full border border-white/30 bg-white/10 text-base font-semibold text-white backdrop-blur transition hover:bg-white/20 active:scale-[0.99]"
         >
-          Preciso de ajuda
+          Entrar
         </Link>
       </div>
-    </main>
+      </main>
+    </div>
   );
 }

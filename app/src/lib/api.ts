@@ -5,6 +5,8 @@
 import { calcularSplit } from "./split";
 import type {
   ApuracaoPJ,
+  Cartao,
+  CvvDinamico,
   CarteiraInfo,
   ComprarPassagemPayload,
   ComprarProdutoPayload,
@@ -26,6 +28,7 @@ import {
   apuracaoDemo,
   BANCO_CARTEIRA,
   carteiras,
+  cartoes,
   contasDemo,
   faturas,
   genId,
@@ -277,4 +280,51 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
   return faturas
     .filter((f) => !direcao || f.direcao === direcao)
     .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
+}
+
+// --- Cartão virtual ---------------------------------------------------------
+const PF_NASCE_SEM_CARTAO = false;
+
+/** Cartão virtual da conta logada (cria um na hora se a conta ainda não tem). */
+export async function meuCartao(): Promise<Cartao> {
+  await delay(300);
+  const minha = sessao.conta.carteira_id;
+  let c = cartoes.find((x) => x.carteira_id === minha);
+  if (!c && !PF_NASCE_SEM_CARTAO) {
+    c = {
+      id: genId(),
+      carteira_id: minha,
+      apelido: sessao.conta.tipo === "PJ" ? "Cartão corporativo virtual" : "Cartão virtual",
+      numero_masc: `•••• •••• •••• ${1000 + (minha % 9000)}`.replace(/(\d{4})$/, (m) => m),
+      bandeira: "Visa",
+      validade: "12/31",
+      virtual: true,
+      estado: "ativo",
+      compras_online: true,
+      compras_internacionais: false,
+      limite: sessao.conta.tipo === "PJ" ? 50000 : 2000,
+    };
+    cartoes.push(c);
+  }
+  if (!c) throw new ApiError("Nenhum cartão emitido.", 404);
+  return { ...c };
+}
+
+/** Atualiza estado/segurança do cartão (congelar, travas de compra). */
+export async function atualizarCartao(
+  patch: Partial<Pick<Cartao, "estado" | "compras_online" | "compras_internacionais">>,
+): Promise<Cartao> {
+  await delay(350);
+  const minha = sessao.conta.carteira_id;
+  const c = cartoes.find((x) => x.carteira_id === minha);
+  if (!c) throw new ApiError("Cartão não encontrado.", 404);
+  Object.assign(c, patch);
+  return { ...c };
+}
+
+/** CVV dinâmico: gira a cada 60s — some do app e reduz fraude em compra online. */
+export async function cvvDinamico(): Promise<CvvDinamico> {
+  await delay(200);
+  const cvv = String(Math.floor(100 + Math.random() * 900));
+  return { cvv, expira_em: Date.now() + 60_000 };
 }

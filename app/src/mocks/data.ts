@@ -1,6 +1,7 @@
 import { calcularSplit } from "@/lib/split";
 import type {
   ApuracaoPJ,
+  Cartao,
   CarteiraInfo,
   CategoriaTx,
   Conta,
@@ -43,8 +44,27 @@ const contaPJ: Conta = {
 
 export const contasDemo: Record<TipoConta, Conta> = { PF: contaPF, PJ: contaPJ };
 
-/** Sessão ativa: a conta logada no momento (o api lê e escreve aqui). */
-export const sessao: { conta: Conta } = { conta: { ...contaPF } };
+/**
+ * Sessão ativa: a conta logada no momento (o api lê e escreve aqui).
+ * Hidrata a partir do sessionStorage para sobreviver a um reload de página
+ * (no SPA/apk, um refresh não deve "esquecer" que a conta logada é PJ).
+ */
+function contaInicial(): Conta {
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.sessionStorage.getItem("payflow-session");
+      if (raw) {
+        const c = JSON.parse(raw)?.conta;
+        if (c && (c.tipo === "PF" || c.tipo === "PJ")) return c as Conta;
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  return { ...contaPF };
+}
+
+export const sessao: { conta: Conta } = { conta: contaInicial() };
 
 // --- Carteiras conhecidas (contatos + lojistas PJ + parceira de viagens) -----
 export const carteiras: CarteiraInfo[] = [
@@ -392,6 +412,36 @@ export const faturas: Fatura[] = [
   },
 ];
 
+// --- Cartões virtuais (100% digital) ------------------------------------------
+export const cartoes: Cartao[] = [
+  {
+    id: 7001,
+    carteira_id: 1042, // Marina (PF)
+    apelido: "Cartão virtual",
+    numero_masc: "•••• •••• •••• 4921",
+    bandeira: "Visa",
+    validade: "12/30",
+    virtual: true,
+    estado: "ativo",
+    compras_online: true,
+    compras_internacionais: false,
+    limite: 6000,
+  },
+  {
+    id: 7002,
+    carteira_id: 3050, // Rodoforte (PJ)
+    apelido: "Cartão corporativo virtual",
+    numero_masc: "•••• •••• •••• 8450",
+    bandeira: "Visa",
+    validade: "09/29",
+    virtual: true,
+    estado: "ativo",
+    compras_online: true,
+    compras_internacionais: true,
+    limite: 150000,
+  },
+];
+
 // --- Apuração automática do mês (split inteligente) ---------------------------
 const nomeMes = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
 export const apuracaoDemo: ApuracaoPJ = {
@@ -403,4 +453,5 @@ export const apuracaoDemo: ApuracaoPJ = {
   credito_saldo: 184_300, // crédito tributário que segue acumulado
   caixa_preservado: 158_329.68, // imposto que nunca passou pelo caixa da empresa
   aliquota_pct: 26.5,
+  regime: "Padrão", // autopeças/indústria = regime padrão (sem redução)
 };
