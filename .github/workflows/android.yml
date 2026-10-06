@@ -47,9 +47,9 @@ jobs:
         working-directory: app
         run: node scripts/assemble-www.mjs
 
-      - name: Capacitor sync (android)
+      - name: Capacitor copy (android)
         working-directory: app
-        run: npx cap sync android
+        run: npx cap copy android
 
       - name: Gerar APK de debug
         working-directory: app/android
