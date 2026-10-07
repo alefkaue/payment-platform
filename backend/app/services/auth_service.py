@@ -45,7 +45,7 @@ def _checar_rate_limit(repo: Repositorio, email: str, ip: str | None) -> None:
 def autenticar(repo: Repositorio, *, email: str, senha: str, ip: str | None = None, dispositivo_hash: str | None = None) -> dict:
     email = email.lower().strip()
     _checar_rate_limit(repo, email, ip)
-    usuario = repo.obter_usuario_por_email(email)
+    usuario = repo.obter_usuario_por_login(email)
     ok = False
     if usuario and usuario["ativo"]:
         ok = security.verificar_senha(senha, usuario["senha_hash"])
@@ -55,10 +55,35 @@ def autenticar(repo: Repositorio, *, email: str, senha: str, ip: str | None = No
     if not ok:
         repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=email, ip=ip,
                                   usuario_id=usuario["id"] if usuario else None)
-        raise HTTPException(status_code=401, detail="E-mail ou senha inválidos.")
+        raise HTTPException(status_code=401, detail="E-mail/CPF ou senha inválidos.")
 
     repo.registrar_sessao_mfa(tipo="login", sucesso=True, usuario_id=usuario["id"], referencia=email, ip=ip)
     repo.registrar_log(ator=email, acao="login", ip=ip)
+    if dispositivo_hash:
+        repo.registrar_dispositivo(usuario_id=usuario["id"], id_hash=dispositivo_hash, nome=None)
+    return usuario
+
+
+def autenticar_biometria(repo: Repositorio, *, login: str, prova, ip: str | None = None,
+                         dispositivo_hash: str | None = None) -> dict:
+    """Entrar com o rosto (sem senha). O desafio precisa ter sido pedido com o
+    mesmo login (POST /biometria/desafios {"login": ...}); o servidor confere a
+    prova de vida e compara com o rosto cadastrado."""
+    from app.services import seguranca_service
+
+    ref = login.lower().strip()
+    _checar_rate_limit(repo, ref, ip)
+    usuario = repo.obter_usuario_por_login(ref)
+    if not usuario or not usuario["ativo"] or not usuario["tem_biometria"]:
+        repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=ref, ip=ip)
+        raise HTTPException(status_code=401, detail="Não foi possível entrar com biometria. Use a senha.")
+    try:
+        seguranca_service.verificar_rosto(repo, usuario=usuario, prova=prova, ip=ip, tipo="login_biometria")
+    except HTTPException:
+        repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=ref, ip=ip, usuario_id=usuario["id"])
+        raise
+    repo.registrar_sessao_mfa(tipo="login", sucesso=True, usuario_id=usuario["id"], referencia=ref, ip=ip)
+    repo.registrar_log(ator=usuario["email"], acao="login_biometria", ip=ip)
     if dispositivo_hash:
         repo.registrar_dispositivo(usuario_id=usuario["id"], id_hash=dispositivo_hash, nome=None)
     return usuario

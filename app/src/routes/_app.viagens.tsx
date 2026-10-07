@@ -1,21 +1,21 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import { ArrowLeft, Lock, Plane } from "lucide-react";
-import { buscarVoos, comprarPassagem } from "@/lib/api";
+import { ArrowLeft, Check, Lock, Plane, ScanFace, Sparkles } from "lucide-react";
+import {
+  buscarVoos,
+  comprarPassagem,
+  minhaConta,
+  pontosDaCompra,
+  resgatarPassagem,
+  type Resgate,
+} from "@/lib/api";
 import { calcularSplit } from "@/lib/split";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, fmtPontos } from "@/lib/format";
-import type { Voo } from "@/lib/types";
-import {
-  Empty,
-  ErrorBox,
-  PageTitle,
-  SelfieCapture,
-  SplitBar,
-  ValueRow,
-  VooCard,
-} from "@/components/payflow/ui";
+import type { ProvaBiometrica, Voo } from "@/lib/types";
+import { Empty, ErrorBox, PageTitle, SplitBar, ValueRow, VooCard } from "@/components/payflow/ui";
+import { LivenessCheck } from "@/components/payflow/liveness";
 
 export const Route = createFileRoute("/_app/viagens")({
   head: () => ({
@@ -34,14 +34,17 @@ function Viagens() {
   const [origem, setOrigem] = useState("");
   const [destino, setDestino] = useState("");
   const [sel, setSel] = useState<Voo | null>(null);
-  const [selfie, setSelfie] = useState<File | null>(null);
+  const [liveness, setLiveness] = useState(false);
+  const [resgate, setResgate] = useState<Resgate | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<null | "reais" | "pontos">(null);
 
   const q = useQuery({
     queryKey: ["voos", origem, destino],
     queryFn: () => buscarVoos(origem || undefined, destino || undefined),
   });
+  const saldo = useQuery({ queryKey: ["conta", conta?.numero], queryFn: minhaConta });
+  const pontos = saldo.data?.pontos ?? 0;
 
   const origens = useMemo(() => Array.from(new Set((q.data ?? []).map((v) => v.origem))), [q.data]);
   const destinos = useMemo(
@@ -68,22 +71,76 @@ function Viagens() {
     );
   }
 
+  if (resgate) {
+    return (
+      <div className="enter mx-auto max-w-md text-center">
+        <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-tint text-pos">
+          <Check size={28} strokeWidth={2.5} />
+        </div>
+        <h1 className="mt-5 text-2xl text-ink">Passagem emitida com pontos</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          {resgate.voo.origem} → {resgate.voo.destino} · {resgate.voo.companhia} ·{" "}
+          {resgate.voo.saida}
+        </p>
+        <section className="surface mt-6 space-y-2 p-5 text-left text-sm">
+          <div className="flex justify-between">
+            <span className="text-mut3">Localizador</span>
+            <span className="font-mono font-semibold text-ink">{resgate.localizador}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-mut3">Pontos usados</span>
+            <span className="tabular font-semibold text-ink">
+              {fmtPontos(resgate.pontos_usados)}
+            </span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-mut3">Saldo de pontos</span>
+            <span className="tabular font-semibold text-marca">
+              {fmtPontos(resgate.saldo_pontos)}
+            </span>
+          </div>
+          <p className="pt-2 text-xs text-mut3">Seu saldo em reais não foi alterado.</p>
+        </section>
+        <Link to="/inicio" className="btn btn-ink mt-6 w-full">
+          Voltar ao início
+        </Link>
+      </div>
+    );
+  }
+
   if (sel) {
     const split = calcularSplit(sel.preco, "PJ");
-    const precisaSelfie = sel.preco > 500;
-    const comprar = async () => {
-      setErro(null);
-      if (precisaSelfie && !selfie)
-        return setErro("Capture a selfie para compras acima de R$ 500.");
-      setLoading(true);
+    const precisaFacial = sel.preco > 500;
+    const podeResgatar = pontos >= sel.milhas;
+
+    const finalizar = async (biometria: ProvaBiometrica | null) => {
+      setLoading("reais");
       try {
-        const t = await comprarPassagem({ voo_id: sel.id, selfie: precisaSelfie ? selfie : null });
+        const t = await comprarPassagem({ voo_id: sel.id, biometria });
         qc.invalidateQueries();
         nav({ to: "/comprovante/$id", params: { id: String(t.id) } });
       } catch (e) {
         setErro((e as Error).message);
       } finally {
-        setLoading(false);
+        setLoading(null);
+      }
+    };
+    const comprar = () => {
+      setErro(null);
+      if (precisaFacial) setLiveness(true);
+      else void finalizar(null);
+    };
+    const resgatar = async () => {
+      setErro(null);
+      setLoading("pontos");
+      try {
+        const r = await resgatarPassagem(sel.id);
+        qc.invalidateQueries();
+        setResgate(r);
+      } catch (e) {
+        setErro((e as Error).message);
+      } finally {
+        setLoading(null);
       }
     };
     return (
@@ -91,7 +148,6 @@ function Viagens() {
         <button
           onClick={() => {
             setSel(null);
-            setSelfie(null);
             setErro(null);
           }}
           className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-mut2 hover:text-ink"
@@ -125,38 +181,72 @@ function Viagens() {
             <SplitBar liquido={split.liquido} imposto={split.imposto_total} />
             <div className="mt-3 divide-y divide-border">
               <ValueRow label="Você paga" value={split.valor_bruto} />
-              <ValueRow label="CBS → Governo" value={split.cbs} tax />
-              <ValueRow label="IBS → Governo" value={split.ibs} tax />
+              <ValueRow label="CBS da nota → Fisco" value={split.cbs} tax />
+              <ValueRow label="IBS da nota → Fisco" value={split.ibs} tax />
               <ValueRow label={`${sel.merchant_nome} recebe`} value={split.liquido} strong />
             </div>
             <p className="mt-3 rounded-[14px] bg-tax-bg px-4 py-3 text-sm text-tax2">
-              Você ganha {fmtPontos(sel.milhas)} pontos nesta compra.
+              Pagando em reais, você ganha {fmtPontos(pontosDaCompra(sel.preco))} pontos nesta
+              compra.
             </p>
           </div>
 
-          {precisaSelfie && (
-            <div className="mt-4">
-              <SelfieCapture value={selfie} onChange={setSelfie} title="Confirme com uma selfie" />
-            </div>
+          {precisaFacial && (
+            <p className="mt-4 flex items-center gap-2 text-sm text-mut2">
+              <ScanFace size={16} /> Acima de R$ 500 confirmamos com verificação facial.
+            </p>
           )}
           {erro && (
             <div className="mt-4">
               <ErrorBox>{erro}</ErrorBox>
             </div>
           )}
-          <button onClick={comprar} disabled={loading} className="btn btn-ink mt-5 w-full">
-            {loading ? "Emitindo…" : `Comprar passagem · ${fmtBRL(sel.preco)}`}
+          <button onClick={comprar} disabled={loading !== null} className="btn btn-ink mt-5 w-full">
+            {loading === "reais" ? "Emitindo…" : `Comprar passagem · ${fmtBRL(sel.preco)}`}
           </button>
+
+          <div className="mt-5 rounded-[16px] border border-line2 p-4">
+            <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
+              <Sparkles size={15} className="text-marca" /> Ou use seus pontos
+            </p>
+            <p className="mt-1 text-sm text-mut2">
+              Este voo sai por {fmtPontos(sel.milhas)} pontos. Você tem {fmtPontos(pontos)}.
+            </p>
+            <button
+              onClick={() => void resgatar()}
+              disabled={loading !== null || !podeResgatar}
+              className="btn btn-ghost mt-3 w-full"
+            >
+              {loading === "pontos"
+                ? "Emitindo…"
+                : podeResgatar
+                  ? `Resgatar com ${fmtPontos(sel.milhas)} pontos`
+                  : `Faltam ${fmtPontos(sel.milhas - pontos)} pontos`}
+            </button>
+          </div>
         </div>
+        {liveness && (
+          <LivenessCheck
+            onClose={() => setLiveness(false)}
+            onSuccess={(prova) => {
+              setLiveness(false);
+              void finalizar(prova);
+            }}
+          />
+        )}
       </div>
     );
   }
 
   return (
     <div className="enter">
-      <PageTitle sub="Pague em reais e acumule pontos. O imposto da passagem é retido no ato.">
+      <PageTitle sub="Pague em reais e acumule pontos, ou use seus pontos para voar. O imposto da passagem é retido no ato.">
         Viagens
       </PageTitle>
+
+      <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-tint px-3 py-1.5 text-sm text-ink">
+        <Sparkles size={14} className="text-marca" /> {fmtPontos(pontos)} pontos disponíveis
+      </p>
 
       <div className="surface mb-5 grid grid-cols-2 gap-3 p-4">
         <div>

@@ -18,8 +18,8 @@ from app.core.config import get_settings
 from app.core.security import hash_senha
 from app.db.base import usando_postgres
 from app.repositories import get_repository
-from app.routers import admin, auth, biometria, cobrancas, contas, pagamentos, seguranca
-from app.services import split_service
+from app.routers import admin, auth, beneficios, biometria, cobrancas, contas, pagamentos, seguranca
+from app.services import beneficios_service, split_service
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
@@ -47,6 +47,7 @@ def _preparar():
         logger.warning("ADMIN_SENHA não definida: admin %s com a senha padrão de desenvolvimento (ver README).",
                        settings.admin_email)
     repo.garantir_admin(email=settings.admin_email, senha_hash=hash_senha(senha_admin))
+    beneficios_service.garantir_catalogo(repo)
     logger.info("PayFlow pronto -- banco: %s | ano do simulador de split: %s",
                 "postgres" if usando_postgres() else "sqlite", split_service.ano_padrao())
 
@@ -79,7 +80,7 @@ async def limitar_tamanho_corpo(request: Request, call_next):
     return await call_next(request)
 
 
-for r in (auth, contas, biometria, pagamentos, cobrancas, seguranca, admin):
+for r in (auth, contas, biometria, pagamentos, cobrancas, beneficios, seguranca, admin):
     app.include_router(r.router)
 
 

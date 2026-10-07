@@ -7,8 +7,8 @@
  *   para apresentar offline. As regras do mock seguem as do backend
  *   (transferência sem split, split só em compra/cobrança com nota).
  *
- * Loja, Viagens e Cartão ainda não têm endpoint no backend: funcionam só no modo
- * demonstração (no modo API as telas avisam).
+ * Cartão virtual e contas a pagar ainda não têm endpoint no backend: no modo API
+ * continuam com dados de demonstração.
  */
 import { calcularSplit, semSplit, VIGENCIA_ATUAL } from "./split";
 import {
@@ -40,6 +40,7 @@ import type {
   LoginPayload,
   LoginResposta,
   Produto,
+  ProvaBiometrica,
   RegistrarPayload,
   ResultadoTransferencia,
   SplitResultado,
@@ -236,7 +237,7 @@ async function contasDaPessoa(): Promise<Conta[]> {
 
 export async function login({ email, senha }: LoginPayload): Promise<LoginResposta> {
   await delay();
-  if (!email || !senha) throw new ApiError("Informe e-mail e senha.", 401);
+  if (!email || !senha) throw new ApiError("Informe e-mail (ou CPF) e senha.", 401);
   if (MODO_API) {
     definirConta(null);
     const tk = await post<{ access_token: string; refresh_token: string }>("/auth/login", {
@@ -256,6 +257,31 @@ export async function login({ email, senha }: LoginPayload): Promise<LoginRespos
   return { contas, conta: contas[0]! };
 }
 
+/** Entrar com o rosto: o desafio é pedido para este login e conferido no servidor. */
+export async function loginBiometria(
+  identificador: string,
+  prova: ProvaBiometrica,
+): Promise<LoginResposta> {
+  await delay();
+  if (MODO_API) {
+    definirConta(null);
+    const tk = await post<{ access_token: string; refresh_token: string }>(
+      "/auth/login/biometria",
+      {
+        email: identificador,
+        biometria: prova,
+      },
+    );
+    salvarTokens(tk);
+    const contas = await contasDaPessoa();
+    const conta = contas.find((c) => c.tipo === "PF") ?? contas[0];
+    if (!conta) throw new ApiError("Esta pessoa não tem nenhuma conta para operar.", 404);
+    selecionarConta(conta);
+    return { contas, conta };
+  }
+  return login({ email: identificador, senha: "biometria" });
+}
+
 export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
   await delay(700);
   if (p.senha.length < 8) throw new ApiError("A senha precisa ter ao menos 8 caracteres.");
@@ -270,6 +296,7 @@ export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
     const r = await login({ email: p.email, senha: p.senha });
     if (!p.empresa) return r;
     const pj = mapConta(await post<ContaApi>("/empresas", p.empresa));
+    if (p.empresa.setor) pj.setor = p.empresa.setor;
     return { contas: [...r.contas, pj], conta: r.conta };
   }
   const id = genId();
@@ -295,6 +322,7 @@ export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
       pontos: 0,
       porte: p.empresa.porte,
       regime_apuracao: p.empresa.regime_apuracao,
+      ...(p.empresa.setor ? { setor: p.empresa.setor } : {}),
       papel: "admin",
       alcada: null,
       creditos: 0,
@@ -324,8 +352,8 @@ export async function sair(refresh = true): Promise<void> {
 // Biometria (prova de vida com desafio do servidor)
 // =============================================================================
 
-export async function pedirDesafio(): Promise<Desafio> {
-  if (MODO_API) return post<Desafio>("/biometria/desafios");
+export async function pedirDesafio(login?: string): Promise<Desafio> {
+  if (MODO_API) return post<Desafio>("/biometria/desafios", login ? { login } : {});
   const acao = Math.random() > 0.5 ? "virar_esquerda" : "virar_direita";
   return {
     desafio_id: `demo-${Date.now()}`,
@@ -343,10 +371,14 @@ export async function minhaConta(): Promise<Conta> {
   await delay(250);
   if (MODO_API) {
     const c = mapConta(await get<ContaApi>("/contas/atual"));
+    if (c.tipo === "PF") c.pontos = (await get<{ saldo: number }>("/pontos")).saldo;
     if (c.tipo === "PJ") {
-      const e = await get<{ porte: Conta["porte"]; cnae: string | null }>("/empresas/atual");
+      const e = await get<{ porte: Conta["porte"]; cnae: string | null; setor: string | null }>(
+        "/empresas/atual",
+      );
       if (e.porte) c.porte = e.porte;
-      if (e.cnae) c.setor = `CNAE ${e.cnae}`;
+      if (e.setor) c.setor = e.setor;
+      else if (e.cnae) c.setor = `CNAE ${e.cnae}`;
       const creditos = await get<{ valor: string }[]>("/empresas/atual/creditos");
       c.creditos = creditos.reduce((s, x) => s + num(x.valor), 0);
     }
@@ -704,36 +736,71 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
         };
       });
   }
-  return faturas
+  const criadas: Fatura[] = cobrancasDemo.map((c) => {
+    const imposto = c.vai_reter_imposto ? c.cbs + c.ibs : 0;
+    return {
+      id: c.id,
+      direcao: "receber",
+      contraparte: c.descricao || "Cliente",
+      nf: c.nfe_chave ? `NF-e …${c.nfe_chave.slice(-8)}` : "Sem nota",
+      valor_bruto: c.valor,
+      imposto,
+      liquido: r2(c.valor - imposto),
+      credito_gerado: 0,
+      vencimento: c.vencimento ?? new Date().toISOString(),
+      status: "pendente",
+    };
+  });
+  return [...faturas, ...criadas]
     .filter((f) => !direcao || f.direcao === direcao)
     .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 }
 
 // =============================================================================
-// Loja e Viagens (só modo demonstração)
+// Loja, Viagens e pontos (benefícios PF)
 // =============================================================================
 
-function exigirDemo(recurso: string) {
-  if (MODO_API) throw new ApiError(`${recurso} ainda não está disponível nesta versão.`, 501);
+interface ProdutoApi extends Omit<Produto, "preco"> {
+  preco: string;
 }
+interface VooApi extends Omit<Voo, "preco"> {
+  preco: string;
+}
+interface CompraApi {
+  transacao: TransacaoApi;
+  pontos_ganhos: number;
+  saldo_pontos: number;
+}
+
+/** Comprar em reais rende 1 ponto por real (Loja e Viagens). */
+export const pontosDaCompra = (valor: number) => Math.floor(valor);
 
 export async function listarProdutos(): Promise<Produto[]> {
   await delay(350);
-  exigirDemo("A Loja");
+  if (MODO_API)
+    return (await get<ProdutoApi[]>("/loja/produtos")).map((p) => ({ ...p, preco: num(p.preco) }));
   return [...PRODUTOS];
 }
 
 export async function produtoPorId(id: number): Promise<Produto> {
   await delay(200);
-  exigirDemo("A Loja");
+  if (MODO_API) {
+    const p = await get<ProdutoApi>(`/loja/produtos/${id}`);
+    return { ...p, preco: num(p.preco) };
+  }
   const p = PRODUTOS.find((x) => x.id === id);
   if (!p) throw new ApiError("Produto não encontrado.", 404);
   return { ...p };
 }
 
+async function compraApi(caminho: string, biometria?: ProvaBiometrica | null): Promise<Transacao> {
+  const r = await post<CompraApi>(caminho, biometria ? { biometria } : {});
+  return { ...mapTransacao(r.transacao, r.transacao.origem.carteira_id), categoria: "compra" };
+}
+
 export async function comprarProduto(p: ComprarProdutoPayload): Promise<Transacao> {
   await delay(800);
-  exigirDemo("A Loja");
+  if (MODO_API) return compraApi(`/loja/produtos/${p.produto_id}/comprar`, p.biometria);
   if (sessao.conta.tipo !== "PF")
     throw new ApiError("A Loja é exclusiva para contas Pessoa Física.", 403);
   const produto = await produtoPorId(p.produto_id);
@@ -741,17 +808,25 @@ export async function comprarProduto(p: ComprarProdutoPayload): Promise<Transaca
   const t = registrarPagamento({
     destino,
     valor: produto.preco,
-    comBiometria: Boolean(p.selfie),
+    comBiometria: Boolean(p.biometria),
     categoria: "compra",
     descricao: `${produto.merchant_nome} · ${produto.nome}`,
   });
-  sessao.conta.pontos += Math.round(produto.preco);
+  sessao.conta.pontos += pontosDaCompra(produto.preco);
   return t;
 }
 
 export async function buscarVoos(origem?: string, destino?: string): Promise<Voo[]> {
   await delay(400);
-  exigirDemo("Viagens");
+  if (MODO_API) {
+    const q = new URLSearchParams();
+    if (origem) q.set("origem", origem);
+    if (destino) q.set("destino", destino);
+    return (await get<VooApi[]>(`/viagens/voos?${q.toString()}`)).map((v) => ({
+      ...v,
+      preco: num(v.preco),
+    }));
+  }
   return VOOS.filter(
     (v) => (!origem || v.origem === origem) && (!destino || v.destino === destino),
   );
@@ -759,15 +834,22 @@ export async function buscarVoos(origem?: string, destino?: string): Promise<Voo
 
 export async function vooPorId(id: number): Promise<Voo> {
   await delay(200);
-  exigirDemo("Viagens");
+  if (MODO_API) {
+    const v = await get<VooApi>(`/viagens/voos/${id}`);
+    return { ...v, preco: num(v.preco) };
+  }
   const v = VOOS.find((x) => x.id === id);
   if (!v) throw new ApiError("Voo não encontrado.", 404);
   return { ...v };
 }
 
+/** Passagem paga em reais (rende 1 ponto por real). */
 export async function comprarPassagem(p: ComprarPassagemPayload): Promise<Transacao> {
   await delay(900);
-  exigirDemo("Viagens");
+  if (MODO_API) {
+    const t = await compraApi(`/viagens/voos/${p.voo_id}/comprar`, p.biometria);
+    return { ...t, categoria: "viagem" };
+  }
   if (sessao.conta.tipo !== "PF")
     throw new ApiError("Viagens é um benefício das contas Pessoa Física.", 403);
   const voo = await vooPorId(p.voo_id);
@@ -775,12 +857,42 @@ export async function comprarPassagem(p: ComprarPassagemPayload): Promise<Transa
   const t = registrarPagamento({
     destino,
     valor: voo.preco,
-    comBiometria: Boolean(p.selfie),
+    comBiometria: Boolean(p.biometria),
     categoria: "viagem",
     descricao: `Voo ${voo.origem} → ${voo.destino} · ${voo.companhia}`,
   });
-  sessao.conta.pontos += voo.milhas;
+  sessao.conta.pontos += pontosDaCompra(voo.preco);
   return t;
+}
+
+export interface Resgate {
+  localizador: string;
+  voo: Voo;
+  pontos_usados: number;
+  saldo_pontos: number;
+}
+
+/** Passagem com pontos: debita `milhas` pontos, sem tocar no saldo em reais. */
+export async function resgatarPassagem(vooId: number): Promise<Resgate> {
+  await delay(900);
+  if (MODO_API) {
+    const r = await post<Omit<Resgate, "voo"> & { voo: VooApi }>(`/viagens/voos/${vooId}/resgatar`);
+    return { ...r, voo: { ...r.voo, preco: num(r.voo.preco) } };
+  }
+  if (sessao.conta.tipo !== "PF")
+    throw new ApiError("Viagens é um benefício das contas Pessoa Física.", 403);
+  const voo = await vooPorId(vooId);
+  if (sessao.conta.pontos < voo.milhas)
+    throw new ApiError(
+      `Pontos insuficientes: este voo custa ${voo.milhas.toLocaleString("pt-BR")} pontos.`,
+    );
+  sessao.conta.pontos -= voo.milhas;
+  return {
+    localizador: crypto.randomUUID().slice(0, 6).toUpperCase(),
+    voo,
+    pontos_usados: voo.milhas,
+    saldo_pontos: sessao.conta.pontos,
+  };
 }
 
 // =============================================================================

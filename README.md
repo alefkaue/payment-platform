@@ -50,6 +50,7 @@ administrador" no [HANDOFF.md](HANDOFF.md#node-sem-administrador).
 
 ## Regras principais
 
+- **PF tem Loja, Viagens e pontos** (1 ponto por real; passagens resgatadas com pontos). **PJ tem o split.**
 - **Transferência nunca tem imposto retido.** O split só acontece no pagamento de
   uma **cobrança com nota fiscal**, e só para empresas do regime regular.
 - Alíquotas seguem a **transição** 2026–2033 (2026: CBS 0,9% + IBS 0,1%; IBS

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, Header, Response
 
 from app.deps import get_repo, hash_dispositivo, ip_cliente, usuario_atual
 from app.repositories.repository import Repositorio
-from app.schemas.auth import LoginRequest, RefreshRequest, TokenResponse
+from app.schemas.auth import LoginBiometriaRequest, LoginRequest, RefreshRequest, TokenResponse
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -17,6 +17,21 @@ def login(
 ):
     usuario = auth_service.autenticar(
         repo, email=dados.email, senha=dados.senha, ip=ip,
+        dispositivo_hash=hash_dispositivo(x_dispositivo_id) if x_dispositivo_id else None,
+    )
+    return auth_service.emitir_tokens(repo, usuario)
+
+
+@router.post("/login/biometria", response_model=TokenResponse)
+def login_biometria(
+    dados: LoginBiometriaRequest,
+    repo: Repositorio = Depends(get_repo),
+    ip: str | None = Depends(ip_cliente),
+    x_dispositivo_id: str | None = Header(default=None, max_length=128),
+):
+    """Entrar com o rosto. Peça o desafio em POST /biometria/desafios com {"login": e-mail ou CPF}."""
+    usuario = auth_service.autenticar_biometria(
+        repo, login=dados.email, prova=dados.biometria, ip=ip,
         dispositivo_hash=hash_dispositivo(x_dispositivo_id) if x_dispositivo_id else None,
     )
     return auth_service.emitir_tokens(repo, usuario)
@@ -42,5 +57,6 @@ def eu(usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_r
         "email": usuario["email"],
         "papel": usuario["papel"],
         "tem_biometria": usuario["tem_biometria"],
+        "pontos": usuario["pontos"],
         "contas": repo.contas_do_usuario(usuario["id"]),
     }

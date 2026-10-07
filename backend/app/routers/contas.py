@@ -49,7 +49,7 @@ def abrir_empresa(
 ):
     conta = contas_service.criar_empresa(
         repo, usuario=usuario, cnpj=dados.cnpj, razao_social=dados.razao_social, nome_fantasia=dados.nome_fantasia,
-        porte=dados.porte, regime=dados.regime_apuracao, ip=ip,
+        porte=dados.porte, regime=dados.regime_apuracao, setor=dados.setor, ip=ip,
     )
     return {**conta, "papel": "admin", "alcada": None}
 

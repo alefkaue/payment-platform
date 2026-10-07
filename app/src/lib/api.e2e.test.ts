@@ -58,6 +58,13 @@ describe.runIf(Boolean(URL_API))("api.ts contra o backend v7", () => {
     // Sem saldo: transferência falha com a mensagem do backend
     await expect(api.transferir({ destino: { chave: chave.valor }, valor: 10 })).rejects.toThrow();
 
+    // Loja e Viagens (PF): catálogo vem do backend; sem saldo a compra falha
+    expect((await api.listarProdutos()).length).toBe(8);
+    expect((await api.buscarVoos("CGH")).length).toBe(1);
+    await expect(api.comprarProduto({ produto_id: 4 })).rejects.toThrow(/insuficiente/i);
+    await expect(api.resgatarPassagem(2)).rejects.toThrow(/Pontos insuficientes/);
+    expect((await api.minhaConta()).pontos).toBe(0);
+
     const pj = r.contas.find((c) => c.tipo === "PJ")!;
     api.selecionarConta(pj);
     const conta = await api.minhaConta();

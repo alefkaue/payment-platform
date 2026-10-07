@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import type { ComponentType } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { MODO_API } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Conta } from "@/lib/types";
 import { Wordmark } from "@/components/payflow/ui";
@@ -21,23 +20,16 @@ export const Route = createFileRoute("/_app")({ component: AppLayout });
 type NavItem = { to: string; label: string; icon: ComponentType<LucideProps> };
 
 // Conta PF (consumidor) e PJ (empresa) têm navegações diferentes — como num banco real.
-// Loja e Viagens só existem no modo demonstração (sem endpoint no backend ainda).
-const NAV_PF: NavItem[] = MODO_API
-  ? [
-      { to: "/inicio", label: "Início", icon: Home },
-      { to: "/transferir", label: "Pix", icon: ArrowUpRight },
-      { to: "/extrato", label: "Extrato", icon: ListOrdered },
-    ]
-  : [
-      { to: "/inicio", label: "Início", icon: Home },
-      { to: "/loja", label: "Loja", icon: ShoppingBag },
-      { to: "/viagens", label: "Viagens", icon: Plane },
-      { to: "/extrato", label: "Extrato", icon: ListOrdered },
-    ];
+const NAV_PF: NavItem[] = [
+  { to: "/inicio", label: "Início", icon: Home },
+  { to: "/loja", label: "Loja", icon: ShoppingBag },
+  { to: "/viagens", label: "Viagens", icon: Plane },
+  { to: "/extrato", label: "Extrato", icon: ListOrdered },
+];
 const NAV_PJ: NavItem[] = [
   { to: "/inicio", label: "Início", icon: Home },
   { to: "/transferir", label: "Pagar", icon: ArrowUpRight },
-  { to: "/contas", label: "Cobranças", icon: FileText },
+  { to: "/contas", label: "Contas", icon: FileText },
   { to: "/extrato", label: "Extrato", icon: ListOrdered },
 ];
 

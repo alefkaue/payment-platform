@@ -45,9 +45,12 @@ function capturar(v: HTMLVideoElement): string {
 export function LivenessCheck({
   onSuccess,
   onClose,
+  login,
 }: {
   onSuccess: (prova: ProvaBiometrica) => void;
   onClose: () => void;
+  /** Para ENTRAR com biometria: o desafio fica preso a este e-mail/CPF. */
+  login?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [fase, setFase] = useState<Fase>("carregando");
@@ -74,7 +77,7 @@ export function LivenessCheck({
 
     async function iniciar() {
       try {
-        ultimoDesafio = await pedirDesafio();
+        ultimoDesafio = await pedirDesafio(login);
         if (parar) return;
         setDesafio(ultimoDesafio);
         roteiro = ["frente", ultimoDesafio.acao === "virar_esquerda" ? "esquerda" : "direita"];
@@ -162,7 +165,7 @@ export function LivenessCheck({
       stream?.getTracks().forEach((t) => t.stop());
       landmarker?.close();
     };
-  }, []);
+  }, [login]);
 
   const atual = passos[Math.min(passoIdx, passos.length - 1)] ?? "frente";
 

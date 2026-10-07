@@ -117,6 +117,8 @@ class Usuario(Base):
     # Template biométrico CIFRADO (Fernet). Nunca a foto, nunca o vetor em texto puro.
     embedding_facial_cifrado: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Pontos PayFlow (PF): ganha comprando na Loja/Viagens, resgata em passagens.
+    pontos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     vinculos: Mapped[list["Vinculo"]] = relationship(back_populates="usuario")
@@ -134,6 +136,8 @@ class Empresa(Base):
         Enum(RegimeApuracao, name="regime_apuracao"), nullable=False, default=RegimeApuracao.REGULAR
     )
     cnae: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # Setor informado no cadastro ("Indústria", "Autopeças"...). Usado no simulador.
+    setor: Mapped[str | None] = mapped_column(String(80), nullable=True)
     situacao_cadastral: Mapped[str | None] = mapped_column(String(30), nullable=True)
     # Quando e por qual provedor o CNPJ foi conferido (ver services/cnpj_service.py).
     verificada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -533,6 +537,58 @@ class Rendimento(Base):
     saldo_base: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
     valor: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
     taxa_diaria: Mapped[Decimal] = mapped_column(Numeric(12, 10), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Produto(Base):
+    """Produto da Loja PayFlow (benefício PF). Vendido por um lojista PJ: a compra
+    vira uma cobrança com nota, então tem split como qualquer venda."""
+
+    __tablename__ = "produtos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    descricao: Mapped[str] = mapped_column(String(280), nullable=False)
+    preco: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    categoria: Mapped[str] = mapped_column(String(40), nullable=False)
+    emoji: Mapped[str] = mapped_column(String(8), nullable=False)
+    lojista_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class Voo(Base):
+    """Passagem do benefício Viagens (PF). Paga em reais (ganha pontos) ou
+    resgatada com `milhas` pontos."""
+
+    __tablename__ = "voos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    origem: Mapped[str] = mapped_column(String(3), nullable=False)
+    origem_cidade: Mapped[str] = mapped_column(String(60), nullable=False)
+    destino: Mapped[str] = mapped_column(String(3), nullable=False)
+    destino_cidade: Mapped[str] = mapped_column(String(60), nullable=False)
+    companhia: Mapped[str] = mapped_column(String(40), nullable=False)
+    saida: Mapped[str] = mapped_column(String(5), nullable=False)
+    chegada: Mapped[str] = mapped_column(String(5), nullable=False)
+    duracao: Mapped[str] = mapped_column(String(10), nullable=False)
+    direto: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    preco: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
+    milhas: Mapped[int] = mapped_column(Integer, nullable=False)  # custo em pontos no resgate
+    parceiro_carteira_id: Mapped[int] = mapped_column(ForeignKey("carteiras.id"), nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class PontoMovimento(Base):
+    """Extrato de pontos: + compra em reais, − resgate de passagem."""
+
+    __tablename__ = "pontos_movimentos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False, index=True)
+    delta: Mapped[int] = mapped_column(Integer, nullable=False)
+    motivo: Mapped[str] = mapped_column(String(20), nullable=False)  # compra_loja | compra_voo | resgate_voo
+    descricao: Mapped[str] = mapped_column(String(140), nullable=False)
+    transacao_id: Mapped[int | None] = mapped_column(ForeignKey("transacoes.id"), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

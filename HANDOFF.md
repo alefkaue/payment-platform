@@ -40,7 +40,7 @@ HANDOFF.md  # este arquivo
 - **Backend (Docker):** `cp .env.example .env`, preencha `POSTGRES_PASSWORD` e os
   segredos, `docker compose up --build`. O `entrypoint.sh` roda `alembic upgrade head`.
 - **Testes do backend:** `cd backend && python -m pytest` (SQLite em memória,
-  `BIOMETRIA_STUB`, sem rede). **92 testes passando** em 2026-10-06.
+  `BIOMETRIA_STUB`, sem rede). **99 testes passando** em 2026-10-06.
 - **App (web):** `cd app && npm install && npm run dev` → http://localhost:8081.
   - Sem `VITE_API_URL`: **modo demonstração** (mocks, qualquer login entra).
   - Com `VITE_API_URL=http://localhost:8000` em `app/.env`: fala com o backend.
@@ -177,7 +177,29 @@ achou problemas de conceito no split e lacunas de banco PJ. A v7 corrige.
 - **Rendimento diário** (CDI × percentual, dias úteis, idempotente):
   `POST /admin/jobs/rendimento`. Sem IR/IOF e sem feriados (TODO).
 
-### 4.6 Jobs (agendar em produção com token admin)
+### 4.6 Benefícios PF: Loja, Viagens e pontos — `services/beneficios_service.py`
+**Diferencial do PF** (o do PJ é o split). Princípio da revisão: corrigir erros
+sem mudar a estrutura nem a ideia do app.
+- Catálogo (8 produtos, 6 voos) e os parceiros (lojistas PJ + PayFlow Viagens) são
+  criados no boot (`garantir_catalogo`), com os mesmos itens do modo demonstração.
+- **Compra em reais** (Loja ou passagem): o parceiro emite a nota e a compra vira o
+  pagamento de uma cobrança com nota — split, limites, aparelho e biometria acima de
+  R$ 500 valem igual. Rende **1 ponto por real**.
+- **Resgate de passagem com pontos**: `milhas` do voo = preço em pontos. Debita os
+  pontos; o PayFlow paga o parceiro pelo CAIXA (a venda tem nota e split). Não mexe
+  no saldo em reais. Extrato de pontos em `GET /pontos`.
+- Erro corrigido da versão anterior: o card do voo mostrava "ou 9.000 pontos" (preço
+  em pontos) e a compra em reais dizia "você ganha 9.000 pontos" — agora ganha
+  1 ponto por real e gasta `milhas` no resgate.
+- Só PF compra (PJ recebe 403, como antes).
+- Endpoints: `GET /loja/produtos`, `POST /loja/produtos/{id}/comprar`,
+  `GET /viagens/voos`, `POST /viagens/voos/{id}/comprar`, `POST /viagens/voos/{id}/resgatar`.
+- **Login por e-mail ou CPF** e **login com biometria** (`POST /auth/login/biometria`;
+  o desafio é pedido com `{"login": ...}` e fica preso a essa pessoa).
+- Migração `e4f5a6b7c8d9`: tabelas `produtos`, `voos`, `pontos_movimentos`,
+  colunas `usuarios.pontos` e `empresas.setor`.
+
+### 4.7 Jobs (agendar em produção com token admin)
 | Job | Frequência sugerida |
 |---|---|
 | `POST /admin/tributos/repassar` | diário, início do dia |
@@ -196,28 +218,37 @@ achou problemas de conceito no split e lacunas de banco PJ. A v7 corrige.
   Os mocks seguem as mesmas regras do backend. O cliente HTTP manda
   `Authorization`, `X-Dispositivo-Id` (id fixo do aparelho no localStorage) e
   `X-Conta`, e renova o token uma vez em 401.
-- **Login da pessoa** (`login.tsx`): e-mail + senha. Se o aparelho não é confiável,
-  oferece confirmar com verificação facial. Saiu o login "por certificado" e a
-  detecção de PJ pelo texto do e-mail (`authPorConta`).
+- **Login** (`login.tsx`): mesma estrutura de antes — campo "Conta" (e-mail ou CPF),
+  senha e o botão "Entrar com biometria" (PF/MEI) ou "Entrar com certificado
+  digital" (PME/Grande, via `authPorConta`). A biometria agora é conferida no
+  servidor. O certificado funciona no modo demonstração; no modo API mostra que a
+  integração com e-CNPJ ainda não existe (antes ele deixava qualquer um entrar).
+  Depois do login, se o aparelho é novo, oferece confirmar com o rosto.
 - **Seletor de conta** no topo (`_app.tsx`): pessoal ↔ empresas. Trocar limpa o
   cache do React Query.
-- **Cadastro** (`criar-conta.tsx`): pessoa (CPF) e, opcionalmente, empresa (CNPJ,
-  porte, regime) no mesmo fluxo. A verificação facial roda no envio (o desafio
-  vale 2 minutos).
+- **Cadastro** (`criar-conta.tsx`): mesma estrutura de antes (abas PF/PJ, razão
+  social, setor, porte, passo facial e passo do certificado). Na PJ entram também
+  nome e CPF do representante (o banco confere o sócio) e o regime de apuração. A
+  prova facial vale 2 minutos (o desafio expira no servidor).
 - **Verificação facial** (`components/payflow/liveness.tsx`): pede o desafio ao
   servidor, guia "de frente → virar para o lado pedido" com MediaPipe e manda os
   quadros sem espelhamento. Corrigido o bug que reiniciava a câmera a cada passo.
 - **Transferir**: por chave Pix ou número da conta, sem split, biometria acima de
   R$ 500, tela de "enviado para aprovação" quando passa da alçada.
-- **Cobranças (PJ)** (`_app.contas.tsx`): criar cobrança com nota (chave + CBS + IBS),
-  parcelamento, Pix copia-e-cola (simulado), lista de cobranças.
+- **Contas (PJ)** (`_app.contas.tsx`): mesma tela (A receber / A pagar, crédito a
+  gerar) + botão "Cobrar um cliente" (cobrança com nota, parcelamento, Pix
+  copia-e-cola simulado). As cobranças emitidas aparecem em "A receber".
 - **Início PJ**: card "Imposto das suas vendas" (retido das notas, já repassado,
-  repasse de amanhã, projeção 2033), créditos informados + restituição prevista,
-  papel e alçada. Saiu o "zero apuração".
+  repasse de amanhã, projeção 2033); "Créditos de IBS/CBS" e "Caixa preservado no
+  mês" (como antes, com números reais); "Acesso & assinaturas" com papel e alçada.
+  Saiu só a frase "zero apuração".
 - **Configurações**: limites reais e editáveis (carência de 24h no aumento),
   aparelho confiável, papel/alçada, agência/conta, chaves Pix.
-- **Só no modo demonstração** (sem endpoint no backend): Loja, Viagens, Cartão
-  virtual, contas a pagar. No modo API, Loja/Viagens somem da navegação.
+- **Loja e Viagens (PF)**: funcionam nos dois modos (backend real ou demonstração),
+  com pontos e **resgate de passagem com pontos**. Compra acima de R$ 500 pede
+  verificação facial (antes era upload de selfie).
+- **Só no modo demonstração** (sem endpoint no backend): Cartão virtual e contas a
+  pagar (DDA).
 - **Lovable removida**: `vite.config.ts` declara os plugins direto; sem Nitro (o app
   é SPA). O build sai em `dist/client` e `scripts/assemble-www.mjs` já procura lá.
 - `src/lib/split.ts`: tabela de transição 2026–2033 igual à do backend; usada só

@@ -49,7 +49,7 @@ def criar_pessoa(repo: Repositorio, *, nome: str, email: str, senha: str, cpf: s
 
 
 def criar_empresa(repo: Repositorio, *, usuario: dict, cnpj: str, razao_social: str | None, nome_fantasia: str | None,
-                  porte: str, regime: RegimeApuracao, ip: str | None) -> dict:
+                  porte: str, regime: RegimeApuracao, ip: str | None, setor: str | None = None) -> dict:
     cnpj = somente_digitos(cnpj)
     if not cnpj_valido(cnpj):
         raise HTTPException(status_code=400, detail="CNPJ inválido.")
@@ -73,7 +73,7 @@ def criar_empresa(repo: Repositorio, *, usuario: dict, cnpj: str, razao_social: 
             usuario_id=usuario["id"], cnpj=cnpj, razao_social=razao_social or dados.razao_social,
             nome_fantasia=nome_fantasia or dados.nome_fantasia, porte=porte, regime_apuracao=regime,
             cnae=dados.cnae, situacao_cadastral=dados.situacao, verificada_por=provedor,
-            limites_padrao=LIMITES_PADRAO["PJ"],
+            limites_padrao=LIMITES_PADRAO["PJ"], setor=setor,
         )
     except CnpjDuplicadoError as e:
         raise HTTPException(status_code=409, detail=str(e))

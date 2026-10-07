@@ -54,6 +54,28 @@ def chave_nfe_valida(chave: str) -> bool:
     return int(c[43]) == dv
 
 
+def gerar_chave_nfe(cnpj: str, uf: str = "35", modelo: str = "55") -> str:
+    """Chave de acesso válida (DV correto) para uma nota emitida por `cnpj`.
+    Usada nas vendas da Loja/Viagens, em que o parceiro emite a nota na hora."""
+    from datetime import date
+
+    hoje = date.today()
+    base = (f"{uf}{hoje:%y%m}{somente_digitos(cnpj)}{modelo}001"
+            f"{secrets.randbelow(10**9):09d}1{secrets.randbelow(10**8):08d}")
+    pesos = [2, 3, 4, 5, 6, 7, 8, 9]
+    soma = sum(int(d) * pesos[i % 8] for i, d in enumerate(reversed(base)))
+    resto = soma % 11
+    return base + str(0 if resto < 2 else 11 - resto)
+
+
+def cnpj_com_dv(base12: str) -> str:
+    """Completa os 2 dígitos verificadores de um CNPJ de 12 dígitos."""
+    p1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    d1 = _dv_mod11(base12, p1)
+    d2 = _dv_mod11(base12 + str(d1), [6] + p1)
+    return f"{base12}{d1}{d2}"
+
+
 def gerar_numero_conta() -> str:
     """Número de conta de 8 dígitos + dígito verificador (módulo 11)."""
     base = f"{secrets.randbelow(10**8):08d}"

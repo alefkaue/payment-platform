@@ -19,6 +19,7 @@ class EmpresaCreate(BaseModel):
     razao_social: str | None = Field(default=None, max_length=180)
     nome_fantasia: str | None = Field(default=None, max_length=180)
     porte: str = Field(default="PME", pattern="^(MEI|PME|GRANDE)$")
+    setor: str | None = Field(default=None, max_length=80)
     regime_apuracao: RegimeApuracao = RegimeApuracao.REGULAR
 
 
@@ -30,6 +31,7 @@ class EmpresaResponse(BaseModel):
     porte: str
     regime_apuracao: str
     cnae: str | None = None
+    setor: str | None = None
     situacao_cadastral: str | None = None
     verificada_por: str | None = None
 

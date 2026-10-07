@@ -133,6 +133,7 @@ export interface Voo {
   duracao: string; // "1h05"
   direto: boolean;
   preco: number;
+  /** Preço em pontos para resgatar a passagem. */
   milhas: number;
   merchant_carteira_id: number;
   merchant_nome: string;
@@ -152,6 +153,7 @@ export interface EmpresaPayload {
   nome_fantasia?: string;
   porte: PortePJ;
   regime_apuracao: RegimeApuracao;
+  setor?: string;
 }
 export interface RegistrarPayload {
   nome: string;
@@ -175,11 +177,11 @@ export type ResultadoTransferencia =
 
 export interface ComprarProdutoPayload {
   produto_id: number;
-  selfie?: File | null;
+  biometria?: ProvaBiometrica | null;
 }
 export interface ComprarPassagemPayload {
   voo_id: number;
-  selfie?: File | null;
+  biometria?: ProvaBiometrica | null;
 }
 export interface DepositarPayload {
   valor: number;

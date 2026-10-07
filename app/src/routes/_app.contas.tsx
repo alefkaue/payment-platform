@@ -2,65 +2,50 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Copy, FileText, Plus } from "lucide-react";
-import { criarCobranca, listarCobrancas, listarFaturas, MODO_API } from "@/lib/api";
+import { criarCobranca, listarFaturas } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { fmtBRL, fmtData, parseValor } from "@/lib/format";
-import type { Cobranca } from "@/lib/types";
+import { fmtBRL, parseValor } from "@/lib/format";
+import type { Cobranca, DirecaoFatura } from "@/lib/types";
 import { Empty, ErrorBox, Field, MetricTile, PageTitle, TxSkeleton } from "@/components/payflow/ui";
 import { FaturaRow } from "./_app.inicio";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/contas")({
-  head: () => ({ meta: [{ title: "Cobranças — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Contas — PayFlow" }] }),
   component: Contas,
 });
 
-const STATUS: Record<Cobranca["status"], string> = {
-  aberta: "Aberta",
-  paga: "Paga",
-  cancelada: "Cancelada",
-  estornada: "Estornada",
-};
-
-/**
- * Cobranças da empresa. É aqui que o split acontece: a cobrança leva a nota
- * fiscal (chave de 44 dígitos + CBS e IBS destacados nela) e, quando o cliente
- * paga, o banco separa esse imposto e a empresa recebe o líquido.
- */
 function Contas() {
   const { conta } = useAuth();
-  const [aba, setAba] = useState<"cobrancas" | "pagar">("cobrancas");
+  const [aba, setAba] = useState<DirecaoFatura>("receber");
   const [nova, setNova] = useState(false);
-  const cobs = useQuery({ queryKey: ["cobrancas", conta?.numero], queryFn: listarCobrancas });
-  const pagar = useQuery({
-    queryKey: ["faturas-pagar", conta?.numero],
-    queryFn: () => listarFaturas("pagar"),
-  });
+  const q = useQuery({ queryKey: ["faturas", conta?.numero], queryFn: () => listarFaturas() });
 
+  // Contas a pagar/receber são um recurso da conta Empresa.
   if (conta && conta.tipo !== "PJ") return <Navigate to="/inicio" replace />;
 
-  const lista = cobs.data ?? [];
-  const abertas = lista.filter((c) => c.status === "aberta");
-  const pagas = lista.filter((c) => c.status === "paga");
-  const totAberto = abertas.reduce((a, c) => a + c.valor, 0);
-  const impostoPago = pagas
-    .filter((c) => c.vai_reter_imposto)
-    .reduce((a, c) => a + c.cbs + c.ibs, 0);
+  const todas = q.data ?? [];
+  const aReceber = todas.filter((f) => f.direcao === "receber");
+  const aPagar = todas.filter((f) => f.direcao === "pagar");
+  const totReceber = aReceber.reduce((a, f) => a + f.liquido, 0);
+  const totPagar = aPagar.reduce((a, f) => a + f.valor_bruto, 0);
+  const totCredito = aPagar.reduce((a, f) => a + f.credito_gerado, 0);
+  const lista = aba === "receber" ? aReceber : aPagar;
 
   return (
     <div className="enter">
-      <PageTitle sub="Cobre com a nota fiscal: no pagamento, a CBS e o IBS da nota são separados e você recebe o líquido.">
-        Cobranças
+      <PageTitle sub="Faturas B2B conciliadas com a nota fiscal (NF-e). O imposto da nota é separado no ato.">
+        Contas
       </PageTitle>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <MetricTile label="Em aberto" value={fmtBRL(totAberto)} />
-        <MetricTile label="Recebidas" value={String(pagas.length)} tone="pos" />
+        <MetricTile label="A receber (líquido)" value={fmtBRL(totReceber)} tone="pos" />
+        <MetricTile label="A pagar" value={fmtBRL(totPagar)} />
         <MetricTile
-          label="Imposto separado"
-          value={fmtBRL(impostoPago)}
+          label="Crédito a gerar"
+          value={fmtBRL(totCredito)}
           tone="tax"
-          hint="das notas pagas"
+          hint="abate impostos na apuração"
         />
       </div>
 
@@ -73,7 +58,7 @@ function Contas() {
       )}
 
       <div role="tablist" className="mt-6 grid grid-cols-2 rounded-full bg-tint p-1">
-        {(["cobrancas", "pagar"] as const).map((d) => (
+        {(["receber", "pagar"] as const).map((d) => (
           <button
             key={d}
             role="tab"
@@ -84,59 +69,23 @@ function Contas() {
               aba === d ? "bg-card text-ink shadow-soft" : "text-mut2 hover:text-ink",
             )}
           >
-            {d === "cobrancas" ? "Cobranças emitidas" : "A pagar"}
+            {d === "receber" ? "A receber" : "A pagar"}
           </button>
         ))}
       </div>
 
       <section className="surface mt-4 px-5 py-2">
-        {aba === "cobrancas" ? (
-          cobs.isLoading ? (
-            <TxSkeleton n={3} />
-          ) : cobs.isError ? (
-            <div className="py-4">
-              <ErrorBox>Não foi possível carregar as cobranças.</ErrorBox>
-            </div>
-          ) : !lista.length ? (
-            <Empty title="Nenhuma cobrança ainda" hint="Crie a primeira com o botão acima." />
-          ) : (
-            <ul className="divide-y divide-border">
-              {lista.map((c) => (
-                <li key={c.id} className="flex items-center justify-between gap-4 py-3.5">
-                  <div className="min-w-0">
-                    <p className="truncate font-medium text-ink">{c.descricao || "Cobrança"}</p>
-                    <p className="truncate text-xs text-mut3">
-                      {STATUS[c.status]}
-                      {c.vencimento ? ` · vence ${fmtData(c.vencimento).split(",")[0]}` : ""}
-                      {c.nfe_chave ? " · com NF-e" : " · sem nota"}
-                    </p>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <p className="tabular font-semibold text-ink">{fmtBRL(c.valor)}</p>
-                    {c.vai_reter_imposto && (
-                      <p className="text-[11px] text-tax">
-                        imposto da nota {fmtBRL(c.cbs + c.ibs)}
-                      </p>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )
-        ) : pagar.isLoading ? (
-          <TxSkeleton n={3} />
-        ) : !pagar.data?.length ? (
-          <Empty
-            title="Nada a pagar por aqui"
-            hint={
-              MODO_API
-                ? "Contas a pagar (DDA) ainda não estão ligadas ao banco."
-                : "As faturas aparecerão aqui."
-            }
-          />
+        {q.isLoading ? (
+          <TxSkeleton n={4} />
+        ) : q.isError ? (
+          <div className="py-4">
+            <ErrorBox>Não foi possível carregar as contas.</ErrorBox>
+          </div>
+        ) : !lista.length ? (
+          <Empty title="Nada por aqui" hint="As faturas aparecerão aqui." />
         ) : (
           <ul className="divide-y divide-border">
-            {pagar.data.map((f) => (
+            {lista.map((f) => (
               <FaturaRow key={f.id} f={f} />
             ))}
           </ul>
@@ -146,9 +95,9 @@ function Contas() {
       <div className="mt-4 flex items-start gap-3 rounded-[16px] bg-tax-bg px-4 py-3.5 text-sm text-tax2">
         <FileText size={18} className="mt-0.5 shrink-0" />
         <p>
-          {aba === "cobrancas"
-            ? "Só cobranças com nota têm split, e só para empresas do regime regular (Simples e MEI recolhem do jeito de sempre). Transferências comuns nunca têm imposto retido."
-            : "Compras com nota geram crédito de IBS/CBS na sua apuração. Quem abate é o Fisco; aqui você acompanha a estimativa."}
+          {aba === "receber"
+            ? "Cada recebimento é conciliado com a NF-e e o IBS/CBS da nota é separado no ato — você recebe o líquido e a apuração já sai pronta para conferir."
+            : "Toda compra de insumo com nota gera crédito de IBS/CBS, que abate o imposto das suas vendas na apuração."}
         </p>
       </div>
     </div>
@@ -173,7 +122,7 @@ function NovaCobranca({ onFechar }: { onFechar: () => void }) {
     mutationFn: criarCobranca,
     onSuccess: (cs) => {
       setCriadas(cs);
-      void qc.invalidateQueries({ queryKey: ["cobrancas"] });
+      void qc.invalidateQueries({ queryKey: ["faturas"] });
     },
     onError: (e: Error) => setErro(e.message),
   });

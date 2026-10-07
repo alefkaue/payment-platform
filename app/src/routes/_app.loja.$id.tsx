@@ -2,10 +2,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { ArrowLeft } from "lucide-react";
-import { comprarProduto, produtoPorId } from "@/lib/api";
+import { ScanFace, Sparkles } from "lucide-react";
+import { comprarProduto, pontosDaCompra, produtoPorId } from "@/lib/api";
 import { calcularSplit } from "@/lib/split";
-import { fmtBRL } from "@/lib/format";
-import { ErrorBox, SelfieCapture, SplitBar, ValueRow } from "@/components/payflow/ui";
+import { fmtBRL, fmtPontos } from "@/lib/format";
+import type { ProvaBiometrica } from "@/lib/types";
+import { ErrorBox, SplitBar, ValueRow } from "@/components/payflow/ui";
+import { LivenessCheck } from "@/components/payflow/liveness";
 
 export const Route = createFileRoute("/_app/loja/$id")({
   head: () => ({ meta: [{ title: "Produto — PayFlow" }] }),
@@ -17,7 +20,7 @@ function ProdutoDetalhe() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["produto", id], queryFn: () => produtoPorId(Number(id)) });
-  const [selfie, setSelfie] = useState<File | null>(null);
+  const [liveness, setLiveness] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -34,15 +37,20 @@ function ProdutoDetalhe() {
     );
 
   const p = q.data;
-  const split = calcularSplit(p.preco, "PJ"); // lojista é sempre PJ
-  const precisaSelfie = p.preco > 500;
+  // Lojista é PJ e emite a nota: estimativa do imposto da nota no ano corrente.
+  const split = calcularSplit(p.preco, "PJ");
+  const precisaFacial = p.preco > 500;
 
-  async function comprar() {
+  function comprar() {
     setErro(null);
-    if (precisaSelfie && !selfie) return setErro("Capture a selfie para compras acima de R$ 500.");
+    if (precisaFacial) setLiveness(true);
+    else void finalizar(null);
+  }
+
+  async function finalizar(biometria: ProvaBiometrica | null) {
     setLoading(true);
     try {
-      const t = await comprarProduto({ produto_id: p.id, selfie: precisaSelfie ? selfie : null });
+      const t = await comprarProduto({ produto_id: p.id, biometria });
       qc.invalidateQueries();
       nav({ to: "/comprovante/$id", params: { id: String(t.id) } });
     } catch (e) {
@@ -79,20 +87,24 @@ function ProdutoDetalhe() {
             <SplitBar liquido={split.liquido} imposto={split.imposto_total} />
             <div className="mt-3 divide-y divide-border">
               <ValueRow label="Você paga" value={split.valor_bruto} />
-              <ValueRow label="CBS → Governo" value={split.cbs} tax />
-              <ValueRow label="IBS → Governo" value={split.ibs} tax />
+              <ValueRow label="CBS da nota → Fisco" value={split.cbs} tax />
+              <ValueRow label="IBS da nota → Fisco" value={split.ibs} tax />
               <ValueRow label={`${p.merchant_nome} recebe`} value={split.liquido} strong />
             </div>
             <p className="mt-3 rounded-[14px] bg-tax-bg px-4 py-3 text-sm text-tax2">
               Vigência {split.vigencia} · imposto {fmtBRL(split.imposto_total)} retido no ato da
               compra.
             </p>
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-marca">
+              <Sparkles size={14} /> Você ganha {fmtPontos(pontosDaCompra(p.preco))} pontos nesta
+              compra.
+            </p>
           </div>
 
-          {precisaSelfie && (
-            <div className="mt-4">
-              <SelfieCapture value={selfie} onChange={setSelfie} title="Confirme com uma selfie" />
-            </div>
+          {precisaFacial && (
+            <p className="mt-4 flex items-center gap-2 text-sm text-mut2">
+              <ScanFace size={16} /> Acima de R$ 500 confirmamos com verificação facial.
+            </p>
           )}
           {erro && (
             <div className="mt-4">
@@ -104,6 +116,15 @@ function ProdutoDetalhe() {
           </button>
         </div>
       </div>
+      {liveness && (
+        <LivenessCheck
+          onClose={() => setLiveness(false)}
+          onSuccess={(prova) => {
+            setLiveness(false);
+            void finalizar(prova);
+          }}
+        />
+      )}
     </div>
   );
 }

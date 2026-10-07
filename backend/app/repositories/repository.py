@@ -40,6 +40,8 @@ from app.db.models import (
     OperacaoPendente,
     Papel,
     PapelVinculo,
+    PontoMovimento,
+    Produto,
     RefreshToken,
     RegimeApuracao,
     Rendimento,
@@ -51,6 +53,7 @@ from app.db.models import (
     Transacao,
     Usuario,
     Vinculo,
+    Voo,
     Webhook,
     WebhookEntrega,
 )
@@ -125,6 +128,18 @@ class Repositorio:
             u = s.scalar(select(Usuario).where(Usuario.email == email.lower().strip()))
             return self._usuario_auth_dict(u) if u else None
 
+    def obter_usuario_por_login(self, identificador: str) -> Optional[dict]:
+        """E-mail ou CPF (com ou sem pontuação)."""
+        ident = identificador.strip()
+        if "@" in ident:
+            return self.obter_usuario_por_email(ident)
+        digitos = "".join(ch for ch in ident if ch.isdigit())
+        if len(digitos) != 11:
+            return None
+        with self._sf() as s:
+            u = s.scalar(select(Usuario).where(Usuario.cpf == digitos))
+            return self._usuario_auth_dict(u) if u else None
+
     def obter_usuario_por_id(self, usuario_id: int) -> Optional[dict]:
         with self._sf() as s:
             u = s.get(Usuario, usuario_id)
@@ -163,12 +178,13 @@ class Repositorio:
         situacao_cadastral: Optional[str],
         verificada_por: str,
         limites_padrao: Optional[dict] = None,
+        setor: Optional[str] = None,
     ) -> dict:
         """Empresa + carteira PJ + vínculo ADMIN do criador, numa transação."""
         with self._sf() as s:
             e = Empresa(
                 cnpj=cnpj, razao_social=razao_social, nome_fantasia=nome_fantasia, porte=porte,
-                regime_apuracao=regime_apuracao, cnae=cnae, situacao_cadastral=situacao_cadastral,
+                regime_apuracao=regime_apuracao, cnae=cnae, setor=setor, situacao_cadastral=situacao_cadastral,
                 verificada_em=tempo.agora(), verificada_por=verificada_por,
             )
             s.add(e)
@@ -1029,6 +1045,97 @@ class Repositorio:
             return [{"data": r.data, "saldo_base": r.saldo_base, "valor": r.valor, "taxa_diaria": r.taxa_diaria} for r in rs]
 
     # =========================================================================
+    # Benefícios PF: Loja, Viagens e pontos
+    # =========================================================================
+
+    def garantir_lojista(self, *, cnpj: str, nome: str, setor: str) -> int:
+        """Empresa parceira (sem vínculo de pessoa) com carteira PJ. Idempotente.
+        Devolve o id da carteira."""
+        with self._sf() as s:
+            e = s.scalar(select(Empresa).where(Empresa.cnpj == cnpj))
+            if e is None:
+                e = Empresa(cnpj=cnpj, razao_social=nome, nome_fantasia=nome, porte="PME", setor=setor,
+                            regime_apuracao=RegimeApuracao.REGULAR, situacao_cadastral="ATIVA",
+                            verificada_em=tempo.agora(), verificada_por="parceiro")
+                s.add(e)
+                s.flush()
+                self._nova_carteira(s, TipoPessoa.PJ, empresa_id=e.id)
+                s.commit()
+            return s.scalar(select(Carteira.id).where(Carteira.empresa_id == e.id))
+
+    def catalogo_vazio(self) -> bool:
+        with self._sf() as s:
+            return not s.scalar(select(func.count(Produto.id))) and not s.scalar(select(func.count(Voo.id)))
+
+    def criar_catalogo(self, produtos: list[dict], voos: list[dict]) -> None:
+        with self._sf() as s:
+            s.add_all([Produto(**p) for p in produtos] + [Voo(**v) for v in voos])
+            s.commit()
+
+    def listar_produtos(self) -> list[dict]:
+        with self._sf() as s:
+            ps = s.scalars(select(Produto).where(Produto.ativo.is_(True)).order_by(Produto.id)).all()
+            return [self._produto_dict(s, p) for p in ps]
+
+    def obter_produto(self, produto_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            p = s.get(Produto, produto_id)
+            return self._produto_dict(s, p) if p and p.ativo else None
+
+    def listar_voos(self, *, origem: Optional[str] = None, destino: Optional[str] = None) -> list[dict]:
+        with self._sf() as s:
+            stmt = select(Voo).where(Voo.ativo.is_(True))
+            if origem:
+                stmt = stmt.where(Voo.origem == origem)
+            if destino:
+                stmt = stmt.where(Voo.destino == destino)
+            return [self._voo_dict(s, v) for v in s.scalars(stmt.order_by(Voo.id)).all()]
+
+    def obter_voo(self, voo_id: int) -> Optional[dict]:
+        with self._sf() as s:
+            v = s.get(Voo, voo_id)
+            return self._voo_dict(s, v) if v and v.ativo else None
+
+    def mover_pontos(self, *, usuario_id: int, delta: int, motivo: str, descricao: str,
+                     transacao_id: Optional[int] = None) -> int:
+        """Credita/debita pontos com o usuário travado. Levanta ValueError se o
+        débito deixaria o saldo negativo. Devolve o novo saldo."""
+        with self._sf() as s:
+            stmt = select(Usuario).where(Usuario.id == usuario_id)
+            if usando_postgres():
+                stmt = stmt.with_for_update()
+            u = s.scalar(stmt)
+            if u.pontos + delta < 0:
+                raise ValueError("Pontos insuficientes.")
+            u.pontos += delta
+            s.add(PontoMovimento(usuario_id=usuario_id, delta=delta, motivo=motivo, descricao=descricao,
+                                 transacao_id=transacao_id, criado_em=tempo.agora()))
+            s.commit()
+            return u.pontos
+
+    def extrato_pontos(self, usuario_id: int, limite: int = 50) -> dict:
+        with self._sf() as s:
+            u = s.get(Usuario, usuario_id)
+            ms = s.scalars(select(PontoMovimento).where(PontoMovimento.usuario_id == usuario_id)
+                           .order_by(PontoMovimento.id.desc()).limit(limite)).all()
+            return {"saldo": u.pontos, "movimentos": [
+                {"id": m.id, "delta": m.delta, "motivo": m.motivo, "descricao": m.descricao,
+                 "transacao_id": m.transacao_id, "data_hora": _utc(m.criado_em)} for m in ms]}
+
+    def _produto_dict(self, s: Session, p: Produto) -> dict:
+        loja = self._conta_dict(s, s.get(Carteira, p.lojista_carteira_id))
+        return {"id": p.id, "nome": p.nome, "descricao": p.descricao, "preco": p.preco, "categoria": p.categoria,
+                "emoji": p.emoji, "merchant_carteira_id": p.lojista_carteira_id, "merchant_nome": loja["nome"]}
+
+    def _voo_dict(self, s: Session, v: Voo) -> dict:
+        parceiro = self._conta_dict(s, s.get(Carteira, v.parceiro_carteira_id))
+        return {"id": v.id, "origem": v.origem, "origemCidade": v.origem_cidade, "destino": v.destino,
+                "destinoCidade": v.destino_cidade, "companhia": v.companhia, "saida": v.saida,
+                "chegada": v.chegada, "duracao": v.duracao, "direto": v.direto, "preco": v.preco,
+                "milhas": v.milhas, "merchant_carteira_id": v.parceiro_carteira_id,
+                "merchant_nome": parceiro["nome"]}
+
+    # =========================================================================
     # Webhooks
     # =========================================================================
 
@@ -1199,13 +1306,14 @@ class Repositorio:
         return {
             "id": u.id, "nome": u.nome, "email": u.email, "cpf": u.cpf, "senha_hash": u.senha_hash,
             "papel": u.papel.value, "ativo": u.ativo, "tem_biometria": u.embedding_facial_cifrado is not None,
+            "pontos": u.pontos,
         }
 
     @staticmethod
     def _empresa_dict(e: Empresa) -> dict:
         return {
             "id": e.id, "cnpj": e.cnpj, "razao_social": e.razao_social, "nome_fantasia": e.nome_fantasia,
-            "porte": e.porte, "regime_apuracao": e.regime_apuracao.value, "cnae": e.cnae,
+            "porte": e.porte, "regime_apuracao": e.regime_apuracao.value, "cnae": e.cnae, "setor": e.setor,
             "situacao_cadastral": e.situacao_cadastral, "verificada_por": e.verificada_por,
         }
 

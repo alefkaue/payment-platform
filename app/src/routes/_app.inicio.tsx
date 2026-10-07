@@ -19,7 +19,7 @@ import {
   Sparkles,
   Users,
 } from "lucide-react";
-import { apuracaoPJ, listarFaturas, minhaConta, MODO_API, transacoes } from "@/lib/api";
+import { apuracaoPJ, listarFaturas, minhaConta, transacoes } from "@/lib/api";
 import { PAPEIS, PORTES } from "@/lib/empresa";
 import { ALIQUOTA_PLENA, VIGENCIA_ATUAL } from "@/lib/split";
 import { useAuth } from "@/lib/auth";
@@ -182,16 +182,12 @@ function InicioPF() {
         <div className="mt-6 flex justify-between">
           <QuickAction icon={ArrowUpRight} label="Transferir" to="/transferir" />
           <QuickAction icon={Plus} label="Depositar" to="/depositar" />
-          {!MODO_API && <QuickAction icon={ShoppingBag} label="Loja" to="/loja" />}
-          {!MODO_API && <QuickAction icon={Plane} label="Viagens" to="/viagens" />}
+          <QuickAction icon={ShoppingBag} label="Loja" to="/loja" />
+          <QuickAction icon={Plane} label="Viagens" to="/viagens" />
         </div>
       </section>
 
-      <BannerCarousel
-        banners={
-          MODO_API ? BANNERS_PF.filter((b) => b.id === "rende" || b.id === "pix") : BANNERS_PF
-        }
-      />
+      <BannerCarousel banners={BANNERS_PF} />
 
       {/* Pro dia a dia — grade de serviços */}
       <section>
@@ -199,9 +195,9 @@ function InicioPF() {
         <div className="grid grid-cols-3 gap-3">
           <Shortcut icon={QrCode} label="Pix" to="/transferir" />
           <Shortcut icon={Plus} label="Depositar" to="/depositar" />
-          {!MODO_API && <Shortcut icon={ShoppingBag} label="Loja" to="/loja" />}
-          {!MODO_API && <Shortcut icon={Plane} label="Viagens" to="/viagens" />}
-          {!MODO_API && <Shortcut icon={Sparkles} label="Pontos" to="/viagens" />}
+          <Shortcut icon={ShoppingBag} label="Loja" to="/loja" />
+          <Shortcut icon={Plane} label="Viagens" to="/viagens" />
+          <Shortcut icon={Sparkles} label="Pontos" to="/viagens" />
           <Shortcut icon={ListOrdered} label="Extrato" to="/extrato" />
         </div>
       </section>
@@ -257,7 +253,7 @@ function InicioPJ() {
       </section>
 
       <ApuracaoCard />
-      <CreditosCard />
+      <CreditosCard creditos={conta.data?.creditos ?? 0} />
       <ContasPreview />
       <AcessoCard conta={conta.data} />
       <AtividadeRecente minha={conta.data?.carteira_id ?? 0} titulo="Movimentações recentes" />
@@ -334,8 +330,8 @@ function ApuracaoCard() {
   );
 }
 
-/** Créditos informados e restituição prevista (estimativa). */
-function CreditosCard() {
+/** Créditos tributários + caixa preservado (pilar fluxo de caixa). */
+function CreditosCard({ creditos }: { creditos: number }) {
   const { conta } = useAuth();
   const q = useQuery({ queryKey: ["apuracao-pj", conta?.numero], queryFn: apuracaoPJ });
   return (
@@ -344,36 +340,38 @@ function CreditosCard() {
         <span className="grid h-10 w-10 place-items-center rounded-full bg-tint text-ink">
           <Coins size={20} />
         </span>
-        <p className="mt-3 text-sm text-mut2">Créditos de IBS/CBS informados</p>
+        <p className="mt-3 text-sm text-mut2">Créditos de IBS/CBS</p>
         <p className="tabular text-2xl font-semibold tracking-display text-ink">
-          {q.data ? fmtBRL(q.data.creditos_informados) : "—"}
+          {fmtBRL(creditos)}
         </p>
         <p className="mt-1 text-xs text-mut3">
-          Das suas compras com nota (informados pelo contador ou gerados por estorno). Quem abate é
-          o Fisco, na apuração.
+          Acumulados nas compras de insumo, energia e máquinas. Abatem seu imposto na apuração
+          {q.data ? ` — restituição prevista de ${fmtBRL(q.data.restituicao_prevista)}.` : "."}
         </p>
       </div>
       <div className="surface flex flex-col p-5">
         <span className="grid h-10 w-10 place-items-center rounded-full bg-tint text-pos">
           <Landmark size={20} />
         </span>
-        <p className="mt-3 text-sm text-mut2">Restituição prevista</p>
+        <p className="mt-3 text-sm text-mut2">Caixa preservado no mês</p>
         <p className="tabular text-2xl font-semibold tracking-display text-pos">
-          {q.data ? fmtBRL(q.data.restituicao_prevista) : "—"}
+          {q.data ? fmtBRL(q.data.imposto_retido) : "—"}
         </p>
         <p className="mt-1 text-xs text-mut3">
-          Estimativa: o menor valor entre seus créditos e o que já foi retido.
+          Imposto das suas notas que já saiu separado no recebimento — não passa pelo seu caixa e
+          você não precisa provisionar.
         </p>
       </div>
     </section>
   );
 }
 
-/** Quem opera a empresa: papel, alçada e dupla aprovação. */
+/** Acesso & assinaturas — método por porte, papel, alçada e dupla autorização. */
 function AcessoCard({ conta }: { conta: Conta | undefined }) {
   const { conta: sessao } = useAuth();
-  const perfil = PORTES[conta?.porte ?? "PME"];
-  const papel = sessao?.papel ?? "consulta";
+  const porte = conta?.porte ?? "GRANDE";
+  const perfil = PORTES[porte];
+  const cert = perfil.metodo === "certificado";
   return (
     <section className="surface p-6">
       <div className="flex items-center gap-3">
@@ -381,22 +379,34 @@ function AcessoCard({ conta }: { conta: Conta | undefined }) {
           <ShieldCheck size={20} />
         </span>
         <div className="min-w-0">
-          <h2 className="text-lg text-ink">Acesso e aprovações</h2>
-          <p className="text-xs text-mut3">{perfil.governanca}</p>
+          <h2 className="text-lg text-ink">Acesso & assinaturas</h2>
+          <p className="text-xs text-mut3">
+            {cert ? "Certificado digital e-CNPJ (ICP-Brasil)" : "Biometria do titular (MEI)"}
+          </p>
         </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <MetricTile label="Seu papel" value={PAPEIS[papel]} />
+        <MetricTile label="Seu papel" value={PAPEIS[sessao?.papel ?? "admin"]} />
         <MetricTile
           label="Sua alçada"
           value={sessao?.alcada == null ? "Sem limite" : fmtBRL(sessao.alcada)}
         />
+        <MetricTile
+          label="Assinantes"
+          value={perfil.duplaAssinatura ? "Vários, com alçadas" : "Titular"}
+        />
+        <MetricTile
+          label="Autorização"
+          value={perfil.duplaAssinatura ? "Dupla (maker-checker)" : "Simples"}
+        />
       </div>
-      <p className="mt-4 flex items-start gap-2 rounded-[14px] bg-tint px-4 py-3 text-sm text-mut2">
-        <Users size={18} className="mt-0.5 shrink-0" />
-        Pagamentos acima da alçada de quem lançou ficam pendentes até outra pessoa da empresa
-        aprovar, com verificação facial acima de R$ 500.
-      </p>
+      {perfil.duplaAssinatura && (
+        <p className="mt-4 flex items-start gap-2 rounded-[14px] bg-tint px-4 py-3 text-sm text-mut2">
+          <Users size={18} className="mt-0.5 shrink-0" />
+          Pagamentos acima da alçada de quem lançou ficam pendentes até um segundo aprovador
+          confirmar.
+        </p>
+      )}
     </section>
   );
 }
@@ -408,7 +418,7 @@ function ContasPreview() {
   return (
     <section className="surface px-5 py-2">
       <div className="flex items-center justify-between pt-4">
-        <h2 className="text-lg text-ink">Cobranças e contas</h2>
+        <h2 className="text-lg text-ink">Contas a pagar e receber</h2>
         <Link to="/contas" className="text-sm font-medium text-mut2 hover:text-ink">
           Ver tudo
         </Link>

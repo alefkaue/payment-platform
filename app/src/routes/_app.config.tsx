@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
   CreditCard,
+  Fingerprint,
   Globe,
   KeyRound,
   LogOut,
@@ -53,7 +54,7 @@ function Config() {
 
       <CartaoSection />
       <LimitesSection podeEditar={!ehPJ || sessao?.papel === "admin"} />
-      <AparelhoSection />
+      <AparelhoSection metodoCert={ehPJ && perfil.metodo === "certificado"} />
 
       {ehPJ && (
         <section className="surface p-5">
@@ -72,7 +73,7 @@ function Config() {
             </div>
           </div>
           <p className="mt-3 rounded-[14px] bg-tint px-4 py-3 text-sm text-mut2">
-            {perfil.governanca}
+            {perfil.authDescricao}
           </p>
         </section>
       )}
@@ -200,7 +201,7 @@ function LimitesSection({ podeEditar }: { podeEditar: boolean }) {
 
 /* --- Aparelho confiável --------------------------------------------------- */
 
-function AparelhoSection() {
+function AparelhoSection({ metodoCert }: { metodoCert: boolean }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["aparelho"], queryFn: aparelhoAtual });
   const [liveness, setLiveness] = useState(false);
@@ -208,7 +209,22 @@ function AparelhoSection() {
   const confiavel = q.data?.confiavel ?? true;
   return (
     <section className="surface p-5">
-      <h2 className="text-lg text-ink">Segurança</h2>
+      <h2 className="text-lg text-ink">Segurança e acesso</h2>
+      <div className="mt-4 flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-tint text-ink">
+          {metodoCert ? <ShieldCheck size={20} /> : <Fingerprint size={20} />}
+        </span>
+        <div className="min-w-0">
+          <p className="font-medium text-ink">
+            {metodoCert ? "Certificado digital e-CNPJ" : "Biometria do titular"}
+          </p>
+          <p className="text-xs text-mut3">
+            {metodoCert
+              ? "Acesso por ICP-Brasil (A1/A3) — o mesmo que assina a NF-e."
+              : "Reconhecimento facial para entrar e aprovar pagamentos."}
+          </p>
+        </div>
+      </div>
       <div className="mt-4 flex items-center gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-tint text-ink">
           {confiavel ? <ShieldCheck size={20} /> : <Smartphone size={20} />}
