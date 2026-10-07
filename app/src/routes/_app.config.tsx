@@ -324,7 +324,7 @@ function ChavesSection({ ehPJ }: { ehPJ: boolean }) {
 
 /* --- Cartão virtual (estado + segurança + CVV dinâmico) -------------------- */
 
-function CartaoSection() {
+export function CartaoSection() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["cartao"], queryFn: meuCartao });
   const mut = useMutation({

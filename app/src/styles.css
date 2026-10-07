@@ -125,6 +125,16 @@
   * {
     border-color: var(--color-border);
   }
+  /* Sem scrollbars nativas em lugar nenhum (preferência de design do app mobile). */
+  * {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+  *::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
   html {
     background-color: var(--page);
   }

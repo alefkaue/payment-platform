@@ -7,6 +7,9 @@ import type {
   Cobranca,
   Conta,
   Fatura,
+  MembroEquipe,
+  Notificacao,
+  OperacaoPendente,
   Produto,
   TipoConta,
   Transacao,
@@ -479,3 +482,151 @@ export const apuracaoDemo: ApuracaoPJ = {
 
 // --- Cobranças emitidas pela empresa (Pix dinâmico + boleto) -----------------
 export const cobrancasDemo: Cobranca[] = [];
+
+// --- Central de notificações (inbox) -----------------------------------------
+const hAtras = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+
+export const notificacoesPF: Notificacao[] = [
+  {
+    id: 9101,
+    tipo: "pontos",
+    titulo: "Você ganhou 350 pontos",
+    texto: "Sua compra na Loja PayFlow rendeu 350 pontos. Já dá para usar em viagens.",
+    criado_em: hAtras(2),
+    lida: false,
+    href: "/viagens",
+  },
+  {
+    id: 9102,
+    tipo: "pagamento",
+    titulo: "Pix recebido: R$ 1.200,00",
+    texto: "De João Pereira. O valor já está disponível na sua conta.",
+    criado_em: hAtras(9),
+    lida: false,
+    href: "/extrato",
+  },
+  {
+    id: 9103,
+    tipo: "imposto",
+    titulo: "Seu saldo rendeu hoje",
+    texto: "O dinheiro parado na conta rendeu 100% do CDI. Veja no extrato.",
+    criado_em: hAtras(26),
+    lida: true,
+    href: "/extrato",
+  },
+  {
+    id: 9104,
+    tipo: "seguranca",
+    titulo: "Novo acesso ao app",
+    texto: "Entramos na sua conta neste aparelho. Se não foi você, fale com a gente.",
+    criado_em: hAtras(49),
+    lida: true,
+    href: "/perfil",
+  },
+];
+
+export const notificacoesPJ: Notificacao[] = [
+  {
+    id: 9201,
+    tipo: "cobranca",
+    titulo: "Cobrança paga: Mercedes-Benz",
+    texto: "A NF-e 0012903 foi paga. Você recebeu o líquido e o IBS/CBS da nota foi separado.",
+    criado_em: hAtras(1),
+    lida: false,
+    href: "/contas",
+  },
+  {
+    id: 9202,
+    tipo: "imposto",
+    titulo: "Repasse ao Fisco agendado",
+    texto: "R$ 3.124,50 de IBS/CBS retido das suas notas será repassado amanhã (D+1).",
+    criado_em: hAtras(5),
+    lida: false,
+    href: "/split",
+  },
+  {
+    id: 9203,
+    tipo: "sistema",
+    titulo: "1 operação aguardando aprovação",
+    texto: "Um pagamento acima da alçada de quem lançou precisa de um 2º aprovador.",
+    criado_em: hAtras(7),
+    lida: false,
+    href: "/pendentes",
+  },
+  {
+    id: 9204,
+    tipo: "cobranca",
+    titulo: "Cobrança paga: Scania",
+    texto: "A NF-e 0012899 foi paga. Crédito de IBS/CBS atualizado na apuração.",
+    criado_em: hAtras(28),
+    lida: true,
+    href: "/contas",
+  },
+];
+
+// --- Equipe & alçadas da empresa (vínculos) ----------------------------------
+export const equipeDemo: MembroEquipe[] = [
+  {
+    id: 1,
+    nome: "Marina Alves",
+    email: "marina@rodoforte.com.br",
+    papel: "admin",
+    alcada: null,
+    ativo: true,
+    eu: true,
+  },
+  {
+    id: 2,
+    nome: "Carlos Nunes",
+    email: "carlos@rodoforte.com.br",
+    papel: "aprovador",
+    alcada: 200000,
+    ativo: true,
+  },
+  {
+    id: 3,
+    nome: "Beatriz Lima",
+    email: "beatriz@rodoforte.com.br",
+    papel: "operador",
+    alcada: 50000,
+    ativo: true,
+  },
+  {
+    id: 4,
+    nome: "Diego Rocha",
+    email: "diego@rodoforte.com.br",
+    papel: "operador",
+    alcada: 20000,
+    ativo: true,
+  },
+  {
+    id: 5,
+    nome: "Escritório Contábil Sul",
+    email: "contato@contabilsul.com.br",
+    papel: "consulta",
+    alcada: 0,
+    ativo: true,
+  },
+];
+
+// --- Operações pendentes de 2º aprovador (maker-checker) ---------------------
+export const pendentesDemo: OperacaoPendente[] = [
+  {
+    id: 8801,
+    descricao: "Pagamento de fornecedor — insumos de aço",
+    contraparte: "Usiminas Aços",
+    valor: 167300,
+    criado_por: "Beatriz Lima",
+    criado_em: hAtras(3),
+    status: "aguardando",
+  },
+  {
+    id: 8802,
+    descricao: "Transferência — folha de pagamento",
+    contraparte: "Conta salário · lote",
+    valor: 92450.8,
+    criado_por: "Diego Rocha",
+    criado_em: hAtras(20),
+    status: "aguardando",
+  },
+];

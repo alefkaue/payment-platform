@@ -2,7 +2,8 @@
 
 Documento de passagem de bastão: o que já foi feito, como rodar, as decisões
 tomadas e **o que falta**. Complementa o `PLANO.md` (plano de produto).
-Última atualização: 2026-10-06 (backend v7 + app ligado ao backend).
+Última atualização: 2026-10-07 (sprint de front: app phone-shaped, páginas novas,
+split explicado, home PF reformulada — ver §10).
 
 ---
 
@@ -316,4 +317,78 @@ Se ainda falhar, ler a annotation `GRADLE_FAIL` da execução no GitHub Actions.
 
 ## 9. Próximos passos
 
-Ver a tabela da seção 6 (itens ⬜).
+Ver a tabela da seção 6 (itens ⬜) e a seção 10.
+
+---
+
+## 10. Sprint de front (2026-10-07) — produto final, foco mobile
+
+Decisão do Alef: tratar como **produto final** (não demo), **front primeiro**
+(backend depois), com **foco mobile** — apresentação do front marcada para
+**quinta, 2026-10-09**.
+
+### 10.1 Casca do app virou "phone-shaped" em qualquer largura
+- `app/src/routes/_app.tsx` foi reescrito: **removida a sidebar de desktop**. Agora é
+  uma **coluna de telefone** (`max-w-[460px]`) centralizada, com fundo preto nas
+  laterais no desktop — igual à tela de boas-vindas. Navegação:
+  - **Header** fixo (logo + sino de notificações com badge + avatar → perfil).
+  - **Barra inferior** com 5 itens (muda PF ↔ PJ) + botão **"Mais"** que abre um
+    **bottom-sheet** com os itens secundários + Configurações + Sair.
+- Config de navegação centralizada em `app/src/lib/nav.ts` (`navPrimaria`/`navSecundaria`).
+- **Importante:** media queries enxergam a viewport real. Validar o layout mobile na
+  **moldura de iframe 390px** (ver `payflow-run-notes`) ou no celular — no desktop
+  direto os breakpoints `sm:`/`md:` ativam dentro da coluna (fica aceitável, mas não é
+  o alvo).
+- `app/src/styles.css`: **scrollbars nativas escondidas** globalmente.
+
+### 10.2 Páginas novas (todas mock-first; sem backend ainda)
+| Rota | O que é |
+|---|---|
+| `/split` | **Entenda o split**: o que é, "não é dinheiro a mais", **linha do tempo 2026→2033** e **simulador** ao vivo. É o centro do pitch B2B. |
+| `/pix` | Hub Pix: enviar, **receber com QR** (estilizado a partir da chave), copia-e-cola, gestão de chaves. |
+| `/notificacoes` | Central de avisos (inbox) — zera o badge do sino ao abrir. |
+| `/perfil` | Dados cadastrais, verificação, aparelho confiável. |
+| `/ajuda` | FAQ + canais de contato. |
+| `/cartoes` | Cartão virtual (reusa `CartaoSection` do `/config`) + benefícios. |
+| `/equipe` (PJ) | Equipe & alçadas: papéis, limites, adicionar pessoa. |
+| `/pendentes` (PJ) | Aprovações maker-checker: aprovar/recusar operações. |
+
+Dados e funções mock em `app/src/mocks/data.ts` e `app/src/lib/api.ts`
+(`notificacoes`, `naoLidas`, `marcarNotificacoesLidas`, `equipe`, `convidarMembro`,
+`pendentes`, `decidirPendente`). Tipos novos em `types.ts`
+(`Notificacao`, `MembroEquipe`, `OperacaoPendente`).
+
+### 10.3 Extrato e home
+- **Extrato** (`_app.extrato.tsx`): busca, filtros (Entradas/Saídas/Com imposto),
+  agrupamento por mês; itens **clicáveis → comprovante** (`TxItem` agora é link).
+- **Home PF reformulada** (`_app.inicio.tsx`): **cartão em destaque** —
+  `/cartoes` entrou na **barra inferior**, há uma **prévia do cartão virtual** na home
+  e um atalho "Cartões" em "Pro dia a dia". Pix aponta pro hub `/pix`.
+- **Home PJ**: o card "Imposto das suas vendas" agora linka pra `/split`.
+
+### 10.4 Pesquisa — abertura de conta PJ (para o onboarding de empresa)
+Como bancos (C6, Itaú, Cora, Inter) abrem conta PJ — base para melhorar o
+`criar-conta.tsx` (PJ) e o compliance:
+- **Documentos:** Cartão **CNPJ**; **Contrato Social** (ou, no **MEI**, o **CCMEI**;
+  empresário individual: requerimento registrado na Junta Comercial); **RG/CPF de
+  todos os sócios**; **comprovante de endereço da empresa** e **dos sócios**;
+  conforme o caso, **certidão de regularidade do FGTS**.
+- **Fluxo típico:** escolher o banco → reunir documentos → cadastrar o **responsável**
+  e os **beneficiários finais** (quem controla a empresa) → enviar documentos pelo app
+  → **videoselfie / biometria** → **validação do compliance (KYC/KYB)** → liberação.
+- **Encaixe no PayFlow:** já conferimos CNPJ (DV + Receita) e o **quadro de sócios**
+  (o CPF de quem abre precisa estar nele) — ver §4.2. Falta no front: pedir
+  **contrato social/CCMEI**, **comprovantes de endereço** e declarar **beneficiário
+  final**; no fluxo PME/Grande, amarrar o **e-CNPJ**. Fontes: C6, Itaú, Cora, Omie,
+  Razonet (pesquisa 2026-10-07).
+
+### 10.5 Qualidade
+- `npx tsc --noEmit` **verde**, `npx eslint .` **verde** (prettier aplicado),
+  `npx vitest run` **1 passou / 1 pulado** (e2e sem backend).
+
+### 10.6 O que falta no front (sugestão para a apresentação)
+1. **Caixinhas/metas** e **cartão de crédito/fatura** (chamarizes de PF).
+2. **Pix agendado** e fluxo "cobrar cliente" mostrando o split passo a passo.
+3. **Onboarding PJ** com os documentos da §10.4 (contrato social/CCMEI, endereço,
+   beneficiário final).
+4. Toggle de tema, selo FGC e rodapé legal.

@@ -14,12 +14,20 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as BemVindoRouteImport } from './routes/bem-vindo'
 import { Route as CriarContaRouteImport } from './routes/criar-conta'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as AppAjudaRouteImport } from './routes/_app.ajuda'
+import { Route as AppCartoesRouteImport } from './routes/_app.cartoes'
 import { Route as AppConfigRouteImport } from './routes/_app.config'
 import { Route as AppContasRouteImport } from './routes/_app.contas'
 import { Route as AppDepositarRouteImport } from './routes/_app.depositar'
+import { Route as AppEquipeRouteImport } from './routes/_app.equipe'
 import { Route as AppExtratoRouteImport } from './routes/_app.extrato'
 import { Route as AppInicioRouteImport } from './routes/_app.inicio'
 import { Route as AppLojaRouteImport } from './routes/_app.loja'
+import { Route as AppNotificacoesRouteImport } from './routes/_app.notificacoes'
+import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
+import { Route as AppPerfilRouteImport } from './routes/_app.perfil'
+import { Route as AppPixRouteImport } from './routes/_app.pix'
+import { Route as AppSplitRouteImport } from './routes/_app.split'
 import { Route as AppTransferirRouteImport } from './routes/_app.transferir'
 import { Route as AppViagensRouteImport } from './routes/_app.viagens'
 import { Route as AppComprovanteIdRouteImport } from './routes/_app.comprovante.$id'
@@ -49,6 +57,16 @@ const LoginRoute = LoginRouteImport.update({
   path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppAjudaRoute = AppAjudaRouteImport.update({
+  id: '/ajuda',
+  path: '/ajuda',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppCartoesRoute = AppCartoesRouteImport.update({
+  id: '/cartoes',
+  path: '/cartoes',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppConfigRoute = AppConfigRouteImport.update({
   id: '/config',
   path: '/config',
@@ -64,6 +82,11 @@ const AppDepositarRoute = AppDepositarRouteImport.update({
   path: '/depositar',
   getParentRoute: () => AppRoute,
 } as any)
+const AppEquipeRoute = AppEquipeRouteImport.update({
+  id: '/equipe',
+  path: '/equipe',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppExtratoRoute = AppExtratoRouteImport.update({
   id: '/extrato',
   path: '/extrato',
@@ -77,6 +100,31 @@ const AppInicioRoute = AppInicioRouteImport.update({
 const AppLojaRoute = AppLojaRouteImport.update({
   id: '/loja',
   path: '/loja',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppNotificacoesRoute = AppNotificacoesRouteImport.update({
+  id: '/notificacoes',
+  path: '/notificacoes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPendentesRoute = AppPendentesRouteImport.update({
+  id: '/pendentes',
+  path: '/pendentes',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPerfilRoute = AppPerfilRouteImport.update({
+  id: '/perfil',
+  path: '/perfil',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPixRoute = AppPixRouteImport.update({
+  id: '/pix',
+  path: '/pix',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppSplitRoute = AppSplitRouteImport.update({
+  id: '/split',
+  path: '/split',
   getParentRoute: () => AppRoute,
 } as any)
 const AppTransferirRoute = AppTransferirRouteImport.update({
@@ -105,12 +153,20 @@ export interface FileRoutesByFullPath {
   '/bem-vindo': typeof BemVindoRoute
   '/criar-conta': typeof CriarContaRoute
   '/login': typeof LoginRoute
+  '/ajuda': typeof AppAjudaRoute
+  '/cartoes': typeof AppCartoesRoute
   '/config': typeof AppConfigRoute
   '/contas': typeof AppContasRoute
   '/depositar': typeof AppDepositarRoute
+  '/equipe': typeof AppEquipeRoute
   '/extrato': typeof AppExtratoRoute
   '/inicio': typeof AppInicioRoute
   '/loja': typeof AppLojaRouteWithChildren
+  '/notificacoes': typeof AppNotificacoesRoute
+  '/pendentes': typeof AppPendentesRoute
+  '/perfil': typeof AppPerfilRoute
+  '/pix': typeof AppPixRoute
+  '/split': typeof AppSplitRoute
   '/transferir': typeof AppTransferirRoute
   '/viagens': typeof AppViagensRoute
   '/comprovante/$id': typeof AppComprovanteIdRoute
@@ -121,12 +177,20 @@ export interface FileRoutesByTo {
   '/bem-vindo': typeof BemVindoRoute
   '/criar-conta': typeof CriarContaRoute
   '/login': typeof LoginRoute
+  '/ajuda': typeof AppAjudaRoute
+  '/cartoes': typeof AppCartoesRoute
   '/config': typeof AppConfigRoute
   '/contas': typeof AppContasRoute
   '/depositar': typeof AppDepositarRoute
+  '/equipe': typeof AppEquipeRoute
   '/extrato': typeof AppExtratoRoute
   '/inicio': typeof AppInicioRoute
   '/loja': typeof AppLojaRouteWithChildren
+  '/notificacoes': typeof AppNotificacoesRoute
+  '/pendentes': typeof AppPendentesRoute
+  '/perfil': typeof AppPerfilRoute
+  '/pix': typeof AppPixRoute
+  '/split': typeof AppSplitRoute
   '/transferir': typeof AppTransferirRoute
   '/viagens': typeof AppViagensRoute
   '/comprovante/$id': typeof AppComprovanteIdRoute
@@ -139,12 +203,20 @@ export interface FileRoutesById {
   '/bem-vindo': typeof BemVindoRoute
   '/criar-conta': typeof CriarContaRoute
   '/login': typeof LoginRoute
+  '/_app/ajuda': typeof AppAjudaRoute
+  '/_app/cartoes': typeof AppCartoesRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/contas': typeof AppContasRoute
   '/_app/depositar': typeof AppDepositarRoute
+  '/_app/equipe': typeof AppEquipeRoute
   '/_app/extrato': typeof AppExtratoRoute
   '/_app/inicio': typeof AppInicioRoute
   '/_app/loja': typeof AppLojaRouteWithChildren
+  '/_app/notificacoes': typeof AppNotificacoesRoute
+  '/_app/pendentes': typeof AppPendentesRoute
+  '/_app/perfil': typeof AppPerfilRoute
+  '/_app/pix': typeof AppPixRoute
+  '/_app/split': typeof AppSplitRoute
   '/_app/transferir': typeof AppTransferirRoute
   '/_app/viagens': typeof AppViagensRoute
   '/_app/comprovante/$id': typeof AppComprovanteIdRoute
@@ -157,12 +229,20 @@ export interface FileRouteTypes {
     | '/bem-vindo'
     | '/criar-conta'
     | '/login'
+    | '/ajuda'
+    | '/cartoes'
     | '/config'
     | '/contas'
     | '/depositar'
+    | '/equipe'
     | '/extrato'
     | '/inicio'
     | '/loja'
+    | '/notificacoes'
+    | '/pendentes'
+    | '/perfil'
+    | '/pix'
+    | '/split'
     | '/transferir'
     | '/viagens'
     | '/comprovante/$id'
@@ -173,12 +253,20 @@ export interface FileRouteTypes {
     | '/bem-vindo'
     | '/criar-conta'
     | '/login'
+    | '/ajuda'
+    | '/cartoes'
     | '/config'
     | '/contas'
     | '/depositar'
+    | '/equipe'
     | '/extrato'
     | '/inicio'
     | '/loja'
+    | '/notificacoes'
+    | '/pendentes'
+    | '/perfil'
+    | '/pix'
+    | '/split'
     | '/transferir'
     | '/viagens'
     | '/comprovante/$id'
@@ -190,12 +278,20 @@ export interface FileRouteTypes {
     | '/bem-vindo'
     | '/criar-conta'
     | '/login'
+    | '/_app/ajuda'
+    | '/_app/cartoes'
     | '/_app/config'
     | '/_app/contas'
     | '/_app/depositar'
+    | '/_app/equipe'
     | '/_app/extrato'
     | '/_app/inicio'
     | '/_app/loja'
+    | '/_app/notificacoes'
+    | '/_app/pendentes'
+    | '/_app/perfil'
+    | '/_app/pix'
+    | '/_app/split'
     | '/_app/transferir'
     | '/_app/viagens'
     | '/_app/comprovante/$id'
@@ -247,6 +343,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/ajuda': {
+      id: '/_app/ajuda'
+      path: '/ajuda'
+      fullPath: '/ajuda'
+      preLoaderRoute: typeof AppAjudaRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/cartoes': {
+      id: '/_app/cartoes'
+      path: '/cartoes'
+      fullPath: '/cartoes'
+      preLoaderRoute: typeof AppCartoesRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/config': {
       id: '/_app/config'
       path: '/config'
@@ -268,6 +378,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDepositarRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/equipe': {
+      id: '/_app/equipe'
+      path: '/equipe'
+      fullPath: '/equipe'
+      preLoaderRoute: typeof AppEquipeRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/extrato': {
       id: '/_app/extrato'
       path: '/extrato'
@@ -287,6 +404,41 @@ declare module '@tanstack/react-router' {
       path: '/loja'
       fullPath: '/loja'
       preLoaderRoute: typeof AppLojaRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/notificacoes': {
+      id: '/_app/notificacoes'
+      path: '/notificacoes'
+      fullPath: '/notificacoes'
+      preLoaderRoute: typeof AppNotificacoesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/pendentes': {
+      id: '/_app/pendentes'
+      path: '/pendentes'
+      fullPath: '/pendentes'
+      preLoaderRoute: typeof AppPendentesRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/perfil': {
+      id: '/_app/perfil'
+      path: '/perfil'
+      fullPath: '/perfil'
+      preLoaderRoute: typeof AppPerfilRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/pix': {
+      id: '/_app/pix'
+      path: '/pix'
+      fullPath: '/pix'
+      preLoaderRoute: typeof AppPixRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/split': {
+      id: '/_app/split'
+      path: '/split'
+      fullPath: '/split'
+      preLoaderRoute: typeof AppSplitRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/transferir': {
@@ -332,24 +484,40 @@ const AppLojaRouteWithChildren =
   AppLojaRoute._addFileChildren(AppLojaRouteChildren)
 
 interface AppRouteChildren {
+  AppAjudaRoute: typeof AppAjudaRoute
+  AppCartoesRoute: typeof AppCartoesRoute
   AppConfigRoute: typeof AppConfigRoute
   AppContasRoute: typeof AppContasRoute
   AppDepositarRoute: typeof AppDepositarRoute
+  AppEquipeRoute: typeof AppEquipeRoute
   AppExtratoRoute: typeof AppExtratoRoute
   AppInicioRoute: typeof AppInicioRoute
   AppLojaRoute: typeof AppLojaRouteWithChildren
+  AppNotificacoesRoute: typeof AppNotificacoesRoute
+  AppPendentesRoute: typeof AppPendentesRoute
+  AppPerfilRoute: typeof AppPerfilRoute
+  AppPixRoute: typeof AppPixRoute
+  AppSplitRoute: typeof AppSplitRoute
   AppTransferirRoute: typeof AppTransferirRoute
   AppViagensRoute: typeof AppViagensRoute
   AppComprovanteIdRoute: typeof AppComprovanteIdRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppAjudaRoute: AppAjudaRoute,
+  AppCartoesRoute: AppCartoesRoute,
   AppConfigRoute: AppConfigRoute,
   AppContasRoute: AppContasRoute,
   AppDepositarRoute: AppDepositarRoute,
+  AppEquipeRoute: AppEquipeRoute,
   AppExtratoRoute: AppExtratoRoute,
   AppInicioRoute: AppInicioRoute,
   AppLojaRoute: AppLojaRouteWithChildren,
+  AppNotificacoesRoute: AppNotificacoesRoute,
+  AppPendentesRoute: AppPendentesRoute,
+  AppPerfilRoute: AppPerfilRoute,
+  AppPixRoute: AppPixRoute,
+  AppSplitRoute: AppSplitRoute,
   AppTransferirRoute: AppTransferirRoute,
   AppViagensRoute: AppViagensRoute,
   AppComprovanteIdRoute: AppComprovanteIdRoute,

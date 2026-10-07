@@ -39,6 +39,9 @@ import type {
   Limites,
   LoginPayload,
   LoginResposta,
+  MembroEquipe,
+  Notificacao,
+  OperacaoPendente,
   Produto,
   ProvaBiometrica,
   RegistrarPayload,
@@ -56,8 +59,12 @@ import {
   cartoes,
   cobrancasDemo,
   contasDemo,
+  equipeDemo,
   faturas,
   genId,
+  notificacoesPF,
+  notificacoesPJ,
+  pendentesDemo,
   produtos as PRODUTOS,
   sessao,
   transacoes,
@@ -936,6 +943,69 @@ export async function cvvDinamico(): Promise<CvvDinamico> {
   await delay(200);
   const cvv = String(Math.floor(100 + Math.random() * 900));
   return { cvv, expira_em: Date.now() + 60_000 };
+}
+
+// =============================================================================
+// Central de notificações, equipe (vínculos) e aprovações pendentes
+// Front primeiro: estes recursos ainda não têm endpoint no backend; por ora
+// operam sobre os mocks em ambos os modos.
+// =============================================================================
+
+function listaNotificacoes(): Notificacao[] {
+  return sessao.conta.tipo === "PJ" ? notificacoesPJ : notificacoesPF;
+}
+
+export async function notificacoes(): Promise<Notificacao[]> {
+  await delay(250);
+  return [...listaNotificacoes()].sort((a, b) => b.criado_em.localeCompare(a.criado_em));
+}
+
+export async function naoLidas(): Promise<number> {
+  return listaNotificacoes().filter((n) => !n.lida).length;
+}
+
+export async function marcarNotificacoesLidas(): Promise<void> {
+  await delay(150);
+  listaNotificacoes().forEach((n) => {
+    n.lida = true;
+  });
+}
+
+export async function equipe(): Promise<MembroEquipe[]> {
+  await delay(300);
+  return [...equipeDemo];
+}
+
+export async function convidarMembro(p: {
+  nome: string;
+  email: string;
+  papel: MembroEquipe["papel"];
+  alcada: number | null;
+}): Promise<MembroEquipe> {
+  await delay(500);
+  const novo: MembroEquipe = {
+    id: genId(),
+    nome: p.nome,
+    email: p.email,
+    papel: p.papel,
+    alcada: p.alcada,
+    ativo: true,
+  };
+  equipeDemo.push(novo);
+  return novo;
+}
+
+export async function pendentes(): Promise<OperacaoPendente[]> {
+  await delay(300);
+  return [...pendentesDemo].sort((a, b) => b.criado_em.localeCompare(a.criado_em));
+}
+
+export async function decidirPendente(id: number, aprovar: boolean): Promise<OperacaoPendente> {
+  await delay(600);
+  const op = pendentesDemo.find((o) => o.id === id);
+  if (!op) throw new ApiError("Operação não encontrada.", 404);
+  op.status = aprovar ? "aprovada" : "recusada";
+  return { ...op };
 }
 
 export { VIGENCIA_ATUAL };

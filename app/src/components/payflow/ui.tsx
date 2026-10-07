@@ -111,14 +111,22 @@ const ICONE_CAT: Record<CategoriaTx, ComponentType<LucideProps>> = {
   estorno: RotateCcw,
 };
 
-export function TxItem({ t, minha }: { t: Transacao; minha: number }) {
+export function TxItem({
+  t,
+  minha,
+  clicavel = true,
+}: {
+  t: Transacao;
+  minha: number;
+  clicavel?: boolean;
+}) {
   const entrada = t.destino_carteira_id === minha; // dinheiro entrando
   const Icon = ICONE_CAT[t.categoria] ?? ArrowUpRight;
   const imposto = t.cbs + t.ibs;
   // Para o lojista PJ, o que importa é o líquido recebido.
   const valor = entrada ? (t.aplicou_split ? t.liquido : t.valor_bruto) : t.valor_bruto;
-  return (
-    <li className="flex items-start justify-between gap-4 py-4">
+  const corpo = (
+    <>
       <div className="flex min-w-0 items-start gap-3">
         <div
           className={cn(
@@ -153,6 +161,18 @@ export function TxItem({ t, minha }: { t: Transacao; minha: number }) {
       <span className={cn("tabular shrink-0 font-semibold", entrada ? "text-pos" : "text-ink")}>
         {entrada ? "+" : "−"} {fmtBRL(valor)}
       </span>
+    </>
+  );
+  if (!clicavel) return <li className="flex items-start justify-between gap-4 py-4">{corpo}</li>;
+  return (
+    <li>
+      <Link
+        to="/comprovante/$id"
+        params={{ id: String(t.id) }}
+        className="-mx-2 flex items-start justify-between gap-4 rounded-[14px] px-2 py-4 transition hover:bg-tint/50"
+      >
+        {corpo}
+      </Link>
     </li>
   );
 }

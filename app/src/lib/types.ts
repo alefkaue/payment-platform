@@ -279,6 +279,45 @@ export interface CvvDinamico {
   expira_em: number; // epoch ms
 }
 
+/** Aviso na central de notificações (inbox do app). */
+export type TipoNotificacao =
+  "pagamento" | "cobranca" | "seguranca" | "imposto" | "pontos" | "sistema";
+export interface Notificacao {
+  id: number;
+  tipo: TipoNotificacao;
+  titulo: string;
+  texto: string;
+  criado_em: string; // ISO
+  lida: boolean;
+  /** Rota do app para onde o toque leva (opcional). */
+  href?: "/extrato" | "/contas" | "/split" | "/pendentes" | "/viagens" | "/perfil";
+}
+
+/** Pessoa com vínculo na empresa (conta PJ) — papel + alçada. */
+export interface MembroEquipe {
+  id: number;
+  nome: string;
+  email: string;
+  papel: PapelVinculo;
+  /** Alçada por operação em R$; null = sem limite. */
+  alcada: number | null;
+  ativo: boolean;
+  /** É a pessoa logada neste momento. */
+  eu?: boolean;
+}
+
+/** Operação acima da alçada de quem lançou, aguardando um 2º aprovador (maker-checker). */
+export type StatusPendente = "aguardando" | "aprovada" | "recusada";
+export interface OperacaoPendente {
+  id: number;
+  descricao: string;
+  contraparte: string;
+  valor: number;
+  criado_por: string;
+  criado_em: string; // ISO
+  status: StatusPendente;
+}
+
 export type DirecaoFatura = "receber" | "pagar";
 export type StatusFatura = "liquidado" | "pendente" | "agendado";
 

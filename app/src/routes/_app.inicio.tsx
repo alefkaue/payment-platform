@@ -6,6 +6,7 @@ import {
   ArrowUpRight,
   Building2,
   Coins,
+  CreditCard,
   Eye,
   EyeOff,
   FileText,
@@ -16,10 +17,11 @@ import {
   QrCode,
   ShieldCheck,
   ShoppingBag,
+  Snowflake,
   Sparkles,
   Users,
 } from "lucide-react";
-import { apuracaoPJ, listarFaturas, minhaConta, transacoes } from "@/lib/api";
+import { apuracaoPJ, listarFaturas, meuCartao, minhaConta, transacoes } from "@/lib/api";
 import { PAPEIS, PORTES } from "@/lib/empresa";
 import { ALIQUOTA_PLENA, VIGENCIA_ATUAL } from "@/lib/split";
 import { useAuth } from "@/lib/auth";
@@ -187,23 +189,66 @@ function InicioPF() {
         </div>
       </section>
 
+      <CartaoPreview />
+
       <BannerCarousel banners={BANNERS_PF} />
 
       {/* Pro dia a dia — grade de serviços */}
       <section>
         <h2 className="mb-3 text-lg text-ink">Pro dia a dia</h2>
         <div className="grid grid-cols-3 gap-3">
-          <Shortcut icon={QrCode} label="Pix" to="/transferir" />
+          <Shortcut icon={QrCode} label="Pix" to="/pix" />
+          <Shortcut icon={CreditCard} label="Cartões" to="/cartoes" />
           <Shortcut icon={Plus} label="Depositar" to="/depositar" />
           <Shortcut icon={ShoppingBag} label="Loja" to="/loja" />
           <Shortcut icon={Plane} label="Viagens" to="/viagens" />
-          <Shortcut icon={Sparkles} label="Pontos" to="/viagens" />
           <Shortcut icon={ListOrdered} label="Extrato" to="/extrato" />
         </div>
       </section>
 
       <AtividadeRecente minha={conta.data?.carteira_id ?? 0} titulo="Atividade recente" />
     </>
+  );
+}
+
+/** Prévia do cartão virtual na home PF — acesso rápido ao cartão (estilo neobanco). */
+function CartaoPreview() {
+  const q = useQuery({ queryKey: ["cartao"], queryFn: meuCartao });
+  const c = q.data;
+  const congelado = c?.estado === "congelado";
+  return (
+    <Link
+      to="/cartoes"
+      aria-label="Ver meu cartão"
+      className={`block overflow-hidden rounded-[18px] bg-ink p-4 text-ink-foreground shadow-soft transition hover:shadow-lift ${
+        congelado ? "opacity-70 saturate-0" : ""
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-2 text-sm opacity-80">
+          <CreditCard size={16} /> {c?.apelido ?? "Cartão virtual"}
+        </span>
+        <span className="flex items-center gap-1 text-xs opacity-60">
+          {congelado ? (
+            <>
+              <Snowflake size={12} /> Congelado
+            </>
+          ) : (
+            "Ativo"
+          )}{" "}
+          ›
+        </span>
+      </div>
+      <p className="tabular mt-5 text-lg tracking-[0.18em]">
+        {c?.numero_masc ?? "•••• •••• •••• ••••"}
+      </p>
+      <div className="mt-3 flex items-center justify-between text-xs opacity-70">
+        <span>Toque para ver CVV e travas de segurança</span>
+        <span className="rounded bg-marca px-1.5 py-0.5 text-[10px] font-bold text-ink">
+          {(c?.bandeira ?? "Visa").toUpperCase()}
+        </span>
+      </div>
+    </Link>
   );
 }
 
@@ -324,6 +369,13 @@ function ApuracaoCard() {
             continua (assistida pela Receita): seus créditos de compras entram nela e o que sobrar
             volta como compensação ou restituição.
           </p>
+
+          <Link
+            to="/split"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm font-semibold text-ink hover:underline"
+          >
+            Entenda o split e simule <ArrowUpRight size={15} />
+          </Link>
         </>
       )}
     </section>
