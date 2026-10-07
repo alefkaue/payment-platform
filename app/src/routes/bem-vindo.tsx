@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/bem-vindo")({
   head: () => ({
     meta: [
-      { title: "PayFlow — seu banco digital" },
+      { title: "Astro — seu banco digital" },
       {
         name: "description",
         content: "Conta digital para pessoas e empresas, com o imposto da Reforma resolvido no ato.",

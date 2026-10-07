@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/_app/extrato")({
   head: () => ({
     meta: [
-      { title: "Extrato — PayFlow" },
+      { title: "Extrato — Astro" },
       {
         name: "description",
         content: "Todas as suas transações, com o imposto retido em cada uma.",

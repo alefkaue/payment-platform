@@ -20,8 +20,8 @@ import { LivenessCheck } from "@/components/payflow/liveness";
 export const Route = createFileRoute("/_app/viagens")({
   head: () => ({
     meta: [
-      { title: "Viagens — PayFlow" },
-      { name: "description", content: "Passagens aéreas pagando em reais ou com pontos PayFlow." },
+      { title: "Viagens — Astro" },
+      { name: "description", content: "Passagens aéreas pagando em reais ou com pontos Astro." },
     ],
   }),
   component: Viagens,
@@ -95,7 +95,7 @@ function Viagens() {
           </div>
           <div className="flex justify-between">
             <span className="text-mut3">Saldo de pontos</span>
-            <span className="tabular font-semibold text-marca">
+            <span className="tabular font-semibold text-ink">
               {fmtPontos(resgate.saldo_pontos)}
             </span>
           </div>
@@ -207,7 +207,7 @@ function Viagens() {
 
           <div className="mt-5 rounded-[16px] border border-line2 p-4">
             <p className="flex items-center gap-1.5 text-sm font-medium text-ink">
-              <Sparkles size={15} className="text-marca" /> Ou use seus pontos
+              <Sparkles size={15} className="text-ink" /> Ou use seus pontos
             </p>
             <p className="mt-1 text-sm text-mut2">
               Este voo sai por {fmtPontos(sel.milhas)} pontos. Você tem {fmtPontos(pontos)}.
@@ -245,7 +245,7 @@ function Viagens() {
       </PageTitle>
 
       <p className="mb-4 inline-flex items-center gap-1.5 rounded-full bg-tint px-3 py-1.5 text-sm text-ink">
-        <Sparkles size={14} className="text-marca" /> {fmtPontos(pontos)} pontos disponíveis
+        <Sparkles size={14} className="text-ink" /> {fmtPontos(pontos)} pontos disponíveis
       </p>
 
       <div className="surface mb-5 grid grid-cols-2 gap-3 p-4">

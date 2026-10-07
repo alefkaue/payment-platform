@@ -34,7 +34,7 @@ LOJISTAS = {
     "padaria": ("Padaria Aurora", "Comércio · Alimentos"),
     "farmacia": ("Farmácia Bem", "Comércio · Saúde"),
     "livraria": ("Livraria Sol", "Comércio · Livros"),
-    "viagens": ("PayFlow Viagens", "Turismo · Agência"),
+    "viagens": ("Astro Viagens", "Turismo · Agência"),
 }
 
 CATALOGO_PRODUTOS = [

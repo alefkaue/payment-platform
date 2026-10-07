@@ -9,7 +9,7 @@ import { Empty, ErrorBox, PageTitle, TxSkeleton } from "@/components/payflow/ui"
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/pendentes")({
-  head: () => ({ meta: [{ title: "Aprovações — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Aprovações — Astro" }] }),
   component: Pendentes,
 });
 

@@ -706,7 +706,7 @@ export async function criarCobranca(p: CobrancaPayload): Promise<Cobranca[]> {
     nfe_chave: p.nota_fiscal?.chave ?? null,
     cbs: p.nota_fiscal?.cbs ?? 0,
     ibs: p.nota_fiscal?.ibs ?? 0,
-    pix_copia_e_cola: `PAYFLOW-SIMULADO.${txid}`,
+    pix_copia_e_cola: `ASTRO-SIMULADO.${txid}`,
     linha_digitavel: "0".repeat(47),
     status: "aberta",
     parcela_numero: 1,

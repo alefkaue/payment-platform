@@ -18,7 +18,7 @@ import { Empty, ErrorBox, PageTitle } from "@/components/payflow/ui";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/pix")({
-  head: () => ({ meta: [{ title: "Pix — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Pix — Astro" }] }),
   component: Pix,
 });
 

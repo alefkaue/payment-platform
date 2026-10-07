@@ -9,7 +9,7 @@ import { cn } from "@/lib/utils";
 import { ErrorBox, Field, PageTitle } from "@/components/payflow/ui";
 
 export const Route = createFileRoute("/_app/depositar")({
-  head: () => ({ meta: [{ title: "Depositar — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Depositar — Astro" }] }),
   component: Depositar,
 });
 
@@ -24,13 +24,13 @@ function ReceberPorPix() {
   const { conta } = useAuth();
   return (
     <div className="enter mx-auto max-w-md">
-      <PageTitle sub="Faça um Pix de outro banco para a sua conta PayFlow.">
+      <PageTitle sub="Faça um Pix de outro banco para a sua conta Astro.">
         Colocar dinheiro
       </PageTitle>
       <section className="surface space-y-3 p-5 md:p-7 text-sm">
         <div className="flex justify-between">
           <span className="text-mut3">Banco</span>
-          <span className="font-medium text-ink">PayFlow</span>
+          <span className="font-medium text-ink">Astro</span>
         </div>
         <div className="flex justify-between">
           <span className="text-mut3">Agência</span>

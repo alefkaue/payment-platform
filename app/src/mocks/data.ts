@@ -94,7 +94,7 @@ export const carteiras: CarteiraInfo[] = [
   { carteira_id: 3004, nome: "TechPonto", tipo: "PJ" },
   { carteira_id: 3005, nome: "Farmácia Bem", tipo: "PJ" },
   { carteira_id: 3006, nome: "Livraria Sol", tipo: "PJ" },
-  { carteira_id: 3100, nome: "PayFlow Viagens", tipo: "PJ" },
+  { carteira_id: 3100, nome: "Astro Viagens", tipo: "PJ" },
 ];
 
 // --- Lojinha virtual (só contas PF compram; vendedor é sempre PJ) ------------
@@ -197,7 +197,7 @@ export const voos: Voo[] = [
     preco: 319.9,
     milhas: 9000,
     merchant_carteira_id: 3100,
-    merchant_nome: "PayFlow Viagens",
+    merchant_nome: "Astro Viagens",
   },
   {
     id: 2,
@@ -213,7 +213,7 @@ export const voos: Voo[] = [
     preco: 289.0,
     milhas: 8000,
     merchant_carteira_id: 3100,
-    merchant_nome: "PayFlow Viagens",
+    merchant_nome: "Astro Viagens",
   },
   {
     id: 3,
@@ -229,7 +229,7 @@ export const voos: Voo[] = [
     preco: 612.4,
     milhas: 17000,
     merchant_carteira_id: 3100,
-    merchant_nome: "PayFlow Viagens",
+    merchant_nome: "Astro Viagens",
   },
   {
     id: 4,
@@ -245,7 +245,7 @@ export const voos: Voo[] = [
     preco: 748.0,
     milhas: 21000,
     merchant_carteira_id: 3100,
-    merchant_nome: "PayFlow Viagens",
+    merchant_nome: "Astro Viagens",
   },
   {
     id: 5,
@@ -261,7 +261,7 @@ export const voos: Voo[] = [
     preco: 455.5,
     milhas: 13000,
     merchant_carteira_id: 3100,
-    merchant_nome: "PayFlow Viagens",
+    merchant_nome: "Astro Viagens",
   },
   {
     id: 6,
@@ -277,7 +277,7 @@ export const voos: Voo[] = [
     preco: 398.9,
     milhas: 11000,
     merchant_carteira_id: 3100,
-    merchant_nome: "PayFlow Viagens",
+    merchant_nome: "Astro Viagens",
   },
 ];
 
@@ -491,7 +491,7 @@ export const notificacoesPF: Notificacao[] = [
     id: 9101,
     tipo: "pontos",
     titulo: "Você ganhou 350 pontos",
-    texto: "Sua compra na Loja PayFlow rendeu 350 pontos. Já dá para usar em viagens.",
+    texto: "Sua compra na Loja Astro rendeu 350 pontos. Já dá para usar em viagens.",
     criado_em: hAtras(2),
     lida: false,
     href: "/viagens",

@@ -8,7 +8,7 @@ import { fmtBRL, iniciais } from "@/lib/format";
 import { PageTitle } from "@/components/payflow/ui";
 
 export const Route = createFileRoute("/_app/perfil")({
-  head: () => ({ meta: [{ title: "Meu perfil — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Meu perfil — Astro" }] }),
   component: Perfil,
 });
 

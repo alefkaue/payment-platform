@@ -11,7 +11,7 @@ import { FaturaRow } from "./_app.inicio";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/contas")({
-  head: () => ({ meta: [{ title: "Contas — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Contas — Astro" }] }),
   component: Contas,
 });
 

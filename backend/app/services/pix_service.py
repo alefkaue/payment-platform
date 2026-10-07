@@ -92,7 +92,7 @@ def consultar(repo: Repositorio, *, usuario: dict, chave: str, ip: str | None) -
         "nome": mascarar_nome(conta["nome"]) if conta["titular_tipo"] == "PF" else conta["nome"],
         "documento": mascarar_cpf(doc) if conta["titular_tipo"] == "PF" else mascarar_cnpj(doc),
         "titular_tipo": conta["titular_tipo"],
-        "instituicao": "PayFlow",
+        "instituicao": "Astro",
     }
 
 

@@ -1,29 +1,29 @@
 /* Tokens do design handoff (claro). oklch é suportado nos navegadores modernos. */
 :root {
-  --page: #e4e1d8;
-  --bg: #fbfaf7;
+  --page: #f2f2f2;
+  --bg: #ffffff;
   --card: #ffffff;
-  --ink: #141414;
-  --ink3: #2e2d2a;
+  --ink: #0a0a0a;
+  --ink3: #242424;
   --onp: #ffffff;
-  --mut: #6d6a62;
-  --mut2: #57554f;
-  --mut3: #a3a098;
-  --tint: #ecebe5;
-  --line: #e6e4dd;
-  --line2: #dcd9cf;
-  --taxt: oklch(0.53 0.12 75);
-  --taxt2: oklch(0.42 0.09 75);
-  --taxbg: oklch(0.96 0.04 85);
-  --taxbg2: oklch(0.93 0.05 85);
-  --ocre: oklch(0.68 0.108 85);
-  --errbg: oklch(0.95 0.035 25);
-  --errt: oklch(0.45 0.15 25);
-  --marca: oklch(0.76 0.123 88); /* dourado (gold) ~ #d4af37 */
-  --pos: oklch(0.5 0.08 155);
+  --mut: #6b6b6b;
+  --mut2: #4a4a4a;
+  --mut3: #8c8c8c;
+  --tint: #f2f2f2;
+  --line: #e2e2e2;
+  --line2: #d6d6d6;
+  --taxt: #6b6b6b;
+  --taxt2: #3a3a3a;
+  --taxbg: #f2f2f2;
+  --taxbg2: #e2e2e2;
+  --ocre: #8c8c8c;
+  --errbg: #fbe9e7;
+  --errt: #d93025;
+  --marca: #0a0a0a; /* Astro: marca só em preto e branco */
+  --pos: #1f9d55;
   --raio-card: 22px;
   --raio-foto: 28px;
-  --sombra: 0 1px 2px rgba(20, 20, 20, 0.04), 0 12px 32px -14px rgba(20, 20, 20, 0.14);
+  --sombra: 0 1px 2px rgba(10, 10, 10, 0.04), 0 12px 32px -14px rgba(10, 10, 10, 0.14);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -44,16 +44,15 @@ body {
 .nav {
   position: sticky; top: 0; z-index: 50; height: 68px;
   display: flex; align-items: center;
-  background: rgba(251, 250, 247, 0.9);
+  background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);
   border-bottom: 1px solid var(--line);
   transition: box-shadow 0.2s ease;
 }
-.nav.scrolled { box-shadow: 0 8px 24px -16px rgba(20, 20, 20, 0.25); }
+.nav.scrolled { box-shadow: 0 8px 24px -16px rgba(10, 10, 10, 0.25); }
 .nav .container { display: flex; align-items: center; justify-content: space-between; width: 100%; }
 
-.wordmark { display: inline-flex; align-items: baseline; font-weight: 700; letter-spacing: -0.05em; font-size: 22px; }
-.ball { width: 0.56em; height: 0.56em; border-radius: 50%; background: var(--marca); display: inline-block; margin: 0 1px; align-self: center; }
+.wordmark { display: block; height: 18px; width: auto; }
 
 .btn { border: none; cursor: pointer; font-weight: 600; font-size: 15px; border-radius: 14px; padding: 12px 20px; text-decoration: none; display: inline-block; }
 .btn-ink { background: var(--ink); color: var(--onp); }
@@ -88,9 +87,9 @@ section { padding: 88px 0; }
 .linha .tax { color: var(--taxt); }
 
 .sec-tint { background: var(--tint); }
-.sec-escuro { background: #141414; color: var(--onp); }
-.sec-escuro .lead, .sec-escuro .eyebrow { color: #c2bfb6; }
-.sec-escuro .card { background: #262624; border-color: #42423d; color: var(--onp); }
+.sec-escuro { background: #0a0a0a; color: var(--onp); }
+.sec-escuro .lead, .sec-escuro .eyebrow { color: #8c8c8c; }
+.sec-escuro .card { background: #141414; border-color: #3a3a3a; color: var(--onp); }
 
 input, select {
   width: 100%; font-size: 15px; padding: 14px 16px; border-radius: 16px;
@@ -101,7 +100,7 @@ input, select {
 .faq-q { width: 100%; text-align: left; background: none; border: none; cursor: pointer; padding: 20px 0; font-size: 18px; font-weight: 600; color: var(--ink); display: flex; justify-content: space-between; }
 .faq-a { padding-bottom: 20px; color: var(--mut2); max-width: 70ch; }
 
-.cta-bloco { background: #141414; color: var(--onp); border-radius: var(--raio-foto); padding: 56px; text-align: center; }
+.cta-bloco { background: #0a0a0a; color: var(--onp); border-radius: var(--raio-foto); padding: 56px; text-align: center; }
 
 footer { padding: 48px 0; border-top: 1px solid var(--line); color: var(--mut); font-size: 14px; }
 
@@ -113,16 +112,17 @@ footer { padding: 48px 0; border-top: 1px solid var(--line); color: var(--mut); 
 /* Adições: foto no hero, botão dourado, grade de 2 e acentos */
 .hero-foto { isolation: isolate; }
 .hero-foto img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.hero-foto::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(180deg, rgba(20,20,20,0.05) 30%, rgba(20,20,20,0.55)); }
+.hero-foto::after { content: ""; position: absolute; inset: 0; z-index: 1; background: linear-gradient(180deg, rgba(10,10,10,0.05) 30%, rgba(10,10,10,0.55)); }
 .hero-card { z-index: 2; }
-.btn-gold { background: var(--marca); color: #141414; }
+.btn-gold { background: var(--ink); color: var(--onp); }
+.sec-escuro .btn-gold, .cta-bloco .btn-gold { background: #ffffff; color: #0a0a0a; }
 .grid-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: 999px; background: var(--taxbg); color: var(--taxt2); }
 .dot-gold { width: 10px; height: 10px; border-radius: 50%; background: var(--marca); display: inline-block; }
 .split-bar .liq { background: var(--pos); }
-.sec-escuro .split-bar .liq { background: var(--marca); }
+.sec-escuro .split-bar .liq { background: #ffffff; }
 .feat-ico { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--tint); font-size: 20px; margin-bottom: 14px; }
-.sec-escuro .feat-ico { background: #2c2c29; }
+.sec-escuro .feat-ico { background: #242424; }
 
 @media (max-width: 860px) {
   .hero { grid-template-columns: 1fr; }

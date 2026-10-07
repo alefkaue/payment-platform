@@ -37,7 +37,7 @@ class EmpresaResponse(BaseModel):
 
 
 class VinculoCreate(BaseModel):
-    email: EmailStr = Field(..., description="E-mail de uma pessoa que já tem conta no PayFlow.")
+    email: EmailStr = Field(..., description="E-mail de uma pessoa que já tem conta na Astro.")
     papel: PapelVinculo
     alcada: DinheiroOuZero | None = Field(default=None, description="Valor máximo por operação sem aprovação. Vazio = sem limite.")
 

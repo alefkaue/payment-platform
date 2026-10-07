@@ -42,7 +42,7 @@ import {
 
 export const Route = createFileRoute("/_app/inicio")({
   head: () => ({
-    meta: [{ title: "Início — PayFlow" }, { name: "description", content: "Sua conta PayFlow." }],
+    meta: [{ title: "Início — Astro" }, { name: "description", content: "Sua conta Astro." }],
   }),
   component: Inicio,
 });
@@ -109,15 +109,15 @@ const BANNERS_PF: Banner[] = [
     id: "pontos",
     eyebrow: "Viagens",
     title: "Seus pontos viram passagem",
-    desc: "Voe pagando em reais ou com pontos PayFlow.",
+    desc: "Voe pagando em reais ou com pontos Astro.",
     cta: "Ver voos",
     to: "/viagens",
     emoji: "✈️",
-    bg: "bg-gradient-to-br from-marca to-ocre",
+    bg: "bg-gradient-to-br from-tint to-line2",
   },
   {
     id: "loja",
-    eyebrow: "Loja PayFlow",
+    eyebrow: "Loja Astro",
     title: "Compre e pague na hora",
     desc: "Produtos de lojistas parceiros, direto do saldo.",
     cta: "Explorar loja",

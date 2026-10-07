@@ -3,9 +3,13 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "PayFlow — Pagamentos com split de IBS/CBS",
+  title: "Astro — Pagamentos com split de IBS/CBS",
   description:
     "Banco digital para pessoas e empresas, feito para a Reforma Tributária: o IBS/CBS é separado no ato e abatido pelos créditos. Para empresas, recebimento já líquido.",
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }, { url: "/favicon.ico" }],
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

@@ -19,9 +19,9 @@ export const Route = createFileRoute("/criar-conta")({
   },
   head: () => ({
     meta: [
-      { title: "Abrir conta — PayFlow" },
-      { name: "description", content: "Abra sua conta PayFlow para pessoa física ou empresa." },
-      { property: "og:title", content: "Abrir conta — PayFlow" },
+      { title: "Abrir conta — Astro" },
+      { name: "description", content: "Abra sua conta Astro para pessoa física ou empresa." },
+      { property: "og:title", content: "Abrir conta — Astro" },
       { property: "og:description", content: "Conta PF ou PJ com split automático de IBS/CBS." },
     ],
   }),
@@ -109,185 +109,187 @@ function CriarConta() {
   }
 
   return (
-    <main className="min-h-screen bg-page px-4 py-10">
-      <div className="enter mx-auto w-full max-w-lg">
-        <div className="surface p-6 md:p-10">
-          <Wordmark />
-          <h1 className="mt-6 text-3xl text-ink">Abrir conta</h1>
-          <form onSubmit={submit} className="mt-6 space-y-4">
-            <div
-              role="radiogroup"
-              aria-label="Tipo de conta"
-              className="grid grid-cols-2 rounded-full bg-tint p-1"
-            >
-              {(["PF", "PJ"] as const).map((t) => (
-                <button
-                  key={t}
-                  type="button"
-                  role="radio"
-                  aria-checked={tipo === t}
-                  onClick={() => {
-                    setTipo(t);
-                    setDoc("");
-                  }}
-                  className={cn(
-                    "h-10 rounded-full text-sm font-semibold transition-colors duration-200",
-                    tipo === t
-                      ? "bg-ink text-ink-foreground shadow-soft"
-                      : "text-mut2 hover:text-ink",
-                  )}
-                >
-                  {t === "PF" ? "Pessoa física" : "Empresa (PJ)"}
-                </button>
-              ))}
-            </div>
-            <Field label={tipo === "PF" ? "Nome" : "Razão social"} id="nome">
-              <input
-                id="nome"
-                className="field"
-                value={nome}
-                onChange={(e) => setNome(e.target.value)}
-              />
-            </Field>
-            <Field label="E-mail" id="email">
-              <input
-                id="email"
-                type="email"
-                className="field"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </Field>
-            <Field label="Senha" id="senha" hint="Mínimo de 8 caracteres.">
-              <input
-                id="senha"
-                type="password"
-                className="field"
-                value={senha}
-                onChange={(e) => setSenha(e.target.value)}
-              />
-            </Field>
-            <Field label={tipo === "PF" ? "CPF" : "CNPJ"} id="doc">
-              <input
-                id="doc"
-                inputMode="numeric"
-                className="field tabular"
-                value={doc}
-                onChange={(e) => setDoc(maskDoc(e.target.value, tipo))}
-                placeholder={tipo === "PF" ? "000.000.000-00" : "00.000.000/0000-00"}
-              />
-            </Field>
-            {tipo === "PJ" && (
-              <>
-                <Field label="Setor de atuação" id="setor">
-                  <select
-                    id="setor"
-                    className="field"
-                    value={setor}
-                    onChange={(e) => setSetor(e.target.value)}
-                  >
-                    {SETORES.map((s) => (
-                      <option key={s}>{s}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field
-                  label="Porte da empresa"
-                  id="porte"
-                  hint="Define como sua conta é verificada."
-                >
-                  <select
-                    id="porte"
-                    className="field"
-                    value={porte}
-                    onChange={(e) => {
-                      setPorte(e.target.value as PortePJ);
-                      setCertOk(false);
+    <div className="flex min-h-[100dvh] justify-center bg-black">
+      <main className="min-h-[100dvh] w-full max-w-[460px] bg-page px-4 py-10 shadow-2xl">
+        <div className="enter mx-auto w-full max-w-lg">
+          <div className="surface p-6 md:p-10">
+            <Wordmark />
+            <h1 className="mt-6 text-3xl text-ink">Abrir conta</h1>
+            <form onSubmit={submit} className="mt-6 space-y-4">
+              <div
+                role="radiogroup"
+                aria-label="Tipo de conta"
+                className="grid grid-cols-2 rounded-full bg-tint p-1"
+              >
+                {(["PF", "PJ"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    role="radio"
+                    aria-checked={tipo === t}
+                    onClick={() => {
+                      setTipo(t);
+                      setDoc("");
                     }}
+                    className={cn(
+                      "h-10 rounded-full text-sm font-semibold transition-colors duration-200",
+                      tipo === t
+                        ? "bg-ink text-ink-foreground shadow-soft"
+                        : "text-mut2 hover:text-ink",
+                    )}
                   >
-                    {(Object.keys(PORTES) as PortePJ[]).map((p) => (
-                      <option key={p} value={p}>
-                        {PORTES[p].label} — {PORTES[p].faturamento}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                {porte !== "MEI" && (
+                    {t === "PF" ? "Pessoa física" : "Empresa (PJ)"}
+                  </button>
+                ))}
+              </div>
+              <Field label={tipo === "PF" ? "Nome" : "Razão social"} id="nome">
+                <input
+                  id="nome"
+                  className="field"
+                  value={nome}
+                  onChange={(e) => setNome(e.target.value)}
+                />
+              </Field>
+              <Field label="E-mail" id="email">
+                <input
+                  id="email"
+                  type="email"
+                  className="field"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </Field>
+              <Field label="Senha" id="senha" hint="Mínimo de 8 caracteres.">
+                <input
+                  id="senha"
+                  type="password"
+                  className="field"
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
+                />
+              </Field>
+              <Field label={tipo === "PF" ? "CPF" : "CNPJ"} id="doc">
+                <input
+                  id="doc"
+                  inputMode="numeric"
+                  className="field tabular"
+                  value={doc}
+                  onChange={(e) => setDoc(maskDoc(e.target.value, tipo))}
+                  placeholder={tipo === "PF" ? "000.000.000-00" : "00.000.000/0000-00"}
+                />
+              </Field>
+              {tipo === "PJ" && (
+                <>
+                  <Field label="Setor de atuação" id="setor">
+                    <select
+                      id="setor"
+                      className="field"
+                      value={setor}
+                      onChange={(e) => setSetor(e.target.value)}
+                    >
+                      {SETORES.map((s) => (
+                        <option key={s}>{s}</option>
+                      ))}
+                    </select>
+                  </Field>
                   <Field
-                    label="Regime de apuração"
-                    id="regime"
-                    hint={REGIMES_APURACAO[regime].dica}
+                    label="Porte da empresa"
+                    id="porte"
+                    hint="Define como sua conta é verificada."
                   >
                     <select
-                      id="regime"
+                      id="porte"
                       className="field"
-                      value={regime}
-                      onChange={(e) => setRegime(e.target.value as RegimeApuracao)}
+                      value={porte}
+                      onChange={(e) => {
+                        setPorte(e.target.value as PortePJ);
+                        setCertOk(false);
+                      }}
                     >
-                      {(["regular", "simples"] as const).map((r) => (
-                        <option key={r} value={r}>
-                          {REGIMES_APURACAO[r].label}
+                      {(Object.keys(PORTES) as PortePJ[]).map((p) => (
+                        <option key={p} value={p}>
+                          {PORTES[p].label} — {PORTES[p].faturamento}
                         </option>
                       ))}
                     </select>
                   </Field>
-                )}
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Representante (sócio)" id="rep">
-                    <input
-                      id="rep"
-                      className="field"
-                      value={representante}
-                      onChange={(e) => setRepresentante(e.target.value)}
-                    />
-                  </Field>
-                  <Field label="CPF do representante" id="cpf">
-                    <input
-                      id="cpf"
-                      inputMode="numeric"
-                      className="field tabular"
-                      value={cpf}
-                      onChange={(e) => setCpf(maskDoc(e.target.value, "PF"))}
-                      placeholder="000.000.000-00"
-                    />
-                  </Field>
-                </div>
-              </>
-            )}
+                  {porte !== "MEI" && (
+                    <Field
+                      label="Regime de apuração"
+                      id="regime"
+                      hint={REGIMES_APURACAO[regime].dica}
+                    >
+                      <select
+                        id="regime"
+                        className="field"
+                        value={regime}
+                        onChange={(e) => setRegime(e.target.value as RegimeApuracao)}
+                      >
+                        {(["regular", "simples"] as const).map((r) => (
+                          <option key={r} value={r}>
+                            {REGIMES_APURACAO[r].label}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field label="Representante (sócio)" id="rep">
+                      <input
+                        id="rep"
+                        className="field"
+                        value={representante}
+                        onChange={(e) => setRepresentante(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="CPF do representante" id="cpf">
+                      <input
+                        id="cpf"
+                        inputMode="numeric"
+                        className="field tabular"
+                        value={cpf}
+                        onChange={(e) => setCpf(maskDoc(e.target.value, "PF"))}
+                        placeholder="000.000.000-00"
+                      />
+                    </Field>
+                  </div>
+                </>
+              )}
 
-            {usaBiometria && <FacialStep ok={facialOk} onStart={() => setLiveness(true)} />}
-            {usaCertificado && (
-              <CertificadoDigital
-                ok={certOk}
-                onConnect={() => setCertOk(true)}
-                dupla={PORTES[porte].duplaAssinatura}
-                opcional={MODO_API}
-              />
-            )}
-            {erro && <ErrorBox>{erro}</ErrorBox>}
-            <button className="btn btn-ink w-full" disabled={loading}>
-              {loading ? "Criando…" : "Criar conta"}
-            </button>
-          </form>
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Já tem conta?{" "}
-            <Link to="/login" className="font-semibold text-ink underline underline-offset-4">
-              Entrar
-            </Link>
-          </p>
+              {usaBiometria && <FacialStep ok={facialOk} onStart={() => setLiveness(true)} />}
+              {usaCertificado && (
+                <CertificadoDigital
+                  ok={certOk}
+                  onConnect={() => setCertOk(true)}
+                  dupla={PORTES[porte].duplaAssinatura}
+                  opcional={MODO_API}
+                />
+              )}
+              {erro && <ErrorBox>{erro}</ErrorBox>}
+              <button className="btn btn-ink w-full" disabled={loading}>
+                {loading ? "Criando…" : "Criar conta"}
+              </button>
+            </form>
+            <p className="mt-6 text-center text-sm text-muted-foreground">
+              Já tem conta?{" "}
+              <Link to="/login" className="font-semibold text-ink underline underline-offset-4">
+                Entrar
+              </Link>
+            </p>
+          </div>
         </div>
-      </div>
 
-      {liveness && (
-        <LivenessCheck
-          onClose={() => setLiveness(false)}
-          onSuccess={(p) => {
-            setLiveness(false);
-            setProva({ p, em: Date.now() });
-          }}
-        />
-      )}
-    </main>
+        {liveness && (
+          <LivenessCheck
+            onClose={() => setLiveness(false)}
+            onSuccess={(p) => {
+              setLiveness(false);
+              setProva({ p, em: Date.now() });
+            }}
+          />
+        )}
+      </main>
+    </div>
   );
 }
 

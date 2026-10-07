@@ -157,7 +157,7 @@ class Repositorio:
         if existente:
             return existente
         return self.criar_pessoa(
-            nome="Administrador PayFlow", email=email, cpf=None, senha_hash=senha_hash,
+            nome="Administrador Astro", email=email, cpf=None, senha_hash=senha_hash,
             embedding_cifrado=None, papel=Papel.ADMIN, com_carteira=False,
         )
 
@@ -192,7 +192,7 @@ class Repositorio:
                 s.flush()
             except IntegrityError:
                 s.rollback()
-                raise CnpjDuplicadoError("Esse CNPJ já tem conta no PayFlow.") from None
+                raise CnpjDuplicadoError("Esse CNPJ já tem conta na Astro.") from None
             carteira = self._nova_carteira(s, TipoPessoa.PJ, empresa_id=e.id)
             if limites_padrao:
                 s.add(Limite(carteira_id=carteira.id, **limites_padrao))
@@ -1285,7 +1285,7 @@ class Repositorio:
             e = s.get(Empresa, c.empresa_id)
             nome, documento, regime = (e.nome_fantasia or e.razao_social), e.cnpj, e.regime_apuracao.value
         else:
-            nome = f"PayFlow {c.sistema}"
+            nome = f"Astro {c.sistema}"
         return {
             "carteira_id": c.id,
             "agencia": c.agencia,

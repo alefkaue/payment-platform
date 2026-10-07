@@ -26,11 +26,13 @@ const REGIMES: Record<Regime, { fator: number; rotulo: string }> = {
 const brl = (n: number) =>
   Number(n || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-function Wordmark({ cor }: { cor?: string }) {
+function Wordmark({ claro }: { claro?: boolean }) {
   return (
-    <span className="wordmark" style={cor ? { color: cor } : undefined}>
-      payfl<span className="ball" />w
-    </span>
+    <img
+      className="wordmark"
+      src={claro ? "/logo-astro-branco.svg" : "/logo-astro-preto.svg"}
+      alt="Astro"
+    />
   );
 }
 
@@ -286,7 +288,7 @@ export default function Home() {
           </h2>
           <p className="lead reveal" style={{ marginBottom: 32, maxWidth: "60ch" }}>
             Montadoras, autopeças e indústria acumulam crédito de IBS/CBS nas compras de insumo. O
-            PayFlow separa o imposto de cada venda pela nota e mostra os créditos que entram na
+            Astro separa o imposto de cada venda pela nota e mostra os créditos que entram na
             apuração — preparado para o split da LC 214/2025.
           </p>
           <div className="grid-3">
@@ -377,7 +379,7 @@ export default function Home() {
             <h2 className="h-sec" style={{ color: "var(--onp)" }}>
               Pronto para o imposto certo, no ato?
             </h2>
-            <p className="lead" style={{ color: "#c2bfb6", marginTop: 14 }}>
+            <p className="lead" style={{ color: "#8c8c8c", marginTop: 14 }}>
               Abra sua conta de pessoa ou empresa e receba já líquido.
             </p>
             <a className="btn btn-gold" style={{ marginTop: 24 }} href="#">
@@ -393,7 +395,7 @@ export default function Home() {
           style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}
         >
           <Wordmark />
-          <span>© {new Date().getFullYear()} PayFlow · Split de IBS/CBS · Projeto acadêmico</span>
+          <span>© {new Date().getFullYear()} Astro · Split de IBS/CBS · Projeto acadêmico</span>
         </div>
       </footer>
     </>

@@ -11,7 +11,7 @@ import { ErrorBox, SplitBar, ValueRow } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
 
 export const Route = createFileRoute("/_app/loja/$id")({
-  head: () => ({ meta: [{ title: "Produto — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Produto — Astro" }] }),
   component: ProdutoDetalhe,
 });
 
@@ -95,7 +95,7 @@ function ProdutoDetalhe() {
               Vigência {split.vigencia} · imposto {fmtBRL(split.imposto_total)} retido no ato da
               compra.
             </p>
-            <p className="mt-2 flex items-center gap-1.5 text-sm text-marca">
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-ink">
               <Sparkles size={14} /> Você ganha {fmtPontos(pontosDaCompra(p.preco))} pontos nesta
               compra.
             </p>

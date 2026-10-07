@@ -1,4 +1,4 @@
-name: Build APK (PayFlow)
+name: Build APK (Astro)
 
 # Gera o .apk do app (Capacitor) na nuvem — sem Android SDK local e sem Expo.
 # O APK sai como "artefato" da execução (aba Actions do GitHub).
@@ -53,7 +53,7 @@ jobs:
           rm -rf android/app/src/main/assets/public
           mkdir -p android/app/src/main/assets/public
           cp -r www/. android/app/src/main/assets/public/
-          printf '%s' '{"appId":"com.payflow.app","appName":"PayFlow","webDir":"www","backgroundColor":"#141414"}' > android/app/src/main/assets/capacitor.config.json
+          printf '%s' '{"appId":"com.payflow.app","appName":"Astro","webDir":"www","backgroundColor":"#0A0A0A"}' > android/app/src/main/assets/capacitor.config.json
           echo "conteúdo de assets/public:" && ls android/app/src/main/assets/public | head
 
       - name: Gerar APK de debug
@@ -73,6 +73,6 @@ jobs:
       - name: Publicar o APK como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: PayFlow-debug-apk
+          name: Astro-debug-apk
           path: app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

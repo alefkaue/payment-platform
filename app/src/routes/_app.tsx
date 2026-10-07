@@ -52,7 +52,7 @@ function AppLayout() {
             >
               <Bell size={18} />
               {naoLidasN > 0 && (
-                <span className="absolute right-2 top-2 grid h-4 min-w-4 place-items-center rounded-full bg-marca px-1 text-[10px] font-bold text-ink">
+                <span className="absolute right-2 top-2 grid h-4 min-w-4 place-items-center rounded-full bg-ink px-1 text-[10px] font-bold text-ink-foreground">
                   {naoLidasN}
                 </span>
               )}
@@ -133,7 +133,7 @@ function MaisDrawer({
       <div className="absolute bottom-0 left-1/2 max-h-[85vh] w-full max-w-[460px] -translate-x-1/2 overflow-y-auto rounded-t-[26px] bg-background p-5 pb-8 shadow-lift enter">
         <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-line2" />
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-ink">Mais no PayFlow</h2>
+          <h2 className="text-lg font-semibold text-ink">Mais na Astro</h2>
           <button
             onClick={onFechar}
             aria-label="Fechar"
@@ -153,7 +153,7 @@ function MaisDrawer({
                 <span className="relative grid h-10 w-10 shrink-0 place-items-center rounded-full bg-tint text-ink">
                   <Icon size={19} />
                   {to === "/notificacoes" && naoLidas > 0 && (
-                    <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-marca px-1 text-[10px] font-bold text-ink">
+                    <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-ink px-1 text-[10px] font-bold text-ink-foreground">
                       {naoLidas}
                     </span>
                   )}

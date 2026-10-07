@@ -86,7 +86,7 @@ def adicionar_vinculo(repo: Repositorio, *, conta: dict, autor: dict, email: str
                       alcada: Decimal | None, ip: str | None) -> dict:
     pessoa = repo.obter_usuario_por_email(email)
     if not pessoa or not pessoa.get("cpf"):
-        raise HTTPException(status_code=404, detail="Não há pessoa com conta PayFlow nesse e-mail. Ela precisa se cadastrar primeiro.")
+        raise HTTPException(status_code=404, detail="Não há pessoa com conta Astro nesse e-mail. Ela precisa se cadastrar primeiro.")
     if pessoa["id"] == autor["id"] and papel != PapelVinculo.ADMIN and repo.contar_admins_ativos(conta["empresa_id"]) <= 1:
         raise HTTPException(status_code=400, detail="A empresa precisa de pelo menos um administrador.")
     v = repo.criar_ou_atualizar_vinculo(empresa_id=conta["empresa_id"], usuario_id=pessoa["id"], papel=papel, alcada=alcada)

@@ -11,7 +11,7 @@ import { Empty, ErrorBox, Field, PageTitle, TxSkeleton } from "@/components/payf
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/equipe")({
-  head: () => ({ meta: [{ title: "Equipe & alçadas — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Equipe & alçadas — Astro" }] }),
   component: Equipe,
 });
 

@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/ajuda")({
-  head: () => ({ meta: [{ title: "Ajuda — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Ajuda — Astro" }] }),
   component: Ajuda,
 });
 
@@ -48,7 +48,7 @@ function Ajuda() {
       {/* Canais */}
       <div className="grid gap-3 sm:grid-cols-3">
         <Canal icon={<MessageCircle size={20} />} titulo="Chat" desc="Resposta em minutos" />
-        <Canal icon={<Mail size={20} />} titulo="E-mail" desc="ajuda@payflow.com.br" />
+        <Canal icon={<Mail size={20} />} titulo="E-mail" desc="ajuda@astro.com.br" />
         <Canal icon={<LifeBuoy size={20} />} titulo="Central 24h" desc="0800 000 0000" />
       </div>
 

@@ -19,7 +19,7 @@ import { Empty, ErrorBox, PageTitle, TxSkeleton } from "@/components/payflow/ui"
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/notificacoes")({
-  head: () => ({ meta: [{ title: "Notificações — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Notificações — Astro" }] }),
   component: Notificacoes,
 });
 
@@ -87,7 +87,7 @@ function Item({ n, nova }: { n: Notificacao; nova: boolean }) {
       >
         <Icon size={18} />
         {nova && (
-          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-marca ring-2 ring-card" />
+          <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-ink ring-2 ring-card" />
         )}
       </span>
       <div className="min-w-0 flex-1">

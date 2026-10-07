@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/_app/split")({
   head: () => ({
     meta: [
-      { title: "Entenda o split — PayFlow" },
+      { title: "Entenda o split — Astro" },
       {
         name: "description",
         content: "O imposto da Reforma Tributária (IBS/CBS) separado no ato da venda.",
@@ -160,14 +160,14 @@ function Cronograma() {
               <div
                 className={cn(
                   "flex h-full items-center justify-end rounded-full px-2 transition-all",
-                  atual ? "bg-marca" : "bg-ink/80",
+                  atual ? "bg-ink" : "bg-line2",
                 )}
                 style={{ width: `${Math.max((total / max) * 100, 12)}%` }}
               >
                 <span
                   className={cn(
                     "text-[11px] font-semibold tabular",
-                    atual ? "text-ink" : "text-ink-foreground",
+                    atual ? "text-ink-foreground" : "text-ink",
                   )}
                 >
                   {pct(total)}

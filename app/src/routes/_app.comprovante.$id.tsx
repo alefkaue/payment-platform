@@ -9,7 +9,7 @@ import { ErrorBox, SplitBar, ValueRow } from "@/components/payflow/ui";
 export const Route = createFileRoute("/_app/comprovante/$id")({
   head: () => ({
     meta: [
-      { title: "Comprovante — PayFlow" },
+      { title: "Comprovante — Astro" },
       { name: "description", content: "Comprovante com detalhamento do split." },
     ],
   }),
@@ -32,7 +32,7 @@ const AUTH: Record<string, string> = {
   selfie: "verificação facial",
   aprovacao: "aprovação de outra pessoa da empresa",
   automatico: "Pix Automático (autorização prévia)",
-  sistema: "PayFlow",
+  sistema: "Astro",
 };
 
 function Comprovante() {

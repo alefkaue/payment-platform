@@ -48,7 +48,7 @@ def _preparar():
                        settings.admin_email)
     repo.garantir_admin(email=settings.admin_email, senha_hash=hash_senha(senha_admin))
     beneficios_service.garantir_catalogo(repo)
-    logger.info("PayFlow pronto -- banco: %s | ano do simulador de split: %s",
+    logger.info("Astro pronto -- banco: %s | ano do simulador de split: %s",
                 "postgres" if usando_postgres() else "sqlite", split_service.ano_padrao())
 
 
@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="PayFlow", version="7.0", lifespan=lifespan)
+app = FastAPI(title="Astro", version="7.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

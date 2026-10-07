@@ -10,7 +10,7 @@ import { Empty, ErrorBox, PageTitle, ProdutoCard } from "@/components/payflow/ui
 export const Route = createFileRoute("/_app/loja")({
   head: () => ({
     meta: [
-      { title: "Loja — PayFlow" },
+      { title: "Loja — Astro" },
       { name: "description", content: "Compre de lojistas parceiros pagando direto do seu saldo." },
     ],
   }),

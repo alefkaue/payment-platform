@@ -1,5 +1,5 @@
 /**
- * Cliente HTTP do backend PayFlow (FastAPI v7).
+ * Cliente HTTP do backend Astro (FastAPI v7).
  *
  * - Ligado quando `VITE_API_URL` está definida (ex.: http://localhost:8000).
  *   Sem ela, o app roda no modo demonstração (mocks em src/mocks/data.ts).

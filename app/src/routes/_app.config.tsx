@@ -37,7 +37,7 @@ import { LivenessCheck } from "@/components/payflow/liveness";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/config")({
-  head: () => ({ meta: [{ title: "Configurações — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Configurações — Astro" }] }),
   component: Config,
 });
 
@@ -353,7 +353,7 @@ export function CartaoSection() {
         )}
       >
         <div className="flex items-start justify-between">
-          <span className="text-sm opacity-70">PayFlow</span>
+          <span className="text-sm opacity-70">Astro</span>
           <CreditCard size={22} className="opacity-80" />
         </div>
         <p className="tabular mt-8 text-xl tracking-[0.18em]">

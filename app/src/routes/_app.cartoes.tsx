@@ -5,7 +5,7 @@ import { PageTitle } from "@/components/payflow/ui";
 import { CartaoSection } from "./_app.config";
 
 export const Route = createFileRoute("/_app/cartoes")({
-  head: () => ({ meta: [{ title: "Cartões — PayFlow" }] }),
+  head: () => ({ meta: [{ title: "Cartões — Astro" }] }),
   component: Cartoes,
 });
 

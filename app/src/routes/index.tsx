@@ -4,9 +4,9 @@ import { useAuth } from "@/lib/auth";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "PayFlow" },
-      { name: "description", content: "Acesse sua conta PayFlow." },
-      { property: "og:title", content: "PayFlow" },
+      { title: "Astro" },
+      { name: "description", content: "Acesse sua conta Astro." },
+      { property: "og:title", content: "Astro" },
       { property: "og:description", content: "Pagamentos com split automático de IBS/CBS." },
     ],
   }),

@@ -12,12 +12,12 @@ import { LivenessCheck } from "@/components/payflow/liveness";
 export const Route = createFileRoute("/_app/transferir")({
   head: () => ({
     meta: [
-      { title: "Transferir — PayFlow" },
+      { title: "Transferir — Astro" },
       {
         name: "description",
         content: "Pix por chave ou conta, com verificação facial em valores altos.",
       },
-      { property: "og:title", content: "Transferir — PayFlow" },
+      { property: "og:title", content: "Transferir — Astro" },
       { property: "og:description", content: "Pix por chave ou conta." },
     ],
   }),

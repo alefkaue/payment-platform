@@ -1,15 +1,16 @@
-# PayFlow — Handoff (para continuar o trabalho)
+# Astro (ex-PayFlow) — Handoff (para continuar o trabalho)
 
 Documento de passagem de bastão: o que já foi feito, como rodar, as decisões
 tomadas e **o que falta**. Complementa o `PLANO.md` (plano de produto).
-Última atualização: 2026-10-07 (sprint de front: app phone-shaped, páginas novas,
-split explicado, home PF reformulada — ver §10).
+Última atualização: 2026-10-07 (rebrand PayFlow → **Astro**: nome, logo, cores,
+ícones e fotos da tela inicial — ver §11; antes: sprint de front, ver §10).
 
 ---
 
 ## 1. O que é o projeto
 
-**PayFlow** — banco digital brasileiro cujo diferencial é o **split de IBS/CBS da
+**Astro** (antes chamado **PayFlow**; os identificadores internos ainda usam
+`payflow`, ver §11) — banco digital brasileiro cujo diferencial é o **split de IBS/CBS da
 Reforma Tributária** resolvido no ato do pagamento. Foco de venda: **empresas**
 (split + créditos tributários), mas também atende **PF**. Vai ser apresentado para
 Mercedes e Scania.
@@ -63,6 +64,9 @@ Expand-Archive node.zip -DestinationPath .
 $env:Path = "$env:USERPROFILE\node-v22.20.0-win-x64;$env:Path"   # vale só nesta janela
 node --version
 ```
+
+Se o PowerShell bloquear o `npm`/`npx` (política de scripts do PC da faculdade),
+use `npm.cmd` / `npx.cmd`, ou rode pelo Git Bash.
 
 Python: o `py`/`python` do Windows já existe nos PCs da faculdade; o venv
 (`python -m venv .venv`) também não precisa de admin.
@@ -213,7 +217,7 @@ sem mudar a estrutura nem a ideia do app.
 
 ## 5. App (front) — estado
 
-- Identidade preto/branco + dourado (`--marca` em `app/src/styles.css`).
+- Identidade **Astro**: só preto, branco e cinzas (tokens em `app/src/styles.css`); ver §11.
 - **Camada de dados com dois modos** (`src/lib/http.ts` + `src/lib/api.ts`):
   API real quando `VITE_API_URL` existe; mocks (`src/mocks/data.ts`) quando não.
   Os mocks seguem as mesmas regras do backend. O cliente HTTP manda
@@ -300,7 +304,7 @@ Ordem de criticidade combinada com o time. ✅ feito · 🟡 parcial · ⬜ falt
 ## 7. O .apk — estado
 
 App é **Capacitor (web)**, não Expo — o token da Expo não serve. Build na nuvem
-via `.github/workflows/android.yml` (artefato `PayFlow-debug-apk`).
+via `.github/workflows/android.yml` (artefato `Astro-debug-apk`).
 
 Mudanças de 2026-10-06 (não verificadas, porque o CI roda no GitHub):
 - **JDK 17 → 21** e **Node 20 → 22** no workflow: Capacitor 7+ e AGP 8.13 exigem JDK 21.
@@ -392,3 +396,42 @@ Como bancos (C6, Itaú, Cora, Inter) abrem conta PJ — base para melhorar o
 3. **Onboarding PJ** com os documentos da §10.4 (contrato social/CCMEI, endereço,
    beneficiário final).
 4. Toggle de tema, selo FGC e rodapé legal.
+
+---
+
+## 11. Rebrand PayFlow → Astro (2026-10-07)
+
+Fonte: `astro-identidade.zip` (logo, símbolo Eclipse, favicons, ícones e o guia
+`PROMPT.md`). Escopo combinado: **só nome, logo e cores**, sem mexer no layout.
+
+- **Cores** (`app/src/styles.css`): tokens `--astro-black` `#0A0A0A`,
+  `--astro-white`, `--gray-900…100`. Os tokens antigos (`--ink`, `--tint`,
+  `--line2`, `--taxt`, `--ocre`…) continuam com os mesmos nomes, agora apontando para a
+  paleta Astro, por isso as telas não precisaram mudar. Dourado removido:
+  `--ocre` (fatia do imposto) virou cinza; `--marca` virou **branco** e só deve ser
+  usado sobre superfície escura (CTA da boas-vindas, pontos no cartão de saldo,
+  bandeira do cartão, liveness). Em fundo claro use `ink`. Cores funcionais só para
+  status: sucesso `#1F9D55` (`--pos`), erro `#D93025` (`--errt`), pendente `#B7791F`
+  (`--pending`, novo).
+- **Logo**: `Wordmark` (`components/payflow/ui.tsx`) agora é o SVG oficial "ASTRO"
+  (preto ou `tone="light"` branco). Nunca recriar com fonte nem colorir.
+- **Ícones**: favicons em `app/public` (svg, ico, apple-touch, 192/512); Android:
+  `ic_launcher*`, adaptive icon (Eclipse branco em `#0A0A0A`) e splash com o logo vertical.
+- **Nome**: "PayFlow" → "Astro" em títulos, textos, mocks, Android `app_name`,
+  Capacitor `appName`, workflow do APK, site (`site/`) e mensagens do backend que
+  aparecem na tela (ex.: "Astro Viagens").
+- **Fotos da boas-vindas** (`app/public/welcome/*.jpg`, 900×1600): trocadas por
+  fotos do Unsplash (licença Unsplash) com cara de pagamento: `pf` = SumUp
+  6lvK6gHkhAA, `pj` = SumUp AAYpF9Vx7Ek, `vida` = Vitaly Gariev EKMZrbKJMo0.
+  As duas da SumUp mostram a marca deles discretamente.
+- **Moldura de celular**: login e criar-conta agora usam a mesma coluna de
+  460px sobre fundo preto do `_app` e da boas-vindas.
+
+**Mantido de propósito (não trocar sem combinar):** `appId com.payflow.app` (trocar
+quebra a atualização do APK instalado), chaves de sessão `payflow-*` (trocar
+desloga todo mundo), banco `payflow`/`payflow.db`, pasta `components/payflow`,
+cabeçalhos de webhook `X-PayFlow-*` (contrato com o ERP). Bancos já populados
+continuam com "PayFlow Viagens" até recriar o seed.
+
+**Pendente do guia da marca (fora do escopo combinado):** tema escuro como padrão,
+fontes Unbounded nos títulos, botões em pílula e Eclipse girando como loading.
