@@ -433,5 +433,19 @@ desloga todo mundo), banco `payflow`/`payflow.db`, pasta `components/payflow`,
 cabeçalhos de webhook `X-PayFlow-*` (contrato com o ERP). Bancos já populados
 continuam com "PayFlow Viagens" até recriar o seed.
 
-**Pendente do guia da marca (fora do escopo combinado):** tema escuro como padrão,
-fontes Unbounded nos títulos, botões em pílula e Eclipse girando como loading.
+**Pendente do guia da marca no app (fora do escopo combinado):** tema escuro como
+padrão, fontes Unbounded nos títulos, botões em pílula e Eclipse girando como loading.
+
+### 11.1 Site (`site/`) refeito no visual Astro completo
+
+Diferente do app, o site seguiu o guia inteiro (`PROMPT.md` do zip), mantendo
+textos, seções e a calculadora:
+- Tema **escuro por padrão**, claro como alternativa (botão sol/lua; salvo em
+  `localStorage` `astro-tema`, aplicado antes da pintura por um script em `layout.tsx`).
+- Tokens num lugar só (`site/app/globals.css`): `--astro-*`, `--gray-*` e os
+  semânticos `--bg`, `--surface`, `--line`, `--text`, `--text-2`, `--primary-*`.
+- Unbounded (títulos/valores) + Instrument Sans; rótulos 12px caixa alta 0.12em.
+- Botões pílula, campos 52px/raio 14, cards raio 24 sem sombra, chips Pessoa/Empresa.
+- Ícones de traço 1,5px inline (sem emoji); logo e Eclipse inline via SVG oficial.
+- Foto do hero em P&B com faixa sólida por cima; status "Pago" com ponto verde.
+- Rodar: `cd site && npx next dev` (Node portátil, ver §3). `npx next build` verde.
