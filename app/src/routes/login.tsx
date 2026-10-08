@@ -1,8 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Fingerprint, ScanFace, ShieldCheck } from "lucide-react";
+import { Fingerprint, ScanFace } from "lucide-react";
 import { aparelhoAtual, confiarAparelho, login, loginBiometria, MODO_API } from "@/lib/api";
-import { authPorConta } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
 import type { LoginResposta } from "@/lib/types";
 import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
@@ -150,48 +149,24 @@ function Login() {
               <span className="h-px flex-1 bg-line2" /> ou <span className="h-px flex-1 bg-line2" />
             </div>
 
-            {(() => {
-              const auth = authPorConta(email);
-              const cert = auth.metodo === "certificado";
-              return (
-                <>
-                  <button
-                    type="button"
-                    disabled={loading !== null}
-                    onClick={() => {
-                      setErro(null);
-                      if (cert) {
-                        if (MODO_API)
-                          return setErro(
-                            "O acesso com certificado e-CNPJ ainda não está integrado ao banco. Entre com o e-mail ou CPF de quem opera a empresa.",
-                          );
-                        void entrarCom(
-                          { email: email || "voce@email.com", senha: "certificado" },
-                          "bio",
-                        );
-                        return;
-                      }
-                      if (MODO_API && !email)
-                        return setErro("Digite seu e-mail ou CPF para entrar com biometria.");
-                      setLiveness("entrar");
-                    }}
-                    className="btn btn-ghost w-full gap-2"
-                  >
-                    {cert ? <ShieldCheck size={20} /> : <Fingerprint size={20} />}
-                    {loading === "bio"
-                      ? "Autenticando…"
-                      : cert
-                        ? "Entrar com certificado digital"
-                        : "Entrar com biometria"}
-                  </button>
-                  <p className="mt-2 text-center text-xs text-mut3">
-                    {cert
-                      ? "Conta empresa: acesso por e-CNPJ (ICP-Brasil) + token. MEI usa biometria."
-                      : "Reconhecimento facial do titular."}
-                  </p>
-                </>
-              );
-            })()}
+            <button
+              type="button"
+              disabled={loading !== null}
+              onClick={() => {
+                setErro(null);
+                if (MODO_API && !email)
+                  return setErro("Digite seu e-mail ou CPF para entrar com biometria.");
+                setLiveness("entrar");
+              }}
+              className="btn btn-ghost w-full gap-2"
+            >
+              <Fingerprint size={20} />
+              {loading === "bio" ? "Autenticando…" : "Entrar com biometria"}
+            </button>
+            <p className="mt-2 text-center text-xs text-mut3">
+              Reconhecimento facial da pessoa. Na conta empresa, cada usuário entra com o próprio
+              rosto; o papel e a alçada definem o que ele pode fazer.
+            </p>
 
             <p className="mt-auto pt-7 text-center text-sm text-muted-foreground md:mt-7">
               Novo por aqui?{" "}

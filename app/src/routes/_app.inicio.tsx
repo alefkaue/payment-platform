@@ -423,7 +423,6 @@ function AcessoCard({ conta }: { conta: Conta | undefined }) {
   const { conta: sessao } = useAuth();
   const porte = conta?.porte ?? "GRANDE";
   const perfil = PORTES[porte];
-  const cert = perfil.metodo === "certificado";
   return (
     <section className="surface p-6">
       <div className="flex items-center gap-3">
@@ -432,9 +431,7 @@ function AcessoCard({ conta }: { conta: Conta | undefined }) {
         </span>
         <div className="min-w-0">
           <h2 className="text-lg text-ink">Acesso & assinaturas</h2>
-          <p className="text-xs text-mut3">
-            {cert ? "Certificado digital e-CNPJ (ICP-Brasil)" : "Biometria do titular (MEI)"}
-          </p>
+          <p className="text-xs text-mut3">Biometria facial por pessoa · papéis e alçadas</p>
         </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
