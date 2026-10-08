@@ -1,0 +1,17 @@
+# Dependências do backend de DEMONSTRAÇÃO (deploy gratuito, ex.: Render).
+# Igual ao requirements.txt, mas SEM DeepFace/TensorFlow/OpenCV: a biometria roda
+# em modo teste (BIOMETRIA_STUB=1), que não importa o modelo de visão.
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+email-validator==2.2.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+PyJWT==2.9.0
+cryptography>=43.0.0
+sqlalchemy>=2.0.30
+psycopg2-binary>=2.9.9
+python-dotenv>=1.0.1
+alembic>=1.13.2
+httpx>=0.27.0

@@ -11,8 +11,9 @@ import {
   KeyRound,
   QrCode,
   SlidersHorizontal,
+  Trash2,
 } from "lucide-react";
-import { criarChave, minhasChaves } from "@/lib/api";
+import { criarChave, minhasChaves, removerChave } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { Empty, ErrorBox, PageTitle } from "@/components/payflow/ui";
 import { cn } from "@/lib/utils";
@@ -192,13 +193,31 @@ function Receber({ ehPJ }: { ehPJ: boolean }) {
 function Chaves({ ehPJ }: { ehPJ: boolean }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["chaves"], queryFn: minhasChaves });
+  // Campo aberto para digitar a chave (e-mail ou celular); null = nenhum.
+  const [digitando, setDigitando] = useState<null | "email" | "celular">(null);
+  const [valor, setValor] = useState("");
   const mut = useMutation({
-    mutationFn: (tipo: string) => criarChave(tipo),
+    mutationFn: (v: { tipo: string; valor?: string }) => criarChave(v.tipo, v.valor),
+    onSuccess: () => {
+      setDigitando(null);
+      setValor("");
+      void qc.invalidateQueries({ queryKey: ["chaves"] });
+    },
+  });
+  const rem = useMutation({
+    mutationFn: (id: number) => removerChave(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["chaves"] }),
   });
   const tipoDoc = ehPJ ? "cnpj" : "cpf";
   const temDoc = q.data?.some((k) => k.tipo === tipoDoc);
   const limite = ehPJ ? 20 : 5;
+  const cheio = (q.data?.length ?? 0) >= limite;
+
+  function abrir(tipo: "email" | "celular") {
+    mut.reset();
+    setValor("");
+    setDigitando((atual) => (atual === tipo ? null : tipo));
+  }
 
   return (
     <section className="surface p-5">
@@ -221,13 +240,23 @@ function Chaves({ ehPJ }: { ehPJ: boolean }) {
         <ul className="mt-3 divide-y divide-border">
           {q.data.map((k) => (
             <li key={k.id} className="flex items-center justify-between gap-3 py-3">
-              <span className="flex items-center gap-2 text-sm text-mut2">
+              <span className="flex shrink-0 items-center gap-2 text-sm text-mut2">
                 <span className="grid h-8 w-8 place-items-center rounded-full bg-tint text-ink">
                   <KeyRound size={15} />
                 </span>
                 {ROTULO_CHAVE[k.tipo] ?? k.tipo}
               </span>
-              <span className="truncate font-mono text-xs text-ink">{k.valor}</span>
+              <span className="min-w-0 flex-1 truncate text-right font-mono text-xs text-ink">
+                {k.valor}
+              </span>
+              <button
+                className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-mut3 transition hover:bg-tint hover:text-err"
+                aria-label={`Excluir chave ${ROTULO_CHAVE[k.tipo] ?? k.tipo}`}
+                disabled={rem.isPending}
+                onClick={() => rem.mutate(k.id)}
+              >
+                <Trash2 size={15} />
+              </button>
             </li>
           ))}
         </ul>
@@ -235,34 +264,73 @@ function Chaves({ ehPJ }: { ehPJ: boolean }) {
         <Empty title="Nenhuma chave ainda" hint="Crie uma chave para receber Pix." />
       )}
 
-      <div className="mt-4 flex flex-wrap gap-2">
-        {!temDoc && (
+      {!cheio && (
+        <div className="mt-4 flex flex-wrap gap-2">
+          {!temDoc && (
+            <button
+              className="btn btn-ghost h-9 text-sm"
+              disabled={mut.isPending}
+              onClick={() => mut.mutate({ tipo: tipoDoc })}
+            >
+              Usar meu {ehPJ ? "CNPJ" : "CPF"}
+            </button>
+          )}
+          <button
+            className={cn("btn btn-ghost h-9 text-sm", digitando === "email" && "border-ink")}
+            disabled={mut.isPending}
+            onClick={() => abrir("email")}
+          >
+            Cadastrar e-mail
+          </button>
+          <button
+            className={cn("btn btn-ghost h-9 text-sm", digitando === "celular" && "border-ink")}
+            disabled={mut.isPending}
+            onClick={() => abrir("celular")}
+          >
+            Cadastrar celular
+          </button>
           <button
             className="btn btn-ghost h-9 text-sm"
             disabled={mut.isPending}
-            onClick={() => mut.mutate(tipoDoc)}
+            onClick={() => mut.mutate({ tipo: "aleatoria" })}
           >
-            Usar meu {ehPJ ? "CNPJ" : "CPF"}
+            Criar chave aleatória
           </button>
-        )}
-        <button
-          className="btn btn-ghost h-9 text-sm"
-          disabled={mut.isPending}
-          onClick={() => mut.mutate("email")}
+        </div>
+      )}
+
+      {digitando && !cheio && (
+        <form
+          className="mt-3 flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            mut.mutate({ tipo: digitando, valor: valor.trim() });
+          }}
         >
-          Cadastrar e-mail
-        </button>
-        <button
-          className="btn btn-ghost h-9 text-sm"
-          disabled={mut.isPending}
-          onClick={() => mut.mutate("aleatoria")}
-        >
-          Criar chave aleatória
-        </button>
-      </div>
-      {mut.isError && (
+          <input
+            autoFocus
+            className="field flex-1"
+            type={digitando === "email" ? "email" : "tel"}
+            inputMode={digitando === "email" ? "email" : "tel"}
+            placeholder={digitando === "email" ? "seu@email.com" : "(11) 98765-4321"}
+            aria-label={digitando === "email" ? "E-mail da chave" : "Celular da chave"}
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+          />
+          <button className="btn btn-ink px-5" disabled={!valor.trim() || mut.isPending}>
+            {mut.isPending ? "Salvando…" : "Salvar"}
+          </button>
+        </form>
+      )}
+
+      {cheio && (
+        <p className="mt-4 text-sm text-mut3">
+          Limite de {limite} chaves atingido. Exclua uma para cadastrar outra.
+        </p>
+      )}
+      {(mut.isError || rem.isError) && (
         <div className="mt-3">
-          <ErrorBox>{(mut.error as Error).message}</ErrorBox>
+          <ErrorBox>{((mut.error ?? rem.error) as Error).message}</ErrorBox>
         </div>
       )}
     </section>

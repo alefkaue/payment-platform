@@ -1,9 +1,8 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Check } from "lucide-react";
-import { depositar, MODO_API } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { depositar } from "@/lib/api";
 import { fmtBRL, parseValor } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { ErrorBox, Field, PageTitle } from "@/components/payflow/ui";
@@ -15,41 +14,13 @@ export const Route = createFileRoute("/_app/depositar")({
 
 const ATALHOS = [50, 100, 250, 500];
 
+/**
+ * Depósito: no modo demonstração e num servidor de demonstração (DEPOSITO_DEMO=1)
+ * o dinheiro de teste entra na hora. Num servidor real o backend recusa e a
+ * mensagem explica que o dinheiro entra por Pix para uma chave da conta.
+ */
 function Depositar() {
-  return MODO_API ? <ReceberPorPix /> : <DepositoDemo />;
-}
-
-/** Modo API: dinheiro entra por Pix para uma chave ou para agência/conta. */
-function ReceberPorPix() {
-  const { conta } = useAuth();
-  return (
-    <div className="enter mx-auto max-w-md">
-      <PageTitle sub="Faça um Pix de outro banco para a sua conta Astro.">
-        Colocar dinheiro
-      </PageTitle>
-      <section className="surface space-y-3 p-5 md:p-7 text-sm">
-        <div className="flex justify-between">
-          <span className="text-mut3">Banco</span>
-          <span className="font-medium text-ink">Astro</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-mut3">Agência</span>
-          <span className="tabular font-medium text-ink">{conta?.agencia ?? "0001"}</span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-mut3">Conta</span>
-          <span className="tabular font-medium text-ink">{conta?.numero ?? "—"}</span>
-        </div>
-        <p className="rounded-[14px] bg-tint px-4 py-3 text-mut2">
-          Prefere chave Pix? Crie uma em{" "}
-          <Link to="/config" className="font-semibold text-ink underline underline-offset-4">
-            Configurações
-          </Link>
-          .
-        </p>
-      </section>
-    </div>
-  );
+  return <DepositoDemo />;
 }
 
 function DepositoDemo() {

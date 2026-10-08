@@ -449,3 +449,36 @@ textos, seções e a calculadora:
 - Ícones de traço 1,5px inline (sem emoji); logo e Eclipse inline via SVG oficial.
 - Foto do hero em P&B com faixa sólida por cima; status "Pago" com ponto verde.
 - Rodar: `cd site && npx next dev` (Node portátil, ver §3). `npx next build` verde.
+
+---
+
+## 12. Pix entre contas, modo demonstração e backend de demonstração (2026-10-08)
+
+**Correções no app** (valem para os dois modos):
+- Perfil mostrava e-mail/CPF/celular fixos (`marina@email.com`): agora vem da pessoa
+  logada (`pessoa` em `LoginResposta`/`useAuth`, lida de `/auth/eu` no modo API).
+- Pix → Minhas chaves: "Cadastrar e-mail" mandava sem e-mail (backend respondia
+  "E-mail inválido"). Agora há campo para e-mail e celular, e botão de excluir chave.
+- Depositar: no modo API chama `POST /pagamentos/depositar-demo` (só existe com
+  `DEPOSITO_DEMO=1`); num servidor real a tela explica que o dinheiro entra por Pix.
+
+**Modo demonstração** (`src/mocks/banco.ts`): pessoas, contas, chaves e transações
+ficam no `localStorage` (`astro-demo-banco`), com as regras de chave do backend.
+Cada pessoa entra na própria conta com a própria senha; e-mail desconhecido cai na
+Marina (roteiro da apresentação). Conta nova começa vazia (sem dados da Rodoforte).
+**Limite:** os dados são do navegador — Pix entre aparelhos diferentes exige o backend.
+
+**Backend de demonstração** (Pix entre celular e notebook):
+- `Dockerfile` (raiz) + `backend/requirements-demo.txt` + `backend/entrypoint-demo.sh`:
+  sem TensorFlow, `BIOMETRIA_STUB=1`, `CNPJ_PROVEDOR=stub`, `DEPOSITO_DEMO=1` e CORS
+  para `https://*.netlify.app` (`CORS_ORIGIN_REGEX`, novo). Segredos não vão para o
+  git: são derivados do `DATABASE_URL` no boot.
+- `render.yaml`: API + Postgres grátis no Render. Sem Blueprint: New → Postgres (free),
+  depois New → Web Service → Public Git Repository → este repo, branch `main`,
+  Docker, e a variável `DATABASE_URL` = Internal Database URL do Postgres.
+- App/apresentação: build com `VITE_API_URL=<url do Render>` e publicar no Netlify.
+  O plano grátis dorme após 15 min: abra a URL da API ~1 min antes de apresentar.
+
+Testes: backend 108 (novos `test_pix_chaves.py`, `test_deposito_demo.py`); app
+`src/lib/demo.test.ts` (cadastro, login, chaves, Pix entre contas, conta nova vazia).
+

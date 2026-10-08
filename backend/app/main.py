@@ -63,6 +63,7 @@ app = FastAPI(title="Astro", version="7.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_lista,
+    allow_origin_regex=settings.cors_origin_regex or None,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Conta", "X-Dispositivo-Id"],
     allow_credentials=True,

@@ -21,6 +21,10 @@ export const BANCO_CARTEIRA = 0;
 
 let nextId = 500;
 export const genId = () => ++nextId;
+/** Garante que ids novos não colidam com os já guardados no banco demo (localStorage). */
+export function reservarIds(maior: number) {
+  if (maior > nextId) nextId = maior;
+}
 
 // --- Contas de demonstração -------------------------------------------------
 // A mesma pessoa (Marina) opera a conta pessoal e a empresa (é admin dela):

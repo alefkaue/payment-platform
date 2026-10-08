@@ -13,7 +13,7 @@ export const Route = createFileRoute("/_app/perfil")({
 });
 
 function Perfil() {
-  const { conta: sessao, sair } = useAuth();
+  const { conta: sessao, pessoa, sair } = useAuth();
   const nav = useNavigate();
   const conta = useQuery({ queryKey: ["conta", sessao?.numero], queryFn: minhaConta });
   const aparelho = useQuery({ queryKey: ["aparelho"], queryFn: aparelhoAtual });
@@ -62,9 +62,8 @@ function Perfil() {
             </>
           ) : (
             <>
-              <Dado label="CPF" valor="•••.•••.789-00" />
-              <Dado label="E-mail" valor="marina@email.com" />
-              <Dado label="Celular" valor="(11) 9 ••••-4521" />
+              <Dado label="CPF" valor={mascararCpf(pessoa?.cpf)} />
+              <Dado label="E-mail" valor={pessoa?.email ?? "—"} />
             </>
           )}
           <Dado label="Agência / conta" valor={`${c?.agencia ?? "0001"} / ${c?.numero ?? "—"}`} />
@@ -110,6 +109,12 @@ function Perfil() {
       </button>
     </div>
   );
+}
+
+/** CPF mascarado como no Pix: •••.456.789-•• */
+function mascararCpf(cpf?: string): string {
+  const d = (cpf ?? "").replace(/\D/g, "");
+  return d.length === 11 ? `•••.${d.slice(3, 6)}.${d.slice(6, 9)}-••` : "—";
 }
 
 function Dado({ label, valor }: { label: string; valor: string }) {

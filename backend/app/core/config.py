@@ -123,6 +123,14 @@ class Settings(BaseSettings):
         default="http://localhost:8081,http://localhost:8080,http://localhost:3000",
         alias="CORS_ORIGINS",
     )
+    # Regex opcional de origins (ex.: "https://.*\.netlify\.app" para o deploy de demonstração,
+    # cujo subdomínio muda a cada site). Vazio = só a lista acima.
+    cors_origin_regex: str | None = Field(default=None, alias="CORS_ORIGIN_REGEX")
+
+    # ---------- Demonstração ----------
+    # Libera POST /pagamentos/depositar-demo: a própria pessoa coloca dinheiro de
+    # mentira na conta para testar Pix. Recusado em produção (ver get_settings).
+    deposito_demo: bool = Field(default=False, alias="DEPOSITO_DEMO")
 
     # ---------- Ambiente ----------
     ambiente: str = Field(default="desenvolvimento", alias="AMBIENTE")
@@ -155,6 +163,8 @@ def get_settings() -> Settings:
             "BIOMETRIA_STUB não pode ser usado em produção -- é um modo de teste "
             "que aprova qualquer rosto. Desligue-o (BIOMETRIA_STUB=0)."
         )
+    if s.deposito_demo and s.em_producao:
+        raise RuntimeError("DEPOSITO_DEMO não pode ser usado em produção (cria dinheiro do nada).")
     if s.cnpj_provedor == "stub" and s.em_producao:
         raise RuntimeError("CNPJ_PROVEDOR=stub não pode ser usado em produção (aceita qualquer CNPJ).")
     return s

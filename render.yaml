@@ -1,0 +1,18 @@
+# Deploy de demonstração no Render (Blueprint): API + Postgres gratuitos.
+# Ver HANDOFF §12. O app/apresentação vão para o Netlify com VITE_API_URL apontando aqui.
+services:
+  - type: web
+    name: astro-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: astro-db
+          property: connectionString
+databases:
+  - name: astro-db
+    plan: free
