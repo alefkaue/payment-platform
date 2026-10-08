@@ -1,4 +1,4 @@
-# PayFlow
+# ASTRO
 
 Banco digital para pessoas e empresas, preparado para o **split de IBS/CBS** da
 Reforma Tributária (LC 214/2025): a empresa cobra com a nota fiscal e, no
