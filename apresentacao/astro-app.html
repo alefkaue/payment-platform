@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Astro — app na apresentação</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;color:#0A0A0A;background:#FFFFFF;-webkit-font-smoothing:antialiased;overflow:hidden}
+.mono{font-family:'IBM Plex Mono',monospace}
+.wrap{height:100%;display:flex;gap:clamp(20px,4vw,64px);align-items:center;justify-content:center;padding:6px}
+.steps{flex:0 1 300px;display:flex;flex-direction:column;gap:2px;max-height:100%;overflow:auto}
+.step{display:flex;align-items:center;gap:12px;padding:7px 10px;border-radius:12px;border:0;background:transparent;text-align:left;cursor:pointer;font:inherit;color:#8C8C8C}
+.step:hover{background:#F2F2F2}
+.step .n{width:26px;height:26px;border-radius:50%;border:1px solid #D6D6D6;display:flex;align-items:center;justify-content:center;font-size:11px;flex:none}
+.step .t{font-size:15px;font-weight:600}
+.step.done{color:#0A0A0A}.step.done .n{background:#1F9D55;border-color:#1F9D55;color:#fff}
+.step.on{color:#0A0A0A;background:#F2F2F2}.step.on .n{background:#0A0A0A;border-color:#0A0A0A;color:#fff}
+.hint{margin-top:10px;padding:12px 14px;border:1px solid #E2E2E2;border-radius:14px;font-size:14px;line-height:1.4;color:#4A4A4A}
+.hint b{color:#0A0A0A}
+.reset{align-self:flex-start;margin:10px 0 0 10px;width:26px;height:26px;padding:0;border:0;border-radius:50%;overflow:hidden;background:#0A0A0A;cursor:pointer;opacity:.28;transition:opacity .2s,transform .5s}
+.reset:hover,.reset:focus-visible{opacity:1;transform:rotate(-180deg)}
+.reset img{display:block;width:100%;height:100%}
+/* Palco: o celular tem tamanho FIXO e o app renderiza sempre em ~390px; o
+   aparelho inteiro é escalado para caber, em vez de espremer o app quando a
+   tela diminui. */
+.stage{flex:1 1 auto;min-width:0;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
+/* Moldura de iPhone: borda de titânio, botões laterais, barra de status e ilha dinâmica. */
+.phone{flex:none;position:relative;width:410px;height:879px;background:#0A0A0A;border-radius:52px;padding:10px;box-shadow:0 0 0 2px #5C5C60,0 0 0 4px #1C1C1E,0 26px 54px -22px rgba(10,10,10,.6);transform:scale(var(--s,1));transform-origin:center center;transition:transform .4s cubic-bezier(.22,.9,.24,1);cursor:zoom-in}
+.phone::before,.phone::after{content:"";position:absolute;width:4px;border-radius:2px;background:#3A3A3C}
+.phone::before{left:-7px;top:17%;height:4.5%;box-shadow:0 54px 0 #3A3A3C,0 62px 0 #3A3A3C,0 108px 0 #3A3A3C,0 116px 0 #3A3A3C}
+.phone::after{right:-7px;top:27%;height:13%}
+.screen{position:relative;height:100%;border-radius:42px;overflow:hidden;display:flex;flex-direction:column;background:#0A0A0A}
+.sb{flex:none;height:44px;display:flex;align-items:center;justify-content:space-between;padding:4px 24px 0 30px;background:#0A0A0A;color:#fff;font-size:14px;font-weight:600;letter-spacing:-.01em;transition:background .25s,color .25s}
+.sb .ic{display:flex;align-items:center;gap:5px}
+.sb svg{display:block;fill:currentColor}
+.island{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:31%;height:26px;border-radius:14px;background:#000;pointer-events:none}
+.island::after{content:"";position:absolute;right:9px;top:8px;width:10px;height:10px;border-radius:50%;background:radial-gradient(circle at 35% 35%,#2B3350,#0B0D16 70%)}
+.hb{flex:none;height:18px;display:flex;align-items:center;justify-content:center;background:#0A0A0A;color:#fff;transition:background .25s,color .25s}
+.hb i{width:36%;height:4px;border-radius:2px;background:currentColor}
+.phone iframe{flex:1;min-height:0;width:100%;border:0;background:#0A0A0A;display:block}
+/* Modo ampliado (duplo-clique): fundo escuro, menu some, celular grande e centralizado. */
+body.zoom{background:#0A0A0A}
+body.zoom .steps{display:none}
+body.zoom .wrap{padding:0}
+body.zoom .phone{cursor:zoom-out}
+.hintzoom{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:8px 16px;font-size:13px;font-weight:600;z-index:5;pointer-events:none;opacity:0;transition:opacity .3s ease}
+body.zoom .hintzoom{opacity:1}
+@media (max-width:640px){.steps{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="steps" id="steps"></div>
+  <!-- O app de verdade (build do app/ em modo demonstração), servido na raiz deste servidor. -->
+  <div class="stage" id="stage"><div class="phone" id="phone" title="Duplo-clique para ampliar"><div class="screen">
+    <div class="sb" id="sb"><span id="hora">9:41</span><span class="ic">
+      <svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="7" width="3" height="4" rx=".7"/><rect x="4.6" y="5" width="3" height="6" rx=".7"/><rect x="9.2" y="2.5" width="3" height="8.5" rx=".7"/><rect x="13.8" y="0" width="3" height="11" rx=".7"/></svg>
+      <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="fill:none"><path d="M1.2 3.9a9.6 9.6 0 0 1 13.6 0"/><path d="M3.7 6.4a6.1 6.1 0 0 1 8.6 0"/><path d="M6.3 8.9a2.4 2.4 0 0 1 3.4 0"/></svg>
+      <svg width="26" height="12" viewBox="0 0 26 12"><rect x=".5" y=".5" width="22" height="11" rx="3.3" fill="none" stroke="currentColor" opacity=".4"/><rect x="2" y="2" width="19" height="8" rx="2"/><rect x="24" y="4" width="1.8" height="4" rx=".9" opacity=".45"/></svg>
+    </span></div>
+    <iframe id="app" src="/bem-vindo" allow="camera; microphone; clipboard-write" title="App Astro"></iframe>
+    <div class="hb" id="hb"><i></i></div>
+    <div class="island"></div>
+  </div></div></div>
+</div>
+<div class="hintzoom">Duplo-clique no app ou Esc para voltar</div>
+<script>
+// Trilha das 11 etapas ao lado do app REAL. A etapa atual é lida do próprio app
+// (rota + o que está na tela); cada etapa alcançada fica salva em localStorage.
+const ETAPAS = [
+  ['Boas-vindas', '/bem-vindo', 'Toque em <b>Criar conta</b> ou <b>Entrar</b>.'],
+  ['Login', '/login', 'Entre com os seus dados, ou crie a conta.'],
+  ['Verificação facial', '/login', 'Em <b>Entrar com biometria</b> a <b>câmera abre</b>.'],
+  ['Início PF', '/inicio', 'Cartão em destaque e saldo. Abra o <b>Pix</b>.', 'PF'],
+  ['Pix', '/pix', 'Envie ou receba com QR. Depois troque para a <b>conta da empresa</b> no topo.', 'PF'],
+  ['Início PJ', '/inicio', 'Na conta da empresa: retido, repassado e repasse de amanhã.', 'PJ'],
+  ['Entenda o split', '/split', 'Linha do tempo 2026→2033 e simulador.', 'PJ'],
+  ['Cobrar com nota', '/contas', 'Em Contas, toque em <b>Cobrar um cliente</b>.', 'PJ'],
+  ['Equipe & alçadas', '/equipe', 'Papéis e limites por pessoa (menu <b>Mais</b>).', 'PJ'],
+  ['Aprovações pendentes', '/pendentes', 'Aprove ou recuse o que passou da alçada.', 'PJ'],
+  ['Comprovante', '/extrato', 'No extrato, toque numa transação para ver o split linha a linha.', 'PJ']
+];
+const K = 'astro-jornada-v2';
+let atual = 0, feitas = {};
+try { feitas = JSON.parse(localStorage.getItem(K) || '{}') || {}; } catch (e) {}
+const frame = document.getElementById('app');
+
+function etapaDoApp() {
+  let w, d, p;
+  try { w = frame.contentWindow; d = w.document; p = w.location.pathname; } catch (e) { return atual; }
+  if (!d || !d.body) return atual;
+  const txt = d.body.innerText || '';
+  if (d.querySelector('video')) return 2;                      // câmera aberta = verificação facial
+  if (p.startsWith('/comprovante') || p.startsWith('/extrato')) return 10;
+  if (p.startsWith('/pendentes')) return 9;
+  if (p.startsWith('/equipe')) return 8;
+  if (p.startsWith('/contas')) return 7;
+  if (p.startsWith('/split')) return 6;
+  if (p.startsWith('/pix') || p.startsWith('/transferir')) return 4;
+  if (p.startsWith('/inicio')) return /Imposto das suas vendas/i.test(txt) ? 5 : 3;
+  if (p.startsWith('/login') || p.startsWith('/criar-conta')) return 1;
+  if (p === '/' || p.startsWith('/bem-vindo')) return 0;
+  return atual;
+}
+function render() {
+  document.getElementById('steps').innerHTML = ETAPAS.map((e, i) =>
+    `<button class="step ${i === atual ? 'on' : feitas[i] ? 'done' : ''}" data-ir="${i}"><span class="n mono">${feitas[i] && i !== atual ? '✓' : String(i + 1).padStart(2, '0')}</span><span class="t">${e[0]}</span></button>`).join('')
+    + `<div class="hint">${ETAPAS[atual][2]}</div><button class="reset" id="reset" title="Recomeçar a jornada" aria-label="Recomeçar a jornada"><img src="site/public/favicon.svg" alt=""></button>`;
+}
+// Barra de status e faixa do indicador acompanham a cor do topo e do rodapé da tela do app.
+const pincel = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+function rgba(cor) {
+  pincel.clearRect(0, 0, 1, 1); pincel.fillStyle = cor; pincel.fillRect(0, 0, 1, 1);
+  return pincel.getImageData(0, 0, 1, 1).data;
+}
+function corDaBorda(noRodape) {
+  try {
+    const d = frame.contentDocument, e = d.documentElement;
+    for (let el = d.elementFromPoint(e.clientWidth / 2, noRodape ? e.clientHeight - 2 : 2); el; el = el.parentElement) {
+      const cs = frame.contentWindow.getComputedStyle(el);
+      if (/IMG|VIDEO|CANVAS/.test(el.tagName) || cs.backgroundImage !== 'none') return [10, 10, 10];
+      const c = rgba(cs.backgroundColor);
+      if (c[3] > 128) return [c[0], c[1], c[2]];
+    }
+  } catch (e) {}
+  return null;
+}
+function pintar(id, c) {
+  if (!c) return;
+  const el = document.getElementById(id);
+  el.style.background = `rgb(${c})`;
+  el.style.color = c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114 > 150 ? '#0A0A0A' : '#FFFFFF';
+}
+function barraDeStatus() {
+  pintar('sb', corDaBorda(false)); pintar('hb', corDaBorda(true));
+  const h = new Date();
+  document.getElementById('hora').textContent = h.getHours() + ':' + String(h.getMinutes()).padStart(2, '0');
+}
+let reiniciando = false;
+function tick() {
+  barraDeStatus();
+  hookDbl();                               // garante o duplo-clique dentro do app (ele recarrega a cada rota)
+  if (reiniciando) return;
+  const n = etapaDoApp();
+  if (n !== atual || !feitas[n]) {
+    atual = n; feitas[n] = 1;
+    try { localStorage.setItem(K, JSON.stringify(feitas)); } catch (e) {}
+    render();
+    try { parent.postMessage({ astroEtapa: n }, '*'); } catch (e) {}
+  }
+}
+// Deixa em uso a conta (PF ou PJ) que a etapa pede, na sessão do próprio app.
+function usarConta(tipo) {
+  try {
+    const ss = frame.contentWindow.sessionStorage, s = JSON.parse(ss.getItem('payflow-session') || 'null');
+    const c = s && s.contas && s.contas.find(x => x.tipo === tipo);
+    if (c && s.conta.tipo !== tipo) { s.conta = c; ss.setItem('payflow-session', JSON.stringify(s)); }
+  } catch (e) {}
+}
+// Verificação facial: no login, toca em "Entrar com biometria" para abrir a câmera.
+let espera = 0;
+function abrirCamera() {
+  let n = 0;
+  espera = setInterval(() => {
+    let b = null;
+    try { b = [...frame.contentWindow.document.querySelectorAll('button')].find(x => /biometria/i.test(x.innerText)); } catch (e) {}
+    if (b) b.click();
+    if (b || ++n > 20) clearInterval(espera);
+  }, 250);
+}
+function ir(i) {
+  i = Math.max(0, Math.min(10, i));
+  const [, rota, , tipo] = ETAPAS[i];
+  clearInterval(espera);
+  if (tipo) usarConta(tipo);
+  try { frame.contentWindow.location.assign(rota); } catch (e) { frame.src = rota; }
+  if (i === 2) abrirCamera();
+}
+document.addEventListener('click', e => {
+  if (e.target.closest('#reset')) {
+    // Zera as etapas e a sessão do app e volta para a boas-vindas.
+    reiniciando = true; clearInterval(espera);
+    feitas = {}; atual = 0;
+    try { localStorage.removeItem(K); const w = frame.contentWindow; w.sessionStorage.clear(); w.localStorage.clear(); } catch (x) {}
+    frame.addEventListener('load', () => { reiniciando = false; }, { once: true });
+    frame.src = '/bem-vindo'; render();
+    return;
+  }
+  const b = e.target.closest('[data-ir]'); if (b) ir(+b.dataset.ir);
+});
+// Setas ↑ ↓ trocam de slide mesmo com o foco dentro do celular (menos ao digitar num campo).
+function teclas(e) {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+  e.preventDefault();
+  try { parent.postMessage(e.key === 'ArrowDown' ? 'astro-slide-next' : 'astro-slide-prev', '*'); } catch (x) {}
+}
+document.addEventListener('keydown', teclas);
+frame.addEventListener('load', () => { try { frame.contentDocument.addEventListener('keydown', teclas); } catch (e) {} });
+window.addEventListener('message', e => {
+  if (e.data === 'astro-prev') ir(atual - 1);
+  if (e.data === 'astro-next') ir(atual + 1);
+  if (e.data === 'astro-exit-zoom') setZoom(false);   // o slide pediu para sair do modo ampliado (Esc no pai)
+});
+
+// ----- Escala do celular (app sempre em ~390px) + ampliar no duplo-clique -----
+const PW = 410, PH = 879;                  // tamanho do aparelho (com a borda)
+const stage = document.getElementById('stage');
+const phone = document.getElementById('phone');
+let zoom = false;
+function fit() {
+  const availW = zoom ? window.innerWidth : stage.clientWidth;
+  const availH = zoom ? window.innerHeight : stage.clientHeight;
+  const folga = zoom ? 0.95 : 1;           // uma folga no modo ampliado
+  const s = Math.max(0.1, Math.min((availW * folga) / PW, (availH * folga) / PH));
+  phone.style.setProperty('--s', s.toFixed(4));
+}
+function setZoom(on) {
+  if (on === zoom) return;
+  zoom = on; document.body.classList.toggle('zoom', on); fit();
+  try { parent.postMessage(on ? 'astro-zoom-on' : 'astro-zoom-off', '*'); } catch (e) {}
+}
+// O duplo-clique precisa ser capturado DENTRO do app: o <iframe> engole o evento.
+// Como o app é da mesma origem, damos o listener no documento dele (e reaplicamos
+// a cada rota, pois o app recarrega ao navegar).
+function hookDbl() {
+  try {
+    const d = frame.contentWindow.document;
+    if (d && !d.__astroDbl) { d.__astroDbl = 1; d.addEventListener('dblclick', () => setZoom(!zoom)); }
+  } catch (e) {}
+}
+phone.addEventListener('dblclick', () => setZoom(!zoom));   // borda do aparelho (fallback)
+frame.addEventListener('load', () => { hookDbl(); fit(); });
+hookDbl();
+window.addEventListener('keydown', e => { if (e.key === 'Escape' && zoom) setZoom(false); });
+window.addEventListener('resize', fit);
+if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
+fit(); setTimeout(fit, 300); window.addEventListener('load', fit);
+
+render(); setInterval(tick, 350);
+</script>
+</body>
+</html>
