@@ -307,7 +307,7 @@ export default function Home() {
 
   const passos: [string, string, string][] = [
     ["01", "Baixe ou abra", "No navegador agora, ou instale o app no Android (.apk)."],
-    ["02", "Crie sua conta", "PF com biometria; empresa com certificado digital e-CNPJ."],
+    ["02", "Crie sua conta", "Biometria facial, para pessoa e empresa; na PJ, cada usuário com seu papel e alçada."],
     ["03", "Receba já líquido", "O cliente paga a cobrança e o imposto da nota já sai separado: você recebe o líquido."],
   ];
 
