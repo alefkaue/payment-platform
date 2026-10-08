@@ -54,7 +54,7 @@ Use `servir.py`, não `python -m http.server`: ele devolve o `index.html` do app
 - Etapa 11 marca já no extrato e continua marcada ao abrir um comprovante.
 - Setas ← → do slide andam uma etapa por vez.
 - Moldura de iPhone com ilha dinâmica; a barra de status e a faixa do indicador seguem a cor da tela do app.
-- Teclas ↑ ↓ trocam de slide na apresentação toda, um por vez, inclusive com o foco dentro do celular (nos slides 2 e 6 a ↓ primeiro avança a animação, como a → já fazia).
+- Teclas ↑ ↓ trocam de slide na apresentação toda, um por vez, inclusive com o foco dentro do celular (no slide 8 a ↓ primeiro avança a animação, como a → já fazia).
 
 ## NÃO verificado
 
