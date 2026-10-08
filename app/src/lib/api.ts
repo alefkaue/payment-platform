@@ -42,6 +42,7 @@ import type {
   MembroEquipe,
   Notificacao,
   OperacaoPendente,
+  Pessoa,
   Produto,
   ProvaBiometrica,
   RegistrarPayload,
@@ -70,6 +71,23 @@ import {
   transacoes,
   voos as VOOS,
 } from "@/mocks/data";
+import {
+  banco,
+  cadastrarPessoa,
+  chavesDa,
+  contaPorId,
+  contasDa,
+  donoDaConta,
+  creditar,
+  criarChaveDemo,
+  guardarConta,
+  guardarTransacao,
+  MARINA,
+  pessoaPorLogin,
+  removerChaveDemo,
+  resolverChave,
+  todasTransacoes,
+} from "@/mocks/banco";
 
 export { ApiError, MODO_API };
 
@@ -234,12 +252,21 @@ function mapCobranca(c: CobrancaApi): Cobranca {
 /** Conta em uso (PF ou uma PJ). O backend recebe no header X-Conta. */
 export function selecionarConta(conta: Conta) {
   definirConta(conta.numero ?? null);
-  if (!MODO_API) sessao.conta = { ...conta };
+  if (!MODO_API) sessao.conta = contaPorId(conta.carteira_id) ?? { ...conta };
 }
 
-async function contasDaPessoa(): Promise<Conta[]> {
-  const eu = await get<{ contas: ContaApi[] }>("/auth/eu");
-  return eu.contas.map(mapConta);
+/** Modo demonstração: grava saldo/pontos da conta em uso no banco demo. */
+function persistirSessao() {
+  if (!MODO_API) guardarConta(sessao.conta);
+}
+
+async function contasDaPessoa(): Promise<{ pessoa: Pessoa; contas: Conta[] }> {
+  const eu = await get<{ nome: string; email: string; contas: ContaApi[] }>("/auth/eu");
+  const pf = eu.contas.find((c) => c.titular_tipo === "PF");
+  return {
+    pessoa: { nome: eu.nome, email: eu.email, ...(pf?.documento ? { cpf: pf.documento } : {}) },
+    contas: eu.contas.map(mapConta),
+  };
 }
 
 export async function login({ email, senha }: LoginPayload): Promise<LoginResposta> {
@@ -252,16 +279,23 @@ export async function login({ email, senha }: LoginPayload): Promise<LoginRespos
       senha,
     });
     salvarTokens(tk);
-    const contas = await contasDaPessoa();
+    const { pessoa, contas } = await contasDaPessoa();
     const conta = contas.find((c) => c.tipo === "PF") ?? contas[0];
     if (!conta) throw new ApiError("Esta pessoa não tem nenhuma conta para operar.", 404);
     selecionarConta(conta);
-    return { contas, conta };
+    return { contas, conta, pessoa };
   }
-  // Demonstração: a mesma pessoa opera a conta pessoal e a empresa.
-  const contas = [{ ...contasDemo.PF }, { ...contasDemo.PJ }];
-  selecionarConta(contas[0]!);
-  return { contas, conta: contas[0]! };
+  // Demonstração: quem se cadastrou entra na própria conta (senha conferida);
+  // e-mail desconhecido cai na Marina, a pessoa do roteiro da apresentação.
+  const achada = pessoaPorLogin(email);
+  if (achada?.senha && senha !== achada.senha && senha !== "biometria")
+    throw new ApiError("E-mail/CPF ou senha incorretos.", 401);
+  const p = achada ?? banco().pessoas.find((x) => x.email === MARINA.email) ?? MARINA;
+  const contas = contasDa(p);
+  if (!contas.length) contas.push({ ...contasDemo.PF }, { ...contasDemo.PJ });
+  const conta = contas.find((c) => c.tipo === "PF") ?? contas[0]!;
+  selecionarConta(conta);
+  return { contas, conta, pessoa: { nome: p.nome, email: p.email, cpf: p.cpf } };
 }
 
 /** Entrar com o rosto: o desafio é pedido para este login e conferido no servidor. */
@@ -280,11 +314,11 @@ export async function loginBiometria(
       },
     );
     salvarTokens(tk);
-    const contas = await contasDaPessoa();
+    const { pessoa, contas } = await contasDaPessoa();
     const conta = contas.find((c) => c.tipo === "PF") ?? contas[0];
     if (!conta) throw new ApiError("Esta pessoa não tem nenhuma conta para operar.", 404);
     selecionarConta(conta);
-    return { contas, conta };
+    return { contas, conta, pessoa };
   }
   return login({ email: identificador, senha: "biometria" });
 }
@@ -306,17 +340,27 @@ export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
     if (p.empresa.setor) pj.setor = p.empresa.setor;
     return { contas: [...r.contas, pj], conta: r.conta };
   }
-  const id = genId();
+  const email = p.email.trim().toLowerCase();
+  const cpf = p.cpf.replace(/\D/g, "");
+  if (pessoaPorLogin(email)) throw new ApiError("Já existe uma conta com este e-mail.", 409);
+  if (pessoaPorLogin(cpf)) throw new ApiError("Já existe uma conta com este CPF.", 409);
+  const cnpjNovo = p.empresa?.cnpj.replace(/\D/g, "");
+  if (
+    cnpjNovo &&
+    Object.values(banco().contas).some((c) => (c.cnpj ?? "").replace(/\D/g, "") === cnpjNovo)
+  )
+    throw new ApiError("Esse CNPJ já tem conta na Astro.", 409);
+  const id = genId(); // banco() acima já reservou os ids guardados: sem colisão
   const pf: Conta = {
     id,
     nome: p.nome,
     tipo: "PF",
     carteira_id: 4000 + id,
+    agencia: "0001",
     numero: `${4000 + id}`,
     saldo: 0,
     pontos: 0,
   };
-  carteiras.push({ carteira_id: pf.carteira_id, nome: pf.nome, tipo: "PF" });
   const contas: Conta[] = [pf];
   if (p.empresa) {
     const pj: Conta = {
@@ -324,7 +368,9 @@ export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
       nome: p.empresa.nome_fantasia || `Empresa ${p.empresa.cnpj}`,
       tipo: "PJ",
       carteira_id: 5000 + id,
+      agencia: "0001",
       numero: `${5000 + id}`,
+      cnpj: (cnpjNovo ?? "").replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5"),
       saldo: 0,
       pontos: 0,
       porte: p.empresa.porte,
@@ -334,11 +380,14 @@ export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
       alcada: null,
       creditos: 0,
     };
-    carteiras.push({ carteira_id: pj.carteira_id, nome: pj.nome, tipo: "PJ" });
     contas.push(pj);
   }
+  cadastrarPessoa(
+    { nome: p.nome, email, senha: p.senha, cpf, contas: contas.map((c) => c.carteira_id) },
+    contas,
+  );
   selecionarConta(pf);
-  return { contas, conta: pf };
+  return { contas, conta: pf, pessoa: { nome: p.nome, email, cpf } };
 }
 
 export async function sair(refresh = true): Promise<void> {
@@ -391,7 +440,15 @@ export async function minhaConta(): Promise<Conta> {
     }
     return c;
   }
+  // Outra conta (outra aba/login) pode ter mandado Pix: relê o saldo guardado.
+  const atual = contaPorId(sessao.conta.carteira_id);
+  if (atual) sessao.conta = atual;
   return { ...sessao.conta };
+}
+
+/** Nome de uma carteira no modo demonstração (contas cadastradas ou contatos semeados). */
+function nomeDaCarteira(id: number): string {
+  return contaPorId(id)?.nome ?? carteiras.find((c) => c.carteira_id === id)?.nome ?? "conta";
 }
 
 export async function transacoes_(): Promise<Transacao[]> {
@@ -402,8 +459,16 @@ export async function transacoes_(): Promise<Transacao[]> {
     return ts.map((t) => mapTransacao(t, c.carteira_id));
   }
   const minha = sessao.conta.carteira_id;
-  return transacoes
+  return todasTransacoes()
     .filter((t) => t.origem_carteira_id === minha || t.destino_carteira_id === minha)
+    .map((t) =>
+      // Quem recebe um Pix vê "Pix de <quem mandou>", não a descrição de quem enviou.
+      t.categoria === "transferencia" &&
+      t.destino_carteira_id === minha &&
+      t.descricao?.startsWith("Pix para")
+        ? { ...t, descricao: `Pix de ${nomeDaCarteira(t.origem_carteira_id)}` }
+        : t,
+    )
     .sort((a, b) => b.criado_em.localeCompare(a.criado_em));
 }
 export { transacoes_ as transacoes };
@@ -414,7 +479,7 @@ export async function transacaoPorId(id: number): Promise<Transacao> {
     const c = await get<ContaApi>("/contas/atual");
     return mapTransacao(await get<TransacaoApi>(`/pagamentos/transacoes/${id}`), c.carteira_id);
   }
-  const t = transacoes.find((x) => x.id === id);
+  const t = todasTransacoes().find((x) => x.id === id);
   if (!t) throw new ApiError("Transação não encontrada.", 404);
   return t;
 }
@@ -443,9 +508,13 @@ export async function consultarDestino(texto: string): Promise<CarteiraInfo> {
     const destino: DestinoRef = /^\d{8}-\d$/.test(alvo) ? { numero: alvo } : { chave: alvo };
     return { carteira_id: 0, nome: r.nome, tipo: r.titular_tipo, documento: r.documento, destino };
   }
-  const id = Number(alvo.replace(/\D/g, ""));
-  const c = carteiras.find((x) => x.carteira_id === id);
-  if (!c) throw new ApiError("Chave ou conta não encontrada.", 404);
+  // Primeiro como chave Pix; senão, como número de conta.
+  const id = resolverChave(alvo) ?? (/^[\d-]+$/.test(alvo) ? Number(alvo.replace(/\D/g, "")) : NaN);
+  const conta = contaPorId(id);
+  const c = conta
+    ? { carteira_id: conta.carteira_id, nome: conta.nome, tipo: conta.tipo }
+    : carteiras.find((x) => x.carteira_id === id);
+  if (!c) throw new ApiError("Chave Pix ou conta não encontrada.", 404);
   return { ...c, destino: { numero: String(c.carteira_id) } };
 }
 
@@ -454,6 +523,15 @@ export async function simularSplit(
   tipo_destino: TipoConta,
 ): Promise<SplitResultado> {
   return calcularSplit(valor, tipo_destino);
+}
+
+/**
+ * Modo demonstração: as contas do roteiro (Marina e Rodoforte) têm histórico,
+ * equipe, notas e notificações semeados; uma conta recém-criada começa vazia.
+ */
+function ehContaDoRoteiro(): boolean {
+  const id = sessao.conta.carteira_id;
+  return id === contasDemo.PF.carteira_id || id === contasDemo.PJ.carteira_id;
 }
 
 // --- Núcleo do modo demonstração: registra um pagamento -----------------------
@@ -490,7 +568,9 @@ function registrarPagamento(args: {
     criado_em: new Date().toISOString(),
   };
   sessao.conta.saldo = r2(sessao.conta.saldo - s.valor_bruto);
-  transacoes.push(t);
+  persistirSessao();
+  creditar(destino.carteira_id, s.liquido);
+  guardarTransacao(t);
   return t;
 }
 
@@ -529,11 +609,24 @@ export async function transferir(p: TransferirPayload): Promise<ResultadoTransfe
 /** Depósito: no modo API o dinheiro entra por Pix para uma chave sua (ou pelo admin). */
 export async function depositar(p: DepositarPayload): Promise<Transacao> {
   await delay(600);
-  if (MODO_API)
-    throw new ApiError(
-      "Para colocar dinheiro, faça um Pix para uma das suas chaves. O depósito direto é só para a equipe (admin).",
-      403,
-    );
+  if (MODO_API) {
+    // Servidor de demonstração (DEPOSITO_DEMO=1) libera dinheiro de teste; num servidor
+    // real o endpoint responde 403 e a mensagem explica como colocar dinheiro.
+    try {
+      const c = await get<ContaApi>("/contas/atual");
+      const t = await post<TransacaoApi>("/pagamentos/depositar-demo", {
+        valor: p.valor.toFixed(2),
+      });
+      return mapTransacao(t, c.carteira_id);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 403)
+        throw new ApiError(
+          "Para colocar dinheiro, faça um Pix para uma das suas chaves. O depósito direto é só para a equipe (admin).",
+          403,
+        );
+      throw e;
+    }
+  }
   if (!(p.valor > 0)) throw new ApiError("Valor inválido.");
   const t: Transacao = {
     id: genId(),
@@ -552,7 +645,8 @@ export async function depositar(p: DepositarPayload): Promise<Transacao> {
     criado_em: new Date().toISOString(),
   };
   sessao.conta.saldo = r2(sessao.conta.saldo + p.valor);
-  transacoes.push(t);
+  persistirSessao();
+  guardarTransacao(t);
   return t;
 }
 
@@ -568,12 +662,28 @@ export interface ChavePix {
 
 export async function minhasChaves(): Promise<ChavePix[]> {
   if (MODO_API) return get<ChavePix[]>("/pix/chaves");
-  return [{ id: 1, tipo: "aleatoria", valor: "b1e2c3d4-0000-4000-8000-000000000000" }];
+  return chavesDa(sessao.conta.carteira_id).map(({ id, tipo, valor }) => ({ id, tipo, valor }));
 }
 
 export async function criarChave(tipo: string, valor?: string): Promise<ChavePix> {
-  if (MODO_API) return post<ChavePix>("/pix/chaves", { tipo, valor });
-  return { id: genId(), tipo, valor: valor ?? crypto.randomUUID() };
+  if (MODO_API) return post<ChavePix>("/pix/chaves", { tipo, valor: valor || undefined });
+  await delay(300);
+  banco(); // reserva os ids já guardados antes de gerar um novo
+  try {
+    const { id, tipo: t, valor: v } = criarChaveDemo(sessao.conta, tipo, valor, genId());
+    return { id, tipo: t, valor: v };
+  } catch (e) {
+    throw new ApiError((e as Error).message, 400);
+  }
+}
+
+export async function removerChave(id: number): Promise<void> {
+  if (MODO_API) {
+    await requisitar("DELETE", `/pix/chaves/${id}`);
+    return;
+  }
+  if (!removerChaveDemo(sessao.conta.carteira_id, id))
+    throw new ApiError("Chave não encontrada.", 404);
 }
 
 interface LimitesApi {
@@ -668,13 +778,39 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
       vendas_com_split: t.transacoes_com_split,
     };
   }
-  return { ...apuracaoDemo };
+  if (ehContaDoRoteiro()) return { ...apuracaoDemo };
+  // Conta criada agora: apura só as vendas com nota que ela recebeu de fato.
+  const minha = sessao.conta.carteira_id;
+  const vendas = todasTransacoes().filter(
+    (t) => t.destino_carteira_id === minha && t.aplicou_split,
+  );
+  const soma = (f: (t: Transacao) => number) => r2(vendas.reduce((a, t) => a + f(t), 0));
+  const cbs = soma((t) => t.cbs);
+  const ibs = soma((t) => t.ibs);
+  const creditos = sessao.conta.creditos ?? 0;
+  const mes = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+  return {
+    periodo: mes.charAt(0).toUpperCase() + mes.slice(1),
+    faturamento: soma((t) => t.valor_bruto),
+    cbs_retido: cbs,
+    ibs_retido: ibs,
+    imposto_retido: r2(cbs + ibs),
+    a_repassar: r2(cbs + ibs),
+    repassado: 0,
+    creditos_informados: creditos,
+    restituicao_prevista: Math.min(creditos, r2(cbs + ibs)),
+    vendas_com_split: vendas.length,
+  };
 }
+
+/** Cobranças emitidas pela conta em uso (no modo demonstração ficam em memória). */
+const minhasCobrancasDemo = () =>
+  cobrancasDemo.filter((c) => c.recebedor_nome === sessao.conta.nome);
 
 export async function listarCobrancas(): Promise<Cobranca[]> {
   await delay(300);
   if (MODO_API) return (await get<CobrancaApi[]>("/cobrancas?limite=100")).map(mapCobranca);
-  return [...cobrancasDemo].sort((a, b) => b.id - a.id);
+  return minhasCobrancasDemo().sort((a, b) => b.id - a.id);
 }
 
 /** A empresa cobra um cliente. Com a nota fiscal, o pagamento retém a CBS e o IBS dela. */
@@ -743,7 +879,7 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
         };
       });
   }
-  const criadas: Fatura[] = cobrancasDemo.map((c) => {
+  const criadas: Fatura[] = minhasCobrancasDemo().map((c) => {
     const imposto = c.vai_reter_imposto ? c.cbs + c.ibs : 0;
     return {
       id: c.id,
@@ -758,7 +894,7 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
       status: "pendente",
     };
   });
-  return [...faturas, ...criadas]
+  return [...(ehContaDoRoteiro() ? faturas : []), ...criadas]
     .filter((f) => !direcao || f.direcao === direcao)
     .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 }
@@ -820,6 +956,7 @@ export async function comprarProduto(p: ComprarProdutoPayload): Promise<Transaca
     descricao: `${produto.merchant_nome} · ${produto.nome}`,
   });
   sessao.conta.pontos += pontosDaCompra(produto.preco);
+  persistirSessao();
   return t;
 }
 
@@ -869,6 +1006,7 @@ export async function comprarPassagem(p: ComprarPassagemPayload): Promise<Transa
     descricao: `Voo ${voo.origem} → ${voo.destino} · ${voo.companhia}`,
   });
   sessao.conta.pontos += pontosDaCompra(voo.preco);
+  persistirSessao();
   return t;
 }
 
@@ -894,6 +1032,7 @@ export async function resgatarPassagem(vooId: number): Promise<Resgate> {
       `Pontos insuficientes: este voo custa ${voo.milhas.toLocaleString("pt-BR")} pontos.`,
     );
   sessao.conta.pontos -= voo.milhas;
+  persistirSessao();
   return {
     localizador: crypto.randomUUID().slice(0, 6).toUpperCase(),
     voo,
@@ -951,8 +1090,54 @@ export async function cvvDinamico(): Promise<CvvDinamico> {
 // operam sobre os mocks em ambos os modos.
 // =============================================================================
 
+const notificacoesNovas = new Map<number, Notificacao[]>();
+const equipesNovas = new Map<number, MembroEquipe[]>();
+
 function listaNotificacoes(): Notificacao[] {
-  return sessao.conta.tipo === "PJ" ? notificacoesPJ : notificacoesPF;
+  if (ehContaDoRoteiro()) return sessao.conta.tipo === "PJ" ? notificacoesPJ : notificacoesPF;
+  const id = sessao.conta.carteira_id;
+  let lista = notificacoesNovas.get(id);
+  if (!lista) {
+    lista = [
+      {
+        id: genId(),
+        tipo: "sistema",
+        titulo: "Boas-vindas à Astro",
+        texto:
+          sessao.conta.tipo === "PJ"
+            ? "A conta da empresa está pronta. Cadastre o CNPJ como chave Pix e emita a primeira cobrança com nota."
+            : "Sua conta está pronta. Cadastre uma chave Pix para começar a receber.",
+        criado_em: new Date().toISOString(),
+        lida: false,
+      },
+    ];
+    notificacoesNovas.set(id, lista);
+  }
+  return lista;
+}
+
+function listaEquipe(): MembroEquipe[] {
+  if (ehContaDoRoteiro()) return equipeDemo;
+  const id = sessao.conta.carteira_id;
+  let lista = equipesNovas.get(id);
+  if (!lista) {
+    const dono = donoDaConta(id);
+    lista = dono
+      ? [
+          {
+            id: genId(),
+            nome: dono.nome,
+            email: dono.email,
+            papel: "admin",
+            alcada: null,
+            ativo: true,
+            eu: true,
+          },
+        ]
+      : [];
+    equipesNovas.set(id, lista);
+  }
+  return lista;
 }
 
 export async function notificacoes(): Promise<Notificacao[]> {
@@ -973,7 +1158,7 @@ export async function marcarNotificacoesLidas(): Promise<void> {
 
 export async function equipe(): Promise<MembroEquipe[]> {
   await delay(300);
-  return [...equipeDemo];
+  return [...listaEquipe()];
 }
 
 export async function convidarMembro(p: {
@@ -991,13 +1176,15 @@ export async function convidarMembro(p: {
     alcada: p.alcada,
     ativo: true,
   };
-  equipeDemo.push(novo);
+  listaEquipe().push(novo);
   return novo;
 }
 
 export async function pendentes(): Promise<OperacaoPendente[]> {
   await delay(300);
-  return [...pendentesDemo].sort((a, b) => b.criado_em.localeCompare(a.criado_em));
+  return (ehContaDoRoteiro() ? [...pendentesDemo] : []).sort((a, b) =>
+    b.criado_em.localeCompare(a.criado_em),
+  );
 }
 
 export async function decidirPendente(id: number, aprovar: boolean): Promise<OperacaoPendente> {

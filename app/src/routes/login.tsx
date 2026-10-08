@@ -206,8 +206,8 @@ function Login() {
 
           {!MODO_API && (
             <p className="mt-4 text-center text-xs text-mut3">
-              Demonstração: qualquer conta e senha entram. Você acessa a conta pessoal e a da
-              empresa pelo seletor no topo.
+              Demonstração: quem criou conta aqui entra com o próprio e-mail e senha; outro
+              e-mail entra na conta de exemplo (pessoal e empresa, troca pelo seletor no topo).
             </p>
           )}
         </div>

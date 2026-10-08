@@ -144,9 +144,17 @@ export interface LoginPayload {
   senha: string;
 }
 /** Login é sempre da PESSOA; ela opera a conta PF e as empresas em que tem vínculo. */
+/** Quem está logado (a pessoa; as contas ficam em `contas`). */
+export interface Pessoa {
+  nome: string;
+  email: string;
+  /** Só dígitos. */
+  cpf?: string;
+}
 export interface LoginResposta {
   contas: Conta[];
   conta: Conta;
+  pessoa?: Pessoa;
 }
 export interface EmpresaPayload {
   cnpj: string;

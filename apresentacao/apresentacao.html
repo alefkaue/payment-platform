@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Astro — o banco digital para pessoas e empresas</title>
+<link rel="icon" href="site/public/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+html{scroll-snap-type:y proximity;-webkit-text-size-adjust:100%}
+body{margin:0;background:#F2F2F2;color:#0A0A0A;font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#0A0A0A;text-decoration:underline;text-underline-offset:3px}
+a:hover{color:#6B6B6B}
+::selection{background:#0A0A0A;color:#FFFFFF}
+input:focus{outline:none}
+@keyframes astroSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+
+<div style="position:fixed;top:0;left:0;right:0;height:4px;background:{{ ui.track }};z-index:50">
+  <div style="height:100%;width:{{ progress }};background:{{ ui.fill }};transition:width .4s ease, background .3s ease"></div>
+</div>
+<nav style="position:fixed;right:clamp(10px,1.6vw,28px);top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:9px;z-index:50">
+  <sc-for list="{{ dots }}" as="d" hint-placeholder-count="13">
+    <button onClick="{{ d.go }}" title="{{ d.label }}" aria-label="{{ d.label }}" style="width:10px;height:{{ d.h }};border-radius:6px;border:0;padding:0;cursor:pointer;background:{{ d.bg }};transition:height .3s ease, background .3s ease"></button>
+  </sc-for>
+</nav>
+<div style="position:fixed;left:clamp(14px,2vw,32px);bottom:clamp(12px,2vh,24px);display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:500;color:{{ ui.counter }};z-index:50;pointer-events:none">
+  <img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;display:block">
+  <span>{{ counter }}</span>
+</div>
+
+<main>
+
+<!-- 01 CAPA -->
+<section data-sec="Capa" data-screen-label="01 Capa" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px) clamp(96px,13vh,150px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start;position:relative;overflow:hidden">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-wrap:wrap;gap:40px;align-items:center;justify-content:space-between">
+    <div style="flex:1 1 640px;display:flex;flex-direction:column;gap:clamp(28px,5vh,52px)">
+      <img data-reveal="" src="site/public/logo-astro-branco.svg" alt="Astro" style="height:clamp(34px,3.2vw,52px);width:auto;align-self:flex-start;display:block">
+      <h1 data-reveal="" style="margin:0;font-size:clamp(46px,6.2vw,112px);line-height:.98;letter-spacing:-0.04em;font-weight:600;max-width:15ch;text-wrap:balance">O banco digital para pessoas e empresas.</h1>
+      <p data-reveal="" style="margin:0;font-size:clamp(22px,2vw,34px);color:#D6D6D6;letter-spacing:-0.01em">App, site e API: a plataforma Astro por dentro</p>
+      <div data-reveal="" style="display:flex;flex-wrap:wrap;gap:10px;max-width:760px">
+        <span style="font-size:clamp(17px,1.3vw,20px);border:1px solid #4A4A4A;border-radius:999px;padding:9px 18px;background:#FFFFFF;color:#0A0A0A;border-color:#FFFFFF;font-weight:600">App web + Android</span>
+        <span style="font-size:clamp(17px,1.3vw,20px);border:1px solid #4A4A4A;border-radius:999px;padding:9px 18px">Site</span>
+        <span style="font-size:clamp(17px,1.3vw,20px);border:1px solid #4A4A4A;border-radius:999px;padding:9px 18px">API</span>
+        <span style="font-size:clamp(17px,1.3vw,20px);border:1px solid #4A4A4A;border-radius:999px;padding:9px 18px">Pessoa física e jurídica</span>
+      </div>
+      <div data-reveal="" style="padding-top:28px;border-top:1px solid #3A3A3A;font-size:clamp(18px,1.4vw,22px);font-weight:600">Equipe CYMAG · SENAI São Caetano do Sul</div>
+    </div>
+    <div data-reveal="" style="flex:0 1 auto;width:clamp(180px,22vw,340px);aspect-ratio:1;margin:0 auto">{{ eclipseBig }}</div>
+  </div>
+</section>
+
+<!-- 02 O QUE CONSTRUÍMOS -->
+<section data-sec="O que construímos" data-screen-label="02 O que construímos" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);scroll-snap-align:start;background:#FFFFFF">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.6vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">02 · O que construímos</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Três aplicações, um só projeto.</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:18px">
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">01</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">App Astro</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">Onde o cliente usa o banco: conta, Pix, cartão e cobranças. Roda no navegador e vira aplicativo Android.</p>
+        <span style="margin-top:auto;font-family:'IBM Plex Mono',monospace;font-size:15px;color:#6B6B6B">Web + Android</span>
+      </div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">02</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Site</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">A vitrine: apresenta o produto e traz um simulador para quem está conhecendo.</p>
+        <span style="margin-top:auto;font-family:'IBM Plex Mono',monospace;font-size:15px;color:#6B6B6B">Web</span>
+      </div>
+      <div data-reveal="" style="background:#0A0A0A;color:#FFFFFF;border-radius:20px;padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#8C8C8C">03</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">API</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">O servidor: guarda os dados e aplica as regras do banco. O app mostra e pede; quem decide é a API.</p>
+        <span style="margin-top:auto;font-family:'IBM Plex Mono',monospace;font-size:15px;color:#8C8C8C">Servidor + banco de dados</span>
+      </div>
+    </div>
+    <div data-reveal="" style="background:#F2F2F2;border-radius:20px;padding:20px 26px;font-size:clamp(18px,1.45vw,23px);line-height:1.4;font-weight:600;text-wrap:pretty">As três fazem parte do mesmo projeto. App e servidor conversam por HTTP, trocando JSON.</div>
+  </div>
+</section>
+
+<!-- 03 ARQUITETURA GERAL -->
+<section data-sec="Arquitetura geral" data-screen-label="03 Arquitetura geral" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);scroll-snap-align:start;background:#0A0A0A;color:#FFFFFF">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.6vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">03 · Arquitetura geral</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Do toque na tela ao banco de dados.</h2>
+    </div>
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;gap:10px;align-items:stretch">
+      <div style="flex:1 1 190px;background:#141414;border:1px solid #3A3A3A;border-radius:18px;padding:clamp(16px,1.6vw,24px);display:flex;flex-direction:column;gap:6px;justify-content:center"><span style="font-size:clamp(20px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Quem usa</span><span style="font-size:clamp(15px,1.1vw,17px);line-height:1.35;color:#8C8C8C">Navegador ou celular Android</span></div>
+      <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0 4px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#8C8C8C"><span></span><span style="font-size:24px;color:#FFFFFF;line-height:1">→</span></div>
+      <div style="flex:1 1 190px;background:#FFFFFF;color:#0A0A0A;border-radius:18px;padding:clamp(16px,1.6vw,24px);display:flex;flex-direction:column;gap:6px;justify-content:center"><span style="font-size:clamp(20px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">App Astro</span><span style="font-size:clamp(15px,1.1vw,17px);line-height:1.35;color:#4A4A4A">Página única. Mostra as telas e faz os pedidos</span></div>
+      <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0 4px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#8C8C8C"><span>HTTP · JSON</span><span style="font-size:24px;color:#FFFFFF;line-height:1">→</span></div>
+      <div style="flex:1 1 190px;background:#141414;border:1px solid #3A3A3A;border-radius:18px;padding:clamp(16px,1.6vw,24px);display:flex;flex-direction:column;gap:6px;justify-content:center"><span style="font-size:clamp(20px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">API</span><span style="font-size:clamp(15px,1.1vw,17px);line-height:1.35;color:#8C8C8C">Recebe o pedido, aplica a regra e responde</span></div>
+      <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:0 4px;font-family:'IBM Plex Mono',monospace;font-size:13px;color:#8C8C8C"><span></span><span style="font-size:24px;color:#FFFFFF;line-height:1">→</span></div>
+      <div style="flex:1 1 190px;background:#141414;border:1px solid #3A3A3A;border-radius:18px;padding:clamp(16px,1.6vw,24px);display:flex;flex-direction:column;gap:6px;justify-content:center"><span style="font-size:clamp(20px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Banco de dados</span><span style="font-size:clamp(15px,1.1vw,17px);line-height:1.35;color:#8C8C8C">Relacional. Guarda contas e movimentações</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:16px">
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">A tela não decide</h3>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:#D6D6D6">O app mostra e pede. Quem valida e decide é sempre o servidor.</p>
+      </div>
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Servidor em camadas</h3>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:#D6D6D6">A rota recebe o pedido, o serviço aplica a regra e o repositório fala com o banco.</p>
+      </div>
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Site à parte</h3>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:#D6D6D6">O site é uma aplicação separada, só de apresentação do produto.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 04 FRONT-END WEB -->
+<section data-sec="Front-end web" data-screen-label="04 Front-end web" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);scroll-snap-align:start;background:#FFFFFF">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.6vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">04 · Front-end web</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Um app web, pensado primeiro para o celular.</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:18px">
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">01</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Página única</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">A navegação troca de tela sem recarregar a página, como num aplicativo.</p>
+      </div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">02</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Uma rota por tela</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">Cada tela é um arquivo. As telas de quem está logado dividem o mesmo cabeçalho e a barra inferior.</p>
+      </div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">03</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Uma porta de dados</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">Nenhuma tela chama o servidor direto: tudo passa por uma camada única, que fala com a API.</p>
+      </div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">04</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Web e Android</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">O mesmo código é empacotado como aplicativo Android. Não existem dois apps para manter.</p>
+      </div>
+    </div>
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:12px"><span style="font-size:17px;font-weight:600;color:#6B6B6B">Uma rota para cada tela</span><div style="display:flex;flex-wrap:wrap;gap:8px"><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Boas-vindas</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Entrar</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Criar conta</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Início</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Pix</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Transferir</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Extrato</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Cartões</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Loja</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Viagens</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Cobranças</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Equipe</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Aprovações</span><span style="font-size:clamp(15px,1.1vw,18px);background:#F2F2F2;border-radius:999px;padding:7px 14px">Perfil</span></div></div>
+  </div>
+</section>
+
+<!-- 05 DOIS MUNDOS -->
+<section data-sec="Um banco, dois mundos" data-screen-label="05 Um banco, dois mundos" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(28px,5vh,52px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">05 · Um banco, dois mundos</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Pessoas e empresas, cada uma com o que precisa.</h2>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:20px">
+      <div data-reveal="" style="flex:1 1 420px;background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(24px,2.8vw,40px);display:flex;flex-direction:column;gap:22px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h3 style="margin:0;font-size:clamp(30px,2.6vw,44px);font-weight:600;letter-spacing:-0.03em">Pessoa física</h3><span style="font-size:16px;font-weight:600;color:#FFFFFF;border:1px solid #4A4A4A;border-radius:999px;padding:6px 14px;white-space:nowrap">dia a dia e benefícios</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Conta e Pix (QR e chaves)</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Cartão virtual</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Rendimento do saldo</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Loja com pontos</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Viagens com pontos</span>
+        </div>
+        <p style="margin:0;font-size:clamp(18px,1.4vw,22px);line-height:1.45;color:#D6D6D6;text-wrap:pretty">O login é o mesmo. O app muda de menu e de telas conforme a conta em uso: pessoal ou da empresa.</p>
+      </div>
+      <div data-reveal="" style="flex:1 1 420px;background:#FFFFFF;color:#0A0A0A;border-radius:20px;padding:clamp(24px,2.8vw,40px);display:flex;flex-direction:column;gap:22px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h3 style="margin:0;font-size:clamp(30px,2.6vw,44px);font-weight:600;letter-spacing:-0.03em">Pessoa jurídica</h3><span style="font-size:16px;font-weight:600;color:#FFFFFF;background:#0A0A0A;border-radius:999px;padding:6px 14px;white-space:nowrap">cobrança e gestão</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#0A0A0A;color:#FFFFFF;border-radius:999px;padding:9px 16px">Cobrança com nota (Pix QR dinâmico e boleto)</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Split da nota</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Créditos acompanhados</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Pix Automático</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Pagamento em lote</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Avisos para o sistema da empresa</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Equipe &amp; alçadas</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Aprovações pendentes</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 06 API E ROTAS -->
+<section data-sec="API e rotas" data-screen-label="06 API e rotas" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);scroll-snap-align:start;background:#FFFFFF">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.6vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">06 · API e rotas</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Uma API REST, organizada por assunto.</h2>
+    </div>
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:clamp(16px,1.25vw,20px);font-weight:600">
+      <span style="border:1px solid #D6D6D6;border-radius:999px;padding:10px 18px">A rota recebe o pedido</span><span style="color:#8C8C8C">→</span>
+      <span style="border:1px solid #D6D6D6;border-radius:999px;padding:10px 18px">Valida os dados</span><span style="color:#8C8C8C">→</span>
+      <span style="border:1px solid #D6D6D6;border-radius:999px;padding:10px 18px">Aplica a regra</span><span style="color:#8C8C8C">→</span>
+      <span style="border:1px solid #D6D6D6;border-radius:999px;padding:10px 18px">Grava no banco</span><span style="color:#8C8C8C">→</span>
+      <span style="background:#0A0A0A;color:#FFFFFF;border-radius:999px;padding:10px 18px">Responde em JSON</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:14px">
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:18px;padding:18px 20px;display:flex;flex-direction:column;gap:6px"><span style="font-size:clamp(19px,1.45vw,23px);font-weight:600;letter-spacing:-0.015em">Autenticação</span><span style="font-size:clamp(15px,1.1vw,18px);line-height:1.35;color:#6B6B6B">Entrar, sair e manter a sessão</span></div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:18px;padding:18px 20px;display:flex;flex-direction:column;gap:6px"><span style="font-size:clamp(19px,1.45vw,23px);font-weight:600;letter-spacing:-0.015em">Contas e empresas</span><span style="font-size:clamp(15px,1.1vw,18px);line-height:1.35;color:#6B6B6B">Abrir conta e vincular pessoas a empresas</span></div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:18px;padding:18px 20px;display:flex;flex-direction:column;gap:6px"><span style="font-size:clamp(19px,1.45vw,23px);font-weight:600;letter-spacing:-0.015em">Pagamentos</span><span style="font-size:clamp(15px,1.1vw,18px);line-height:1.35;color:#6B6B6B">Transferências, extrato e comprovante</span></div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:18px;padding:18px 20px;display:flex;flex-direction:column;gap:6px"><span style="font-size:clamp(19px,1.45vw,23px);font-weight:600;letter-spacing:-0.015em">Cobranças</span><span style="font-size:clamp(15px,1.1vw,18px);line-height:1.35;color:#6B6B6B">Cobrar com nota, parcelar e receber</span></div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:18px;padding:18px 20px;display:flex;flex-direction:column;gap:6px"><span style="font-size:clamp(19px,1.45vw,23px);font-weight:600;letter-spacing:-0.015em">Loja e viagens</span><span style="font-size:clamp(15px,1.1vw,18px);line-height:1.35;color:#6B6B6B">Catálogo, compras e pontos</span></div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:18px;padding:18px 20px;display:flex;flex-direction:column;gap:6px"><span style="font-size:clamp(19px,1.45vw,23px);font-weight:600;letter-spacing:-0.015em">Configurações</span><span style="font-size:clamp(15px,1.1vw,18px);line-height:1.35;color:#6B6B6B">Preferências da conta e chaves Pix</span></div>
+    </div>
+    <span style="font-size:clamp(15px,1.1vw,18px);line-height:1.4;color:#6B6B6B">Cada assunto tem o seu grupo de rotas. Verbos HTTP e códigos de resposta seguem o padrão REST.</span>
+  </div>
+</section>
+
+<!-- 07 PESSOAS, EMPRESAS E ALÇADAS -->
+<section data-sec="Pessoas, empresas e alçadas" data-screen-label="07 Pessoas, empresas e alçadas" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(24px,4vh,44px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">07 · Pessoas, empresas e alçadas</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">O login é da pessoa. O poder, da alçada.</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:18px">
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#8C8C8C">01 · Login</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Sempre da pessoa</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45;color:#D6D6D6">Quem entra é sempre uma pessoa. No app, ela escolhe operar a conta pessoal ou uma das empresas às quais está vinculada.</p>
+      </div>
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#8C8C8C">02 · Abertura</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Empresa conferida</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45;color:#D6D6D6">A conta da empresa passa por conferência antes de ser aberta.</p>
+      </div>
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#8C8C8C">03 · Papéis</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Papel e alçada em reais</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <span style="font-size:16px;background:#FFFFFF;color:#0A0A0A;font-weight:600;border-radius:999px;padding:7px 14px">administrador</span>
+          <span style="font-size:16px;border:1px solid #4A4A4A;border-radius:999px;padding:7px 14px">aprovador</span>
+          <span style="font-size:16px;border:1px solid #4A4A4A;border-radius:999px;padding:7px 14px">operador</span>
+          <span style="font-size:16px;border:1px solid #4A4A4A;border-radius:999px;padding:7px 14px">consulta</span>
+        </div>
+        <p style="margin:0;font-size:clamp(17px,1.25vw,20px);line-height:1.45;color:#D6D6D6">Cada papel enxerga e faz coisas diferentes.</p>
+      </div>
+    </div>
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;font-size:clamp(17px,1.35vw,21px);font-weight:600">
+      <span style="border:1px solid #4A4A4A;border-radius:999px;padding:10px 18px">Operador lança</span><span style="color:#8C8C8C">→</span>
+      <span style="border:1px solid #4A4A4A;border-radius:999px;padding:10px 18px">Acima da alçada</span><span style="color:#8C8C8C">→</span>
+      <span style="border:1px solid #B7791F;color:#FFFFFF;border-radius:999px;padding:10px 18px;display:flex;align-items:center;gap:8px"><span style="width:9px;height:9px;border-radius:50%;background:#B7791F"></span>Pendente</span><span style="color:#8C8C8C">→</span>
+      <span style="background:#FFFFFF;color:#0A0A0A;border-radius:999px;padding:10px 18px">Outra pessoa aprova</span>
+    </div>
+  </div>
+</section>
+
+<!-- 08 IMPOSTO NA VENDA -->
+<section data-sec="Imposto na venda" data-screen-label="08 Imposto na venda" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(24px,4vh,44px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">08 · O diferencial</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">O imposto se resolve na hora da venda.</h2>
+    </div>
+    <div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:14px">
+      <div style="width:100%;display:grid">
+        <div onClick="{{ m2.clickA }}" role="button" style="cursor:pointer;grid-area:1/1;justify-self:center;width:min(620px,max(48%,300px));position:relative;z-index:2;transform:{{ m2.aTf }};opacity:{{ m2.aOp }};filter:{{ m2.aFilter }};transition:transform .9s cubic-bezier(.22,.9,.24,1), opacity .6s ease, filter .6s ease;background:#FFFFFF;color:#0A0A0A;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(26px,3vw,44px);display:flex;flex-direction:column;gap:24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span style="font-size:clamp(32px,3vw,48px);font-weight:600;letter-spacing:-0.03em">Antes</span><span style="font-size:16px;color:#6B6B6B;border:1px solid #D6D6D6;border-radius:999px;padding:6px 14px;white-space:nowrap">modelo atual</span></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:18px;color:#6B6B6B">Na venda</div>
+            <div style="min-height:52px;background:#0A0A0A;border-radius:12px;display:flex;flex-wrap:wrap;align-items:center;padding:8px 18px;color:#FFFFFF;font-size:clamp(16px,1.4vw,20px);font-weight:600;gap:2px 10px">Empresa recebe <span style="font-family:'IBM Plex Mono',monospace;font-weight:500">R$ 10.000,00</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:18px;color:#6B6B6B">Semanas depois</div>
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><div style="height:52px;width:140px;background:#F2F2F2;border:1.5px dashed #8C8C8C;border-radius:12px"></div><span style="font-size:20px;color:#6B6B6B;font-weight:600">calcula e paga o imposto</span></div>
+          </div>
+          <p style="margin:0;font-size:clamp(19px,1.5vw,24px);line-height:1.4;text-wrap:pretty">O imposto entra junto com a venda e só é separado depois, à mão.</p>
+        </div>
+        <div onClick="{{ m2.clickD }}" role="button" style="cursor:pointer;grid-area:1/1;justify-self:center;width:min(620px,max(48%,300px));position:relative;z-index:1;transform:{{ m2.dTf }};opacity:{{ m2.dOp }};filter:{{ m2.dFilter }};transition:transform .9s cubic-bezier(.22,.9,.24,1), opacity .5s ease, filter .5s ease;background:#0A0A0A;color:#FFFFFF;border-radius:20px;box-shadow:0 24px 48px -20px rgba(10,10,10,.45);padding:clamp(26px,3vw,44px);display:flex;flex-direction:column;gap:24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span style="font-size:clamp(32px,3vw,48px);font-weight:600;letter-spacing:-0.03em">Depois</span><span style="font-size:16px;color:#0A0A0A;background:#FFFFFF;border-radius:999px;padding:6px 14px;font-weight:600;white-space:nowrap">split payment</span></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:18px;color:#8C8C8C">No pagamento da cobrança com nota</div>
+            <div style="display:flex;gap:{{ m2.gap }};min-height:52px;transition:gap .6s ease">
+              <div style="width:{{ m2.barW }};background:#1F9D55;border-radius:12px;display:flex;align-items:center;padding:0 20px;color:#FFFFFF;font-size:clamp(16px,1.4vw,20px);font-weight:600;flex-wrap:wrap;gap:2px 10px;padding-top:8px;padding-bottom:8px;overflow:hidden;transition:width 1s cubic-bezier(.2,.8,.2,1)">Recebe <span style="font-family:'IBM Plex Mono',monospace;font-weight:500;white-space:nowrap">{{ m2.barTxt }}</span></div>
+              <div style="flex:1;background:#8C8C8C;border-radius:12px"></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;font-size:17px;color:#D6D6D6;font-weight:600;opacity:{{ m2.op2 }};transition:opacity .6s ease .3s">Imposto da nota → governo, na hora</div>
+          </div>
+          <p style="margin:0;font-size:clamp(19px,1.5vw,24px);line-height:1.4;text-wrap:pretty;opacity:{{ m2.op2 }};transition:opacity .6s ease .5s">O imposto é separado na hora. A empresa já recebe só o que é dela.</p>
+        </div>
+      </div>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:#6B6B6B">{{ m2.hint }}</span>
+    </div>
+    <div style="background:#0A0A0A;color:#FFFFFF;border-radius:20px;padding:clamp(22px,2.4vw,34px) clamp(24px,2.8vw,40px);display:flex;flex-wrap:wrap;gap:12px 40px;align-items:center;opacity:{{ m2.op2 }};transform:translateY({{ m2.y2 }});transition:opacity .6s ease .7s, transform .6s ease .7s">
+      <span style="font-size:clamp(26px,2.4vw,40px);font-weight:600;letter-spacing:-0.03em">O split não é dinheiro a mais.</span>
+      <span style="flex:1 1 420px;font-size:clamp(18px,1.4vw,22px);line-height:1.45;color:#D6D6D6;text-wrap:pretty">É o mesmo imposto de sempre, só separado na hora. Vale para venda com nota fiscal; transferência comum chega inteira.</span>
+    </div>
+    <span style="font-size:15px;color:#6B6B6B">Exemplo ilustrativo: venda de R$ 10.000,00 com nota fiscal.</span>
+  </div>
+</section>
+
+<!-- 09 SEGURANÇA -->
+<section data-sec="Segurança" data-screen-label="09 Segurança" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.5vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">09 · Segurança</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Somos de cibersegurança. Começamos por aqui.</h2>
+      <span style="font-size:16px;color:#8C8C8C">Visão geral, de propósito: os detalhes ficam para depois dos testes de invasão da turma.</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px">
+      <button data-reveal="" onClick="{{ sc.c0.toggle }}" aria-pressed="{{ sc.c0.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c0.bg }};color:{{ sc.c0.fg }};border:1px solid {{ sc.c0.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c0.op }};transform:{{ sc.c0.tf }};box-shadow:{{ sc.c0.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Regras no servidor</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c0.sub }}">01</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c0.sub }}">O que importa é conferido e decidido no servidor, nunca só na tela do app.</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c1.toggle }}" aria-pressed="{{ sc.c1.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c1.bg }};color:{{ sc.c1.fg }};border:1px solid {{ sc.c1.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c1.op }};transform:{{ sc.c1.tf }};box-shadow:{{ sc.c1.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Identidade</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c1.sub }}">02</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c1.sub }}">Todo acesso é de uma pessoa identificada.</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c2.toggle }}" aria-pressed="{{ sc.c2.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c2.bg }};color:{{ sc.c2.fg }};border:1px solid {{ sc.c2.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c2.op }};transform:{{ sc.c2.tf }};box-shadow:{{ sc.c2.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Limites de movimentação</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c2.sub }}">03</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c2.sub }}">Movimentações têm limites, alinhados às normas do Banco Central.</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c3.toggle }}" aria-pressed="{{ sc.c3.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c3.bg }};color:{{ sc.c3.fg }};border:1px solid {{ sc.c3.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c3.op }};transform:{{ sc.c3.tf }};box-shadow:{{ sc.c3.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Dupla aprovação</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c3.sub }}">04</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c3.sub }}">Na empresa, o que passa da alçada de quem lançou precisa de uma segunda pessoa.</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c4.toggle }}" aria-pressed="{{ sc.c4.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c4.bg }};color:{{ sc.c4.fg }};border:1px solid {{ sc.c4.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c4.op }};transform:{{ sc.c4.tf }};box-shadow:{{ sc.c4.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Dados protegidos</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c4.sub }}">05</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c4.sub }}">Dados pessoais tratados com cuidado, seguindo a LGPD.</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c5.toggle }}" aria-pressed="{{ sc.c5.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c5.bg }};color:{{ sc.c5.fg }};border:1px solid {{ sc.c5.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c5.op }};transform:{{ sc.c5.tf }};box-shadow:{{ sc.c5.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Rastreabilidade</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c5.sub }}">06</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c5.sub }}">As operações ficam registradas para auditoria.</p>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- 10 JORNADA -->
+<section data-sec="Jornada no app" data-screen-label="10 Jornada no app" style="min-height:100vh;display:flex;align-items:center;padding:clamp(56px,8vh,110px) clamp(20px,6vw,110px);background:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(20px,3vh,32px)">
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;gap:24px 16px;align-items:flex-end;justify-content:space-between">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">10 · A jornada no app</div>
+        <h2 style="margin:0;font-size:clamp(36px,4vw,68px);line-height:1.02;letter-spacing:-0.035em;font-weight:600">Da boas-vindas ao comprovante.</h2>
+        <span style="font-size:15px;color:#6B6B6B;font-family:'IBM Plex Mono',monospace">O app de verdade · mexa à vontade · conta demonstrativa, dados fictícios</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button onClick="{{ jPrev }}" aria-label="Etapa anterior" style="width:52px;height:52px;border-radius:50%;border:1px solid #D6D6D6;background:#FFFFFF;font-size:22px;cursor:pointer;color:#0A0A0A" style-hover="background:#F2F2F2">←</button>
+        <button onClick="{{ jNext }}" aria-label="Próxima etapa" style="width:52px;height:52px;border-radius:50%;border:0;background:#0A0A0A;font-size:22px;cursor:pointer;color:#FFFFFF" style-hover="background:#242424">→</button>
+      </div>
+    </div>
+    <div data-reveal="" style="width:100%;position:{{ jPos }};top:{{ jEdge }};right:{{ jEdge }};bottom:{{ jEdge }};left:{{ jEdge }};z-index:{{ jZ }};background:{{ jWrapBg }};display:flex;align-items:center;justify-content:center">
+      <iframe ref="{{ jRef }}" src="astro-app.html" allow="camera; microphone; clipboard-write" title="App Astro — o app real, interativo" style="display:block;width:100%;height:{{ jFrameH }};border:0;background:{{ jFrameBg }}"></iframe>
+    </div>
+  </div>
+</section>
+
+<!-- 11 QUALIDADE E ENTREGA -->
+<section data-sec="Qualidade e entrega" data-screen-label="11 Qualidade e entrega" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);scroll-snap-align:start;background:#0A0A0A;color:#FFFFFF">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.6vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">11 · Qualidade e entrega</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Como sabemos que funciona.</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:16px">
+      <div data-reveal="" style="background:#FFFFFF;color:#0A0A0A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(56px,5.4vw,92px);font-weight:600;letter-spacing:-0.04em;line-height:1">99</span><span style="font-size:clamp(18px,1.3vw,21px);line-height:1.4;font-weight:600">testes automatizados na API, todos passando</span></div>
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Tipos verificados</h3>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:#D6D6D6">App e site têm o código tipado: muito erro aparece antes de rodar.</p>
+      </div>
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Ponta a ponta</h3>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:#D6D6D6">Um teste percorre o caminho inteiro, do app até a API.</p>
+      </div>
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Entrega</h3>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:#D6D6D6">O servidor sobe igual em qualquer máquina. O aplicativo Android é gerado de forma automática.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 ONDE ESTAMOS -->
+<section data-sec="Onde estamos" data-screen-label="12 Onde estamos" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.5vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">12 · Onde estamos</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600">Onde estamos, sem exagero.</h2>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:stretch">
+      <div data-reveal="" style="flex:1.6 1 540px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px">
+        <div style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:20px;display:flex;flex-direction:column;gap:12px">
+          <span style="align-self:flex-start;font-size:15px;font-weight:600;color:#FFFFFF;background:#1F9D55;border-radius:999px;padding:5px 13px">Pronto</span>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:clamp(15px,1.1vw,18px);line-height:1.35">
+            <li>Conta PF e PJ, Pix, extrato e comprovante</li><li>Cobrança com nota e separação do imposto</li><li>Empresa com papéis, alçadas e dupla aprovação</li><li>Loja, viagens e pontos</li><li>App ligado à API</li><li>Site</li>
+          </ul>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:20px;display:flex;flex-direction:column;gap:12px">
+          <span style="align-self:flex-start;font-size:15px;font-weight:600;color:#FFFFFF;background:#B7791F;border-radius:999px;padding:5px 13px">Em validação</span>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:clamp(15px,1.1vw,18px);line-height:1.35">
+            <li>Integração das telas mais novas</li><li>Aplicativo Android</li><li>Testes em celulares reais</li><li>Publicação do ambiente</li>
+          </ul>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:20px;display:flex;flex-direction:column;gap:12px">
+          <span style="align-self:flex-start;font-size:15px;font-weight:600;color:#FFFFFF;background:#6B6B6B;border-radius:999px;padding:5px 13px">Simulado</span>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:clamp(15px,1.1vw,18px);line-height:1.35">
+            <li>Pix e boleto reais (exigem integração com o Banco Central ou um parceiro)</li><li>Cartão virtual</li><li>Contas a pagar</li>
+          </ul>
+        </div>
+        <div style="background:#F2F2F2;border:1.5px dashed #D6D6D6;border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:12px">
+          <span style="align-self:flex-start;font-size:15px;font-weight:600;color:#0A0A0A;border:1.5px solid #0A0A0A;border-radius:999px;padding:4px 12px">Próximo passo</span>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:clamp(15px,1.1vw,18px);line-height:1.35">
+            <li>Caixinhas e cartão de crédito</li><li>Abertura de conta PJ com documentos</li><li>Pix agendado</li><li>Certificado digital da empresa</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 ENCERRAMENTO -->
+<section data-sec="Encerramento" data-screen-label="13 Encerramento" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start;overflow:hidden">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(28px,5vh,52px)">
+    <div data-reveal="" style="display:flex;align-items:center;justify-content:space-between;gap:24px">
+      <img src="site/public/logo-astro-branco.svg" alt="Astro" style="height:clamp(30px,2.8vw,46px);width:auto;display:block">
+      <div style="width:clamp(70px,7vw,110px);aspect-ratio:1">{{ eclipseSmall }}</div>
+    </div>
+    <h2 data-reveal="" style="margin:0;font-size:clamp(64px,10vw,180px);line-height:.92;letter-spacing:-0.05em;font-weight:600">Obrigado.</h2>
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;gap:20px;align-items:stretch">
+      <div style="flex:2 1 420px;background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,34px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-size:18px;font-weight:600;color:#8C8C8C">Equipe CYMAG · Cibersegurança · SENAI São Caetano do Sul</span>
+        <div style="display:flex;flex-wrap:wrap;gap:10px 28px;font-size:clamp(22px,1.8vw,30px);font-weight:600;letter-spacing:-0.015em;line-height:1.35">
+          <span>Alef Kaue</span><span>Carla Souza</span><span>Gustavo Lopreto</span><span>Matheus Sousa</span><span>Yuri Alves</span>
+        </div>
+      </div>
+      <div style="flex:1 1 300px;background:#FFFFFF;color:#0A0A0A;border-radius:20px;padding:clamp(22px,2.4vw,34px);display:flex;align-items:center">
+        <span style="font-size:clamp(24px,2vw,34px);font-weight:600;letter-spacing:-0.02em">Espaço para perguntas</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { cur: 0, stage: 0, d2: 0, f2: 'depois', secSel: -1, mode: 'nota', tlOn: false, ty: 2033, valor: '10.000,00', dest: 'PJ', ano: '2033', reg: 0, appZoom: false };
+  jRef = React.createRef();
+
+  secs() { return Array.from(document.querySelectorAll('[data-sec]')); }
+  curIdx() {
+    const mid = window.innerHeight * 0.45; let idx = 0;
+    this.secs().forEach((s, i) => { if (s.getBoundingClientRect().top <= mid) idx = i; });
+    return idx;
+  }
+  go(i) {
+    const s = this.secs(); if (!s.length) return;
+    const t = s[Math.max(0, Math.min(s.length - 1, i))];
+    window.scrollTo({ top: t.getBoundingClientRect().top + window.scrollY, behavior: 'smooth' });
+  }
+  play() { this.setState({ stage: 0, mode: 'nota' }); }
+  nextStep() { this.setState(s => ({ mode: 'nota', stage: Math.min(3, (s.mode === 'nota' ? s.stage : 0) + 1) })); }
+  openD2() {
+    clearTimeout(this.d2t);
+    this.setState({ d2: 1, f2: 'depois' });
+    this.d2t = setTimeout(() => this.setState({ d2: 2 }), 650);
+  }
+  reveal(el) { el.removeAttribute('data-hidden'); el.style.opacity = '1'; el.style.transform = 'none'; }
+
+  componentDidMount() {
+    document.querySelectorAll('[data-reveal]').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.top < window.innerHeight && r.bottom > 0) return;
+      el.style.opacity = '0'; el.style.transform = 'translateY(18px)';
+      el.style.transition = 'opacity .7s ease, transform .7s ease';
+      el.setAttribute('data-hidden', '');
+    });
+    this.onScroll = () => {
+      document.querySelectorAll('[data-hidden]').forEach(el => { if (el.getBoundingClientRect().top < window.innerHeight * 0.92) this.reveal(el); });
+      const idx = this.curIdx();
+      this.setState(s => s.cur === idx ? null : { cur: idx });
+    };
+    window.addEventListener('scroll', this.onScroll, { passive: true });
+    window.addEventListener('resize', this.onScroll);
+    this.onPrint = () => { document.querySelectorAll('[data-hidden]').forEach(el => this.reveal(el)); this.setState({ stage: 3, tlOn: true, d2: 2 }); };
+    window.addEventListener('beforeprint', this.onPrint);
+    this.mover = (n, c) => {
+      if (n === c + 1 && c === 7 && this.state.d2 === 0) return this.openD2();
+      this.go(n);
+    };
+    this.onKey = e => {
+      if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+      if (this.state.appZoom) {
+        if (e.key === 'Escape') { e.preventDefault(); const f = this.jRef.current; if (f) f.contentWindow.postMessage('astro-exit-zoom', '*'); }
+        return;
+      }
+      const k = e.key, c = this.curIdx(); let n = null;
+      if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown') n = c + 1;
+      else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') n = c - 1;
+      else if (k === 'Home') n = 0;
+      else if (k === 'End') n = this.secs().length - 1;
+      if (n === null) return;
+      e.preventDefault();
+      this.mover(n, c);
+    };
+    window.addEventListener('keydown', this.onKey);
+    // Setas ↑ ↓ apertadas com o foco dentro do celular do slide 10 chegam por mensagem.
+    this.onMsg = e => {
+      if (e.data === 'astro-zoom-on') return this.setState({ appZoom: true });
+      if (e.data === 'astro-zoom-off') return this.setState({ appZoom: false });
+      if (this.state.appZoom) return;                   // no modo ampliado, as setas não trocam de slide
+      const c = this.curIdx();
+      if (e.data === 'astro-slide-next') this.mover(c + 1, c);
+      else if (e.data === 'astro-slide-prev') this.mover(c - 1, c);
+    };
+    window.addEventListener('message', this.onMsg);
+    this.t0 = setTimeout(this.onScroll, 120);
+    this.poll = setInterval(this.onScroll, 300);
+    this.tStop = setTimeout(() => clearInterval(this.poll), 6000);
+  }
+  componentWillUnmount() {
+    window.removeEventListener('scroll', this.onScroll);
+    window.removeEventListener('resize', this.onScroll);
+    window.removeEventListener('beforeprint', this.onPrint);
+    window.removeEventListener('keydown', this.onKey);
+    window.removeEventListener('message', this.onMsg);
+    (this.timers || []).forEach(clearTimeout);
+    clearTimeout(this.t0); clearTimeout(this.d2t); clearTimeout(this.tStop); clearInterval(this.poll);
+  }
+
+  toCents(str) {
+    let s = String(str || '').replace(/[^\d,.]/g, '');
+    if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+    else if ((s.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(s)) s = s.replace(/\./g, '');
+    const [ip, dp = ''] = s.split('.');
+    let c = (parseInt(ip || '0', 10) || 0) * 100 + parseInt((dp + '00').slice(0, 2), 10);
+    if ((dp[2] || '0') >= '5') c += 1;
+    return Math.min(c, 100000000000);
+  }
+  brl(c) { return (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+  pctTxt(x) { return x.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%'; }
+
+  eclipse(dur) {
+    return React.createElement('img', { src: 'site/public/favicon.svg', alt: '', style: { width: '100%', height: '100%', display: 'block', borderRadius: '50%', animation: 'astroSpin ' + dur + 's linear infinite' } });
+  }
+
+  renderVals() {
+    const { cur, stage, mode, tlOn, ty, valor, dest, ano, reg, d2, f2, secSel } = this.state;
+    const labels = ['Capa', 'O que construímos', 'Arquitetura geral', 'Front-end web', 'Um banco, dois mundos', 'API e rotas', 'Pessoas, empresas e alçadas', 'Imposto na venda', 'Segurança', 'Jornada no app', 'Qualidade e entrega', 'Onde estamos', 'Encerramento'];
+    const N = labels.length, dark = cur % 2 === 0;
+
+    return {
+      eclipseBig: this.eclipse(60),
+      eclipseSmall: this.eclipse(40),
+      progress: ((cur + 1) / N * 100) + '%',
+      counter: String(cur + 1).padStart(2, '0') + ' / ' + N + ' · ' + labels[cur],
+      ui: { track: dark ? 'rgba(255,255,255,.14)' : 'rgba(10,10,10,.08)', fill: dark ? '#FFFFFF' : '#0A0A0A', counter: dark ? '#8C8C8C' : '#6B6B6B' },
+      dots: labels.map((label, i) => ({
+        label, go: () => this.go(i), h: i === cur ? '28px' : '10px',
+        bg: i === cur ? (dark ? '#FFFFFF' : '#0A0A0A') : (dark ? 'rgba(255,255,255,.3)' : 'rgba(10,10,10,.22)')
+      })),
+
+      m2: {
+        aTf: d2 >= 1 ? 'translateX(calc(-50% - 14px)) scale(' + (f2 === 'antes' ? 1.02 : .97) + ')' : 'none',
+        aOp: d2 >= 1 && f2 !== 'antes' ? 0.45 : 1,
+        aFilter: d2 >= 1 && f2 !== 'antes' ? 'grayscale(1)' : 'none',
+        dTf: d2 >= 1 ? 'translateX(calc(50% + 14px)) scale(' + (f2 === 'antes' ? .97 : 1.02) + ')' : 'translateX(0) scale(.92)',
+        dOp: d2 >= 1 ? (f2 === 'antes' ? 0.45 : 1) : 0,
+        dFilter: d2 >= 1 && f2 === 'antes' ? 'grayscale(1)' : 'none',
+        clickA: () => d2 === 0 ? this.openD2() : this.setState({ f2: 'antes' }),
+        clickD: () => d2 >= 1 && this.setState({ f2: 'depois' }),
+        hint: d2 === 0 ? 'Clique no card (ou tecla →) para ver o depois' : 'Clique em um card para destacá-lo',
+        op: d2 >= 1 ? 1 : 0, tf: d2 >= 1 ? 'none' : 'translateY(24px) scale(.97)',
+        gap: d2 >= 2 ? '6px' : '0px', barW: d2 >= 2 ? '73.5%' : '100%', barTxt: d2 >= 2 ? 'R$ 7.350,00' : 'R$ 10.000,00',
+        op2: d2 >= 2 ? 1 : 0, y2: d2 >= 2 ? '0px' : '14px'
+      },
+      sc: Object.fromEntries([0, 1, 2, 3, 4, 5].map(i => {
+        const on = secSel === i, dim = secSel >= 0 && !on;
+        return ['c' + i, { on, toggle: () => this.setState({ secSel: on ? -1 : i }),
+          bg: on ? '#FFFFFF' : '#141414', fg: on ? '#0A0A0A' : '#FFFFFF', bd: on ? '#FFFFFF' : '#3A3A3A',
+          sub: on ? '#3A3A3A' : '#D6D6D6', hi: on ? '#0A0A0A' : '#FFFFFF',
+          op: dim ? 0.45 : 1, tf: on ? 'scale(1.03)' : 'none', sh: on ? '0 24px 60px -20px rgba(255,255,255,.25)' : 'none' }];
+      })),
+      jRef: this.jRef,
+      jPrev: () => this.jRef.current && this.jRef.current.contentWindow.postMessage('astro-prev', '*'),
+      jNext: () => this.jRef.current && this.jRef.current.contentWindow.postMessage('astro-next', '*'),
+      jPos: this.state.appZoom ? 'fixed' : 'static',
+      jEdge: this.state.appZoom ? '0' : 'auto',
+      jZ: this.state.appZoom ? '70' : 'auto',
+      jWrapBg: this.state.appZoom ? '#0A0A0A' : 'transparent',
+      jFrameH: this.state.appZoom ? '100vh' : 'clamp(480px,74vh,720px)',
+      jFrameBg: this.state.appZoom ? '#0A0A0A' : '#FFFFFF',
+
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { sair as sairApi, selecionarConta } from "./api";
-import type { Conta, LoginResposta } from "./types";
+import type { Conta, LoginResposta, Pessoa } from "./types";
 
 /**
  * Sessão do app. O login é da PESSOA; ela pode operar várias contas (a pessoal
@@ -11,6 +11,8 @@ interface AuthState {
   ready: boolean;
   conta: Conta | null;
   contas: Conta[];
+  /** A pessoa logada (nome, e-mail, CPF). */
+  pessoa: Pessoa | null;
   entrar: (r: LoginResposta) => void;
   trocarConta: (c: Conta) => void;
   sair: () => void;
@@ -22,12 +24,14 @@ const KEY = "payflow-session";
 interface Salvo {
   conta: Conta;
   contas: Conta[];
+  pessoa?: Pessoa | null;
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [conta, setConta] = useState<Conta | null>(null);
   const [contas, setContas] = useState<Conta[]>([]);
+  const [pessoa, setPessoa] = useState<Pessoa | null>(null);
 
   useEffect(() => {
     try {
@@ -37,6 +41,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (s.conta) {
           setConta(s.conta);
           setContas(s.contas ?? [s.conta]);
+          setPessoa(s.pessoa ?? null);
           selecionarConta(s.conta);
         }
       }
@@ -46,11 +51,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setReady(true);
   }, []);
 
-  function salvar(c: Conta | null, cs: Conta[]) {
+  function salvar(c: Conta | null, cs: Conta[], p: Pessoa | null) {
     setConta(c);
     setContas(cs);
+    setPessoa(p);
     try {
-      if (c) sessionStorage.setItem(KEY, JSON.stringify({ conta: c, contas: cs } satisfies Salvo));
+      if (c)
+        sessionStorage.setItem(
+          KEY,
+          JSON.stringify({ conta: c, contas: cs, pessoa: p } satisfies Salvo),
+        );
       else sessionStorage.removeItem(KEY);
     } catch {
       /* ignore */
@@ -59,19 +69,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const entrar = (r: LoginResposta) => {
     selecionarConta(r.conta);
-    salvar(r.conta, r.contas);
+    salvar(r.conta, r.contas, r.pessoa ?? null);
   };
   const trocarConta = (c: Conta) => {
     selecionarConta(c);
-    salvar(c, contas);
+    salvar(c, contas, pessoa);
   };
   const sair = () => {
     void sairApi();
-    salvar(null, []);
+    salvar(null, [], null);
   };
 
   return (
-    <Ctx.Provider value={{ ready, conta, contas, entrar, trocarConta, sair }}>
+    <Ctx.Provider value={{ ready, conta, contas, pessoa, entrar, trocarConta, sair }}>
       {children}
     </Ctx.Provider>
   );
