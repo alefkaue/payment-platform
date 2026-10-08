@@ -3,7 +3,9 @@
  * Pix e transações novas, guardados no localStorage do navegador. Assim, no
  * mesmo navegador, uma pessoa cria a conta, cadastra chaves e recebe Pix de
  * outra conta — como no backend. Os dados NÃO são compartilhados entre
- * aparelhos: para isso, use o modo API (VITE_API_URL).
+ * aparelhos, a não ser que o build tenha VITE_DEMO_SYNC_URL: aí o banco demo é
+ * espelhado num JSON público (ex.: npoint.io) e celular e computador enxergam as
+ * mesmas contas, chaves e Pix. Senhas vão só como hash (SHA-256).
  *
  * As regras de chave espelham backend/app/services/pix_service.py.
  */
@@ -69,6 +71,63 @@ function semente(): BancoDemo {
 
 let memoria: BancoDemo | null = null;
 
+// --- Sincronização entre aparelhos (opcional) ---------------------------------------
+const SYNC = (import.meta.env["VITE_DEMO_SYNC_URL"] as string | undefined) || undefined;
+let envio: Promise<void> | null = null;
+
+/** Espera o último envio terminar (para o outro aparelho já ver a mudança). */
+export async function aguardarEnvio(): Promise<void> {
+  if (envio) await envio;
+}
+
+/** Traz o banco compartilhado para este aparelho (sem rede, segue com o local). */
+export async function puxar(): Promise<void> {
+  if (!SYNC || typeof window === "undefined") return;
+  await aguardarEnvio(); // não sobrescreve uma mudança local ainda não enviada
+  try {
+    const r = await fetch(SYNC, { cache: "no-store" });
+    if (!r.ok) return;
+    const b = (await r.json()) as BancoDemo | null;
+    if (b?.versao === 1) window.localStorage.setItem(KEY, JSON.stringify(b));
+  } catch {
+    /* offline: usa o que está no aparelho */
+  }
+}
+
+function enviar(b: BancoDemo) {
+  if (!SYNC) return;
+  const corpo = JSON.stringify(b);
+  const anterior = envio;
+  envio = (async () => {
+    if (anterior) await anterior;
+    try {
+      await fetch(SYNC, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: corpo,
+      });
+    } catch {
+      /* offline: fica só neste aparelho */
+    }
+  })();
+}
+
+// --- Senha (no banco compartilhado nunca vai em texto) ------------------------------
+async function sha256(txt: string): Promise<string> {
+  const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(txt));
+  return [...new Uint8Array(d)].map((x) => x.toString(16).padStart(2, "0")).join("");
+}
+
+export async function hashSenha(email: string, senha: string): Promise<string> {
+  return `sha256:${await sha256(`astro-demo:${email}:${senha}`)}`;
+}
+
+export async function senhaConfere(p: PessoaDemo, senha: string): Promise<boolean> {
+  if (!p.senha) return true; // pessoa do roteiro: qualquer senha
+  if (p.senha.startsWith("sha256:")) return p.senha === (await hashSenha(p.email, senha));
+  return p.senha === senha;
+}
+
 /** Lê sempre do localStorage: outra aba (outra conta) pode ter mudado os dados. */
 export function banco(): BancoDemo {
   if (typeof window !== "undefined") {
@@ -100,6 +159,7 @@ export function salvar(b: BancoDemo) {
   } catch {
     /* sem storage: vale só até recarregar a página */
   }
+  enviar(b);
 }
 
 function maiorId(b: BancoDemo): number {

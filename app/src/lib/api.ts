@@ -72,8 +72,12 @@ import {
   voos as VOOS,
 } from "@/mocks/data";
 import {
+  aguardarEnvio,
   banco,
   cadastrarPessoa,
+  hashSenha,
+  puxar,
+  senhaConfere,
   chavesDa,
   contaPorId,
   contasDa,
@@ -255,6 +259,14 @@ export function selecionarConta(conta: Conta) {
   if (!MODO_API) sessao.conta = contaPorId(conta.carteira_id) ?? { ...conta };
 }
 
+/** Modo demonstração: traz o banco compartilhado (outro aparelho pode ter mudado). */
+async function sincronizar() {
+  if (MODO_API) return;
+  await puxar();
+  const c = contaPorId(sessao.conta.carteira_id);
+  if (c) sessao.conta = c;
+}
+
 /** Modo demonstração: grava saldo/pontos da conta em uso no banco demo. */
 function persistirSessao() {
   if (!MODO_API) guardarConta(sessao.conta);
@@ -285,10 +297,11 @@ export async function login({ email, senha }: LoginPayload): Promise<LoginRespos
     selecionarConta(conta);
     return { contas, conta, pessoa };
   }
+  await sincronizar();
   // Demonstração: quem se cadastrou entra na própria conta (senha conferida);
   // e-mail desconhecido cai na Marina, a pessoa do roteiro da apresentação.
   const achada = pessoaPorLogin(email);
-  if (achada?.senha && senha !== achada.senha && senha !== "biometria")
+  if (achada && senha !== "biometria" && !(await senhaConfere(achada, senha)))
     throw new ApiError("E-mail/CPF ou senha incorretos.", 401);
   const p = achada ?? banco().pessoas.find((x) => x.email === MARINA.email) ?? MARINA;
   const contas = contasDa(p);
@@ -340,6 +353,7 @@ export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
     if (p.empresa.setor) pj.setor = p.empresa.setor;
     return { contas: [...r.contas, pj], conta: r.conta };
   }
+  await sincronizar();
   const email = p.email.trim().toLowerCase();
   const cpf = p.cpf.replace(/\D/g, "");
   if (pessoaPorLogin(email)) throw new ApiError("Já existe uma conta com este e-mail.", 409);
@@ -383,10 +397,17 @@ export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
     contas.push(pj);
   }
   cadastrarPessoa(
-    { nome: p.nome, email, senha: p.senha, cpf, contas: contas.map((c) => c.carteira_id) },
+    {
+      nome: p.nome,
+      email,
+      senha: await hashSenha(email, p.senha),
+      cpf,
+      contas: contas.map((c) => c.carteira_id),
+    },
     contas,
   );
   selecionarConta(pf);
+  await aguardarEnvio();
   return { contas, conta: pf, pessoa: { nome: p.nome, email, cpf } };
 }
 
@@ -440,7 +461,8 @@ export async function minhaConta(): Promise<Conta> {
     }
     return c;
   }
-  // Outra conta (outra aba/login) pode ter mandado Pix: relê o saldo guardado.
+  // Outra conta (outro aparelho/aba) pode ter mandado Pix: relê o saldo guardado.
+  await puxar();
   const atual = contaPorId(sessao.conta.carteira_id);
   if (atual) sessao.conta = atual;
   return { ...sessao.conta };
@@ -458,6 +480,7 @@ export async function transacoes_(): Promise<Transacao[]> {
     const ts = await get<TransacaoApi[]>("/pagamentos/transacoes?limite=100");
     return ts.map((t) => mapTransacao(t, c.carteira_id));
   }
+  await sincronizar();
   const minha = sessao.conta.carteira_id;
   return todasTransacoes()
     .filter((t) => t.origem_carteira_id === minha || t.destino_carteira_id === minha)
@@ -479,6 +502,7 @@ export async function transacaoPorId(id: number): Promise<Transacao> {
     const c = await get<ContaApi>("/contas/atual");
     return mapTransacao(await get<TransacaoApi>(`/pagamentos/transacoes/${id}`), c.carteira_id);
   }
+  await sincronizar();
   const t = todasTransacoes().find((x) => x.id === id);
   if (!t) throw new ApiError("Transação não encontrada.", 404);
   return t;
@@ -508,6 +532,7 @@ export async function consultarDestino(texto: string): Promise<CarteiraInfo> {
     const destino: DestinoRef = /^\d{8}-\d$/.test(alvo) ? { numero: alvo } : { chave: alvo };
     return { carteira_id: 0, nome: r.nome, tipo: r.titular_tipo, documento: r.documento, destino };
   }
+  await sincronizar();
   // Primeiro como chave Pix; senão, como número de conta.
   const id = resolverChave(alvo) ?? (/^[\d-]+$/.test(alvo) ? Number(alvo.replace(/\D/g, "")) : NaN);
   const conta = contaPorId(id);
@@ -603,6 +628,7 @@ export async function transferir(p: TransferirPayload): Promise<ResultadoTransfe
     categoria: "transferencia",
     descricao: p.descricao || `Pix para ${destino.nome}`,
   });
+  await aguardarEnvio();
   return { tipo: "transacao", transacao: t };
 }
 
@@ -628,6 +654,7 @@ export async function depositar(p: DepositarPayload): Promise<Transacao> {
     }
   }
   if (!(p.valor > 0)) throw new ApiError("Valor inválido.");
+  await sincronizar();
   const t: Transacao = {
     id: genId(),
     origem_carteira_id: BANCO_CARTEIRA,
@@ -647,6 +674,7 @@ export async function depositar(p: DepositarPayload): Promise<Transacao> {
   sessao.conta.saldo = r2(sessao.conta.saldo + p.valor);
   persistirSessao();
   guardarTransacao(t);
+  await aguardarEnvio();
   return t;
 }
 
@@ -662,15 +690,17 @@ export interface ChavePix {
 
 export async function minhasChaves(): Promise<ChavePix[]> {
   if (MODO_API) return get<ChavePix[]>("/pix/chaves");
+  await sincronizar();
   return chavesDa(sessao.conta.carteira_id).map(({ id, tipo, valor }) => ({ id, tipo, valor }));
 }
 
 export async function criarChave(tipo: string, valor?: string): Promise<ChavePix> {
   if (MODO_API) return post<ChavePix>("/pix/chaves", { tipo, valor: valor || undefined });
   await delay(300);
-  banco(); // reserva os ids já guardados antes de gerar um novo
+  await sincronizar(); // e reserva os ids já guardados antes de gerar um novo
   try {
     const { id, tipo: t, valor: v } = criarChaveDemo(sessao.conta, tipo, valor, genId());
+    await aguardarEnvio();
     return { id, tipo: t, valor: v };
   } catch (e) {
     throw new ApiError((e as Error).message, 400);
@@ -682,8 +712,10 @@ export async function removerChave(id: number): Promise<void> {
     await requisitar("DELETE", `/pix/chaves/${id}`);
     return;
   }
+  await sincronizar();
   if (!removerChaveDemo(sessao.conta.carteira_id, id))
     throw new ApiError("Chave não encontrada.", 404);
+  await aguardarEnvio();
 }
 
 interface LimitesApi {
@@ -957,6 +989,7 @@ export async function comprarProduto(p: ComprarProdutoPayload): Promise<Transaca
   });
   sessao.conta.pontos += pontosDaCompra(produto.preco);
   persistirSessao();
+  await aguardarEnvio();
   return t;
 }
 
@@ -1007,6 +1040,7 @@ export async function comprarPassagem(p: ComprarPassagemPayload): Promise<Transa
   });
   sessao.conta.pontos += pontosDaCompra(voo.preco);
   persistirSessao();
+  await aguardarEnvio();
   return t;
 }
 
@@ -1026,6 +1060,7 @@ export async function resgatarPassagem(vooId: number): Promise<Resgate> {
   }
   if (sessao.conta.tipo !== "PF")
     throw new ApiError("Viagens é um benefício das contas Pessoa Física.", 403);
+  await sincronizar();
   const voo = await vooPorId(vooId);
   if (sessao.conta.pontos < voo.milhas)
     throw new ApiError(
@@ -1033,6 +1068,7 @@ export async function resgatarPassagem(vooId: number): Promise<Resgate> {
     );
   sessao.conta.pontos -= voo.milhas;
   persistirSessao();
+  await aguardarEnvio();
   return {
     localizador: crypto.randomUUID().slice(0, 6).toUpperCase(),
     voo,
