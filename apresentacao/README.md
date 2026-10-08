@@ -1,60 +1,64 @@
-# Apresentação Astro — slide 10 com o app interativo
+# Apresentação Astro — slide 10 com o app REAL embutido
 
 Pasta temporária, separada do projeto (`app/`, `site/`, `backend/` não foram tocados). Pode apagar depois da banca.
 
-## O que mudou (2026-10-07)
+## O que é (estado em 2026-10-07, ~22:10)
 
-No slide **10 · A jornada no app**, o carrossel com as 11 telas estáticas foi trocado por **um único celular interativo** (`astro-app.html`, embutido por `<iframe>`). A banca mexe no app dentro da própria apresentação.
+No slide **10 · A jornada no app**, as 11 telas estáticas foram trocadas por **um celular com o app de verdade dentro**: é o build do `app/` (Vite, modo demonstração, sem `VITE_API_URL`), embutido por `<iframe>`. Clicar em Entrar entra, criar conta cria, e a verificação facial **abre a câmera** (o iframe tem `allow="camera"`).
 
-- Cada etapa concluída é **salva** (localStorage, chave `astro-demo-v1`) e o app **passa para a próxima tela**.
-- A trilha à esquerda mostra as 11 etapas, marca as concluídas e deixa pular para qualquer uma.
-- As setas ← → do slide voltam/avançam a etapa.
-- No fim, "Recomeçar a jornada" zera tudo.
+Ao lado fica o **menu das 11 etapas**, que acompanha o app sozinho:
 
-| # | Etapa | O que dá para fazer | Como avança |
-|---|---|---|---|
-| 01 | Boas-vindas | — | Abrir conta / Já tenho conta |
-| 02 | Login | editar e-mail/CPF | Continuar |
-| 03 | Verificação facial | desafio com contagem regressiva (simulado, sem câmera) | Simular movimento |
-| 04 | Início PF | cartão, saldo, pontos, atalhos | Pix |
-| 05 | Pix | enviar (debita o saldo, sem retenção) ou receber com QR | Trocar para a conta da empresa |
-| 06 | Início PJ | retido, repassado, repasse de amanhã | Imposto das suas vendas |
-| 07 | Entenda o split | escolher o ano 2026–2033 e simular um valor | Cobrar um cliente |
-| 08 | Cobrar com nota | mudar o valor (CBS/IBS recalculam), Pix QR ou boleto | Gerar cobrança |
-| 09 | Equipe & alçadas | convidar pessoa | Ver aprovações pendentes |
-| 10 | Aprovações pendentes | aprovar / recusar | Ver comprovante |
-| 11 | Comprovante | split linha a linha do valor cobrado na etapa 08 | Recomeçar |
+- lê a rota do app e o que está na tela a cada 350 ms e marca a etapa atual;
+- cada etapa alcançada fica **salva** (localStorage `astro-jornada-v2`) e ganha ✓;
+- clicar numa etapa leva o app para aquela tela; as setas ← → do slide fazem o mesmo;
+- "Recomeçar a jornada" limpa a sessão do app e volta para a boas-vindas.
+
+| # | Etapa | Como o menu detecta |
+|---|---|---|
+| 01 | Boas-vindas | rota `/bem-vindo` |
+| 02 | Login | rota `/login` ou `/criar-conta` |
+| 03 | Verificação facial | existe um `<video>` na tela (câmera aberta) |
+| 04 | Início PF | rota `/inicio` sem o card "Imposto das suas vendas" |
+| 05 | Pix | rota `/pix` ou `/transferir` |
+| 06 | Início PJ | rota `/inicio` com o card "Imposto das suas vendas" |
+| 07 | Entenda o split | rota `/split` |
+| 08 | Cobrar com nota | rota `/contas` |
+| 09 | Equipe & alçadas | rota `/equipe` |
+| 10 | Aprovações pendentes | rota `/pendentes` |
+| 11 | Comprovante | rota `/comprovante/...` (o clique no menu abre `/extrato`) |
 
 ## Como abrir
 
-Precisa de servidor local (o iframe não carrega bem via `file://` em alguns navegadores):
-
 ```bash
 cd apresentacao
-python -m http.server 8777
-# abrir http://localhost:8777/Astro%20Apresentacao.dc.html
+python servir.py
+# abrir http://localhost:8777/Astro%20Apresentacao.dc.html  e ir ao slide 10
 ```
+
+Use `servir.py`, não `python -m http.server`: ele devolve o `index.html` do app para as rotas (`/inicio`, `/pix`...). Tem que ser `localhost` (ou https) para o navegador liberar a câmera.
 
 ## Arquivos
 
-- `Astro Apresentacao.dc.html` — a apresentação (só o slide 10 e os handlers `jPrev`/`jNext` mudaram).
-- `astro-app.html` — o app demonstrativo (HTML/JS puro, sem build).
+- `Astro Apresentacao.dc.html` — a apresentação (mudou só o slide 10 e os handlers `jPrev`/`jNext`).
+- `astro-app.html` — menu das 11 etapas + moldura do celular com o app dentro.
+- `servir.py` — servidor local.
+- `index.html`, `assets/`, `welcome/`, ícones — **build do app** (gerado de `app/` com `npm ci && npm run build && node scripts/assemble-www.mjs`). Para atualizar, refaça o build e copie `app/www/*` para cá.
 - `support.js`, `image-slot.js`, `site/public/*` — dependências da apresentação.
-
-## Limites (ser honesto com a banca)
-
-- É uma **réplica demonstrativa** das telas, com dados fictícios: não é o build do app React (`app/`) nem fala com o backend.
-- A verificação facial é simulada; não liga a câmera.
-- As alíquotas seguem o cronograma de `app/src/lib/split.ts` (CBS 8,8% / IBS 17,7% em 2033, estimativas).
 
 ## Verificado
 
-- Script do app sem erro de sintaxe; tela 01 conferida por captura no Edge sem janela.
-- O runtime da apresentação renderiza o `<iframe>` no slide 10.
-- **Não** testado: clique a clique em todas as 11 telas, nem celular/projetor da banca. Passar a jornada inteira uma vez antes de apresentar.
+- Build do app sem erro; o app real aparece dentro do celular (captura no Edge sem janela) e o menu marca "01 Boas-vindas".
+- A apresentação renderiza o iframe do slide 10 com `allow="camera"`.
+
+## NÃO verificado (parei por causa do horário, 22:15)
+
+- Jornada completa clique a clique no slide: login, criar conta, **câmera na verificação facial**, troca PF → PJ.
+- Se o menu detecta certo as etapas 03 (câmera) e 06 (Início PJ) — foi escrito pela leitura do código, não testado ao vivo.
+- Clicar numa etapa do menu recarrega o app naquela rota; não confirmei que a sessão sobrevive ao recarregar.
+- O MediaPipe da verificação facial pode baixar modelos da internet: testar com a rede da sala da banca.
 
 ## Próximos passos
 
-1. Percorrer as 11 etapas e ajustar textos/valores.
-2. Se sobrar tempo: trocar a réplica pelo build real do app (`npm run build` em `app/`, modo demonstração) dentro do mesmo iframe.
+1. Percorrer as 11 etapas no slide e corrigir a detecção do menu onde errar.
+2. Testar a câmera no notebook da apresentação e aceitar a permissão antes da banca.
 3. Depois da banca, apagar esta pasta/branch.

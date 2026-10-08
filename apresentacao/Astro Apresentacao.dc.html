@@ -436,7 +436,7 @@ input:focus{outline:none}
       <div style="display:flex;flex-direction:column;gap:16px">
         <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">10 · A jornada no app</div>
         <h2 style="margin:0;font-size:clamp(36px,4vw,68px);line-height:1.02;letter-spacing:-0.035em;font-weight:600">Da boas-vindas ao comprovante.</h2>
-        <span style="font-size:15px;color:#6B6B6B;font-family:'IBM Plex Mono',monospace">App interativo · toque nas telas · conta demonstrativa, dados fictícios</span>
+        <span style="font-size:15px;color:#6B6B6B;font-family:'IBM Plex Mono',monospace">O app de verdade · mexa à vontade · conta demonstrativa, dados fictícios</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px">
         <button onClick="{{ jPrev }}" aria-label="Etapa anterior" style="width:52px;height:52px;border-radius:50%;border:1px solid #D6D6D6;background:#FFFFFF;font-size:22px;cursor:pointer;color:#0A0A0A" style-hover="background:#F2F2F2">←</button>
@@ -444,7 +444,7 @@ input:focus{outline:none}
       </div>
     </div>
     <div data-reveal="" style="width:100%">
-      <iframe ref="{{ jRef }}" src="astro-app.html" title="App Astro — demonstração interativa" style="display:block;width:100%;height:clamp(460px,70vh,680px);border:0;background:#FFFFFF"></iframe>
+      <iframe ref="{{ jRef }}" src="astro-app.html" allow="camera; microphone; clipboard-write" title="App Astro — o app real, interativo" style="display:block;width:100%;height:clamp(480px,74vh,720px);border:0;background:#FFFFFF"></iframe>
     </div>
   </div>
 </section>
