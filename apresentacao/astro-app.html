@@ -23,8 +23,12 @@ body{font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif
 .reset{align-self:flex-start;margin:10px 0 0 10px;width:26px;height:26px;padding:0;border:0;border-radius:50%;overflow:hidden;background:#0A0A0A;cursor:pointer;opacity:.28;transition:opacity .2s,transform .5s}
 .reset:hover,.reset:focus-visible{opacity:1;transform:rotate(-180deg)}
 .reset img{display:block;width:100%;height:100%}
+/* Palco: o celular tem tamanho FIXO e o app renderiza sempre em ~390px; o
+   aparelho inteiro é escalado para caber, em vez de espremer o app quando a
+   tela diminui. */
+.stage{flex:1 1 auto;min-width:0;height:100%;display:flex;align-items:center;justify-content:center;overflow:hidden}
 /* Moldura de iPhone: borda de titânio, botões laterais, barra de status e ilha dinâmica. */
-.phone{flex:none;position:relative;height:min(100%,680px);aspect-ratio:9/19.3;background:#0A0A0A;border-radius:52px;padding:10px;box-shadow:0 0 0 2px #5C5C60,0 0 0 4px #1C1C1E,0 26px 54px -22px rgba(10,10,10,.6)}
+.phone{flex:none;position:relative;width:410px;height:879px;background:#0A0A0A;border-radius:52px;padding:10px;box-shadow:0 0 0 2px #5C5C60,0 0 0 4px #1C1C1E,0 26px 54px -22px rgba(10,10,10,.6);transform:scale(var(--s,1));transform-origin:center center;transition:transform .4s cubic-bezier(.22,.9,.24,1);cursor:zoom-in}
 .phone::before,.phone::after{content:"";position:absolute;width:4px;border-radius:2px;background:#3A3A3C}
 .phone::before{left:-7px;top:17%;height:4.5%;box-shadow:0 54px 0 #3A3A3C,0 62px 0 #3A3A3C,0 108px 0 #3A3A3C,0 116px 0 #3A3A3C}
 .phone::after{right:-7px;top:27%;height:13%}
@@ -37,6 +41,13 @@ body{font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif
 .hb{flex:none;height:18px;display:flex;align-items:center;justify-content:center;background:#0A0A0A;color:#fff;transition:background .25s,color .25s}
 .hb i{width:36%;height:4px;border-radius:2px;background:currentColor}
 .phone iframe{flex:1;min-height:0;width:100%;border:0;background:#0A0A0A;display:block}
+/* Modo ampliado (duplo-clique): fundo escuro, menu some, celular grande e centralizado. */
+body.zoom{background:#0A0A0A}
+body.zoom .steps{display:none}
+body.zoom .wrap{padding:0}
+body.zoom .phone{cursor:zoom-out}
+.hintzoom{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:8px 16px;font-size:13px;font-weight:600;z-index:5;pointer-events:none;opacity:0;transition:opacity .3s ease}
+body.zoom .hintzoom{opacity:1}
 @media (max-width:640px){.steps{display:none}}
 </style>
 </head>
@@ -44,7 +55,7 @@ body{font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif
 <div class="wrap">
   <div class="steps" id="steps"></div>
   <!-- O app de verdade (build do app/ em modo demonstração), servido na raiz deste servidor. -->
-  <div class="phone"><div class="screen">
+  <div class="stage" id="stage"><div class="phone" id="phone" title="Duplo-clique para ampliar"><div class="screen">
     <div class="sb" id="sb"><span id="hora">9:41</span><span class="ic">
       <svg width="17" height="11" viewBox="0 0 17 11"><rect x="0" y="7" width="3" height="4" rx=".7"/><rect x="4.6" y="5" width="3" height="6" rx=".7"/><rect x="9.2" y="2.5" width="3" height="8.5" rx=".7"/><rect x="13.8" y="0" width="3" height="11" rx=".7"/></svg>
       <svg width="16" height="11" viewBox="0 0 16 11" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" style="fill:none"><path d="M1.2 3.9a9.6 9.6 0 0 1 13.6 0"/><path d="M3.7 6.4a6.1 6.1 0 0 1 8.6 0"/><path d="M6.3 8.9a2.4 2.4 0 0 1 3.4 0"/></svg>
@@ -53,8 +64,9 @@ body{font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif
     <iframe id="app" src="/bem-vindo" allow="camera; microphone; clipboard-write" title="App Astro"></iframe>
     <div class="hb" id="hb"><i></i></div>
     <div class="island"></div>
-  </div></div>
+  </div></div></div>
 </div>
+<div class="hintzoom">Duplo-clique no app ou Esc para voltar</div>
 <script>
 // Trilha das 11 etapas ao lado do app REAL. A etapa atual é lida do próprio app
 // (rota + o que está na tela); cada etapa alcançada fica salva em localStorage.
@@ -130,6 +142,7 @@ function barraDeStatus() {
 let reiniciando = false;
 function tick() {
   barraDeStatus();
+  hookDbl();                               // garante o duplo-clique dentro do app (ele recarrega a cada rota)
   if (reiniciando) return;
   const n = etapaDoApp();
   if (n !== atual || !feitas[n]) {
@@ -187,7 +200,46 @@ function teclas(e) {
 }
 document.addEventListener('keydown', teclas);
 frame.addEventListener('load', () => { try { frame.contentDocument.addEventListener('keydown', teclas); } catch (e) {} });
-window.addEventListener('message', e => { if (e.data === 'astro-prev') ir(atual - 1); if (e.data === 'astro-next') ir(atual + 1); });
+window.addEventListener('message', e => {
+  if (e.data === 'astro-prev') ir(atual - 1);
+  if (e.data === 'astro-next') ir(atual + 1);
+  if (e.data === 'astro-exit-zoom') setZoom(false);   // o slide pediu para sair do modo ampliado (Esc no pai)
+});
+
+// ----- Escala do celular (app sempre em ~390px) + ampliar no duplo-clique -----
+const PW = 410, PH = 879;                  // tamanho do aparelho (com a borda)
+const stage = document.getElementById('stage');
+const phone = document.getElementById('phone');
+let zoom = false;
+function fit() {
+  const availW = zoom ? window.innerWidth : stage.clientWidth;
+  const availH = zoom ? window.innerHeight : stage.clientHeight;
+  const folga = zoom ? 0.95 : 1;           // uma folga no modo ampliado
+  const s = Math.max(0.1, Math.min((availW * folga) / PW, (availH * folga) / PH));
+  phone.style.setProperty('--s', s.toFixed(4));
+}
+function setZoom(on) {
+  if (on === zoom) return;
+  zoom = on; document.body.classList.toggle('zoom', on); fit();
+  try { parent.postMessage(on ? 'astro-zoom-on' : 'astro-zoom-off', '*'); } catch (e) {}
+}
+// O duplo-clique precisa ser capturado DENTRO do app: o <iframe> engole o evento.
+// Como o app é da mesma origem, damos o listener no documento dele (e reaplicamos
+// a cada rota, pois o app recarrega ao navegar).
+function hookDbl() {
+  try {
+    const d = frame.contentWindow.document;
+    if (d && !d.__astroDbl) { d.__astroDbl = 1; d.addEventListener('dblclick', () => setZoom(!zoom)); }
+  } catch (e) {}
+}
+phone.addEventListener('dblclick', () => setZoom(!zoom));   // borda do aparelho (fallback)
+frame.addEventListener('load', () => { hookDbl(); fit(); });
+hookDbl();
+window.addEventListener('keydown', e => { if (e.key === 'Escape' && zoom) setZoom(false); });
+window.addEventListener('resize', fit);
+if (window.ResizeObserver) new ResizeObserver(fit).observe(stage);
+fit(); setTimeout(fit, 300); window.addEventListener('load', fit);
+
 render(); setInterval(tick, 350);
 </script>
 </body>

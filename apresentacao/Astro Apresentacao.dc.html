@@ -443,8 +443,8 @@ input:focus{outline:none}
         <button onClick="{{ jNext }}" aria-label="Próxima etapa" style="width:52px;height:52px;border-radius:50%;border:0;background:#0A0A0A;font-size:22px;cursor:pointer;color:#FFFFFF" style-hover="background:#242424">→</button>
       </div>
     </div>
-    <div data-reveal="" style="width:100%">
-      <iframe ref="{{ jRef }}" src="astro-app.html" allow="camera; microphone; clipboard-write" title="App Astro — o app real, interativo" style="display:block;width:100%;height:clamp(480px,74vh,720px);border:0;background:#FFFFFF"></iframe>
+    <div data-reveal="" style="width:100%;position:{{ jPos }};top:{{ jEdge }};right:{{ jEdge }};bottom:{{ jEdge }};left:{{ jEdge }};z-index:{{ jZ }};background:{{ jWrapBg }};display:flex;align-items:center;justify-content:center">
+      <iframe ref="{{ jRef }}" src="astro-app.html" allow="camera; microphone; clipboard-write" title="App Astro — o app real, interativo" style="display:block;width:100%;height:{{ jFrameH }};border:0;background:{{ jFrameBg }}"></iframe>
     </div>
   </div>
 </section>
@@ -565,7 +565,7 @@ input:focus{outline:none}
 </x-dc>
 <script type="text/x-dc" data-dc-script>
 class Component extends DCLogic {
-  state = { cur: 0, stage: 0, d2: 0, f2: 'depois', secSel: -1, mode: 'nota', tlOn: false, ty: 2033, valor: '10.000,00', dest: 'PJ', ano: '2033', reg: 0 };
+  state = { cur: 0, stage: 0, d2: 0, f2: 'depois', secSel: -1, mode: 'nota', tlOn: false, ty: 2033, valor: '10.000,00', dest: 'PJ', ano: '2033', reg: 0, appZoom: false };
   jRef = React.createRef();
 
   secs() { return Array.from(document.querySelectorAll('[data-sec]')); }
@@ -613,6 +613,10 @@ class Component extends DCLogic {
     };
     this.onKey = e => {
       if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+      if (this.state.appZoom) {
+        if (e.key === 'Escape') { e.preventDefault(); const f = this.jRef.current; if (f) f.contentWindow.postMessage('astro-exit-zoom', '*'); }
+        return;
+      }
       const k = e.key, c = this.curIdx(); let n = null;
       if (k === 'ArrowRight' || k === 'ArrowDown' || k === 'PageDown') n = c + 1;
       else if (k === 'ArrowLeft' || k === 'ArrowUp' || k === 'PageUp') n = c - 1;
@@ -625,6 +629,9 @@ class Component extends DCLogic {
     window.addEventListener('keydown', this.onKey);
     // Setas ↑ ↓ apertadas com o foco dentro do celular do slide 10 chegam por mensagem.
     this.onMsg = e => {
+      if (e.data === 'astro-zoom-on') return this.setState({ appZoom: true });
+      if (e.data === 'astro-zoom-off') return this.setState({ appZoom: false });
+      if (this.state.appZoom) return;                   // no modo ampliado, as setas não trocam de slide
       const c = this.curIdx();
       if (e.data === 'astro-slide-next') this.mover(c + 1, c);
       else if (e.data === 'astro-slide-prev') this.mover(c - 1, c);
@@ -761,6 +768,12 @@ class Component extends DCLogic {
       jRef: this.jRef,
       jPrev: () => this.jRef.current && this.jRef.current.contentWindow.postMessage('astro-prev', '*'),
       jNext: () => this.jRef.current && this.jRef.current.contentWindow.postMessage('astro-next', '*'),
+      jPos: this.state.appZoom ? 'fixed' : 'static',
+      jEdge: this.state.appZoom ? '0' : 'auto',
+      jZ: this.state.appZoom ? '70' : 'auto',
+      jWrapBg: this.state.appZoom ? '#0A0A0A' : 'transparent',
+      jFrameH: this.state.appZoom ? '100vh' : 'clamp(480px,74vh,720px)',
+      jFrameBg: this.state.appZoom ? '#0A0A0A' : '#FFFFFF',
 
       valor,
       onValor: e => this.setState({ valor: e.target.value }),
