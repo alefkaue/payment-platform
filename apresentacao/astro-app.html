@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Astro — app demonstrativo</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;color:#0A0A0A;background:#FFFFFF;-webkit-font-smoothing:antialiased;overflow:hidden}
+.mono{font-family:'IBM Plex Mono',monospace}
+.wrap{height:100%;display:flex;gap:clamp(20px,4vw,64px);align-items:center;justify-content:center;padding:6px}
+/* trilha de etapas */
+.steps{flex:0 1 300px;display:flex;flex-direction:column;gap:2px;max-height:100%;overflow:auto}
+.step{display:flex;align-items:center;gap:12px;padding:7px 10px;border-radius:12px;border:0;background:transparent;text-align:left;cursor:pointer;font:inherit;color:#8C8C8C}
+.step:hover{background:#F2F2F2}
+.step .n{width:26px;height:26px;border-radius:50%;border:1px solid #D6D6D6;display:flex;align-items:center;justify-content:center;font-size:11px;flex:none}
+.step .t{font-size:15px;font-weight:600}
+.step.done{color:#0A0A0A}.step.done .n{background:#1F9D55;border-color:#1F9D55;color:#fff}
+.step.on{color:#0A0A0A;background:#F2F2F2}.step.on .n{background:#0A0A0A;border-color:#0A0A0A;color:#fff}
+.hint{margin-top:10px;padding:12px 14px;border:1px solid #E2E2E2;border-radius:14px;font-size:14px;line-height:1.4;color:#4A4A4A}
+.hint b{color:#0A0A0A}
+/* telefone */
+.phone{flex:none;height:min(100%,640px);aspect-ratio:9/19;background:#0A0A0A;border-radius:40px;padding:9px;box-shadow:0 22px 50px -22px rgba(10,10,10,.55)}
+.screen{width:100%;height:100%;border-radius:32px;overflow:hidden;background:#fff;position:relative}
+.view{position:absolute;inset:0;padding:34px 18px 20px;display:flex;flex-direction:column;gap:13px;overflow:auto;animation:in .28s ease}
+@keyframes in{from{opacity:0;transform:translateX(14px)}to{opacity:1;transform:none}}
+.dark{background:#0A0A0A;color:#fff}.soft{background:#F2F2F2}
+h3{margin:0;font-size:19px;font-weight:600;letter-spacing:-.02em}
+.btn{border:0;border-radius:13px;padding:13px;text-align:center;font:600 14px "Instrument Sans",sans-serif;cursor:pointer;background:#0A0A0A;color:#fff;width:100%}
+.btn:hover{opacity:.88}.btn.w{background:#fff;color:#0A0A0A}.btn.o{background:transparent;border:1px solid #D6D6D6;color:#0A0A0A}.dark .btn.o{border-color:#4A4A4A;color:#fff}
+.btn.g{background:#1F9D55}.btn.s{padding:9px;font-size:12px;border-radius:10px}
+.end{margin-top:auto}
+label{display:flex;flex-direction:column;gap:5px;font-size:11px;color:#6B6B6B}
+input{border:1px solid #E2E2E2;border-radius:11px;padding:11px;font:500 13px "Instrument Sans",sans-serif;color:#0A0A0A;width:100%;outline:none}
+input:focus{border-color:#0A0A0A}
+.card{background:#fff;border-radius:15px;padding:13px;display:flex;flex-direction:column;gap:7px}
+.bd{border:1px solid #E2E2E2}
+.row{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px}
+.mut{color:#6B6B6B}.sm{font-size:11px}.big{font-size:20px;font-weight:600}
+.tabs{display:flex;background:#F2F2F2;border-radius:11px;padding:3px;gap:3px}
+.tabs button{flex:1;border:0;background:transparent;border-radius:9px;padding:8px 0;font:600 12px "Instrument Sans",sans-serif;color:#6B6B6B;cursor:pointer}
+.tabs button.on{background:#fff;color:#0A0A0A}
+.grid4{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+.grid4 button{border:0;background:#fff;border-radius:10px;padding:10px 0;font:600 11px "Instrument Sans",sans-serif;cursor:pointer}
+.grid4 button.pulse,.pulse{box-shadow:0 0 0 2px #0A0A0A;animation:pl 1.4s ease infinite}
+@keyframes pl{50%{box-shadow:0 0 0 5px rgba(10,10,10,.15)}}
+.qr{align-self:center;width:62%;aspect-ratio:1;border:1px solid #E2E2E2;border-radius:13px;padding:10px;display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.qr i{border-radius:2px}.qr i.b{background:#0A0A0A}
+.bars{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;height:84px;align-items:end}
+.bars button{border:0;padding:0;border-radius:3px 3px 0 0;background:#C4C4C4;cursor:pointer}.bars button.on{background:#0A0A0A}
+.face{width:64%;aspect-ratio:3/4;border-radius:50%;border:3px solid #fff;background:#242424;align-self:center;position:relative;overflow:hidden;transition:border-color .3s}
+.face::after{content:"";position:absolute;left:0;right:0;height:3px;background:#fff;opacity:.7;animation:scan 1.6s linear infinite}
+@keyframes scan{from{top:0}to{top:100%}}
+.face.ok{border-color:#1F9D55}.face.ok::after{display:none}
+.tag{font-size:10px;font-weight:600;color:#B7791F;border:1px solid #B7791F;border-radius:999px;padding:2px 8px}
+.tag.ok{color:#1F9D55;border-color:#1F9D55}.tag.no{color:#D93025;border-color:#D93025}
+.toast{position:absolute;left:14px;right:14px;bottom:14px;background:#0A0A0A;color:#fff;border-radius:12px;padding:10px 12px;font-size:12px;text-align:center;animation:in .25s ease;z-index:5}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.back{border:0;background:transparent;font-size:18px;cursor:pointer;padding:0 6px 0 0;color:inherit}
+@media (max-width:640px){.steps{display:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="steps" id="steps"></div>
+  <div class="phone"><div class="screen" id="screen"></div></div>
+</div>
+<script>
+// App demonstrativo do Astro para a apresentação: 11 etapas, dados fictícios.
+// Cada etapa concluída é salva (localStorage) e leva à próxima tela.
+const LOGO_B = 'site/public/logo-astro-branco.svg', LOGO_P = 'site/public/logo-astro-preto.svg', ECL = 'site/public/favicon.svg';
+const ETAPAS = [
+  ['Boas-vindas', 'Toque em <b>Já tenho conta</b> para entrar.'],
+  ['Login', 'O login é sempre da <b>pessoa</b>. Toque em <b>Continuar</b>.'],
+  ['Verificação facial', 'O <b>servidor</b> sorteia o desafio. Toque em <b>Simular movimento</b>.'],
+  ['Início PF', 'Cartão em destaque e saldo rendendo. Abra o <b>Pix</b>.'],
+  ['Pix', 'Envie um Pix ou mostre o QR. Depois troque para a <b>conta da empresa</b>.'],
+  ['Início PJ', 'Retido, repassado e repasse de amanhã. Toque em <b>Imposto das suas vendas</b>.'],
+  ['Entenda o split', 'Escolha o ano e mude o valor. Depois, <b>Cobrar um cliente</b>.'],
+  ['Cobrar com nota', 'O banco retém o que a <b>nota</b> destaca. Toque em <b>Gerar cobrança</b>.'],
+  ['Equipe & alçadas', 'Papéis e limites por pessoa. Abra as <b>aprovações pendentes</b>.'],
+  ['Aprovações pendentes', 'Acima da alçada precisa de outra pessoa. <b>Aprove</b> uma operação.'],
+  ['Comprovante', 'O split aparece linha a linha. Fim da jornada.']
+];
+const K = 'astro-demo-v1';
+const INICIAL = () => ({ etapa: 0, max: 0, email: 'marina.costa@email.com', saldo: 3482.10, pontos: 2140, pixTab: 'enviar', pixValor: '150,00',
+  ano: 2033, sim: '10.000,00', cob: '10.000,00', meio: 'pix', txid: '', equipe: [['Marina Costa','admin','sem limite'],['Rafael Lima','aprovador','50.000'],['Júlia Ramos','operador','5.000'],['Pedro Alves','consulta','—']],
+  pend: [['Pagamento em lote', 18400, 'Lançado por Júlia · acima da alçada', 'pendente'], ['Pix fornecedor', 7200, 'Lançado por Júlia · acima da alçada', 'pendente']] });
+let S = INICIAL();
+try { const g = JSON.parse(localStorage.getItem(K) || 'null'); if (g && typeof g.etapa === 'number') S = Object.assign(S, g); } catch (e) {}
+const salvar = () => { try { localStorage.setItem(K, JSON.stringify(S)); } catch (e) {} };
+
+// Cronograma 2026–2033 (igual a app/src/lib/split.ts): [CBS, IBS] em fração.
+const CBS = 0.088, IBS = 0.177;
+const CRONO = { 2026: [0.009, 0.001], 2027: [CBS, 0.001], 2028: [CBS, 0.001], 2029: [CBS, IBS * .1], 2030: [CBS, IBS * .2], 2031: [CBS, IBS * .3], 2032: [CBS, IBS * .4], 2033: [CBS, IBS] };
+const num = t => { const n = parseFloat(String(t).replace(/\./g, '').replace(',', '.')); return isFinite(n) && n > 0 ? n : 0; };
+const brl = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const r2 = n => Math.round(n * 100) / 100;
+const split = (v, ano) => { const [c, i] = CRONO[ano]; const cbs = r2(v * c), ibs = r2(v * i); return { cbs, ibs, liq: r2(v - cbs - ibs) }; };
+
+const $ = id => document.getElementById(id);
+function ir(n) { S.etapa = Math.max(0, Math.min(10, n)); S.max = Math.max(S.max, S.etapa); salvar(); render(); try { parent.postMessage({ astroEtapa: S.etapa }, '*'); } catch (e) {} }
+function toast(msg) { const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; $('screen').appendChild(t); setTimeout(() => t.remove(), 1900); }
+const qr = seed => { let h = 7, o = ''; for (let i = 0; i < 49; i++) { h = (h * 31 + seed.charCodeAt(i % seed.length) + i) % 9973; const canto = (i % 7 < 2 && i < 14) || (i % 7 > 4 && i < 14) || (i % 7 < 2 && i > 34); o += '<i class="' + (canto || h % 2 ? 'b' : '') + '"></i>'; } return '<div class="qr">' + o + '</div>'; };
+
+const TELAS = [
+  // 01 Boas-vindas
+  () => `<div class="view dark" style="justify-content:space-between">
+    <img src="${LOGO_B}" alt="Astro" style="height:18px;align-self:flex-start">
+    <div style="display:flex;flex-direction:column;gap:14px"><img src="${ECL}" alt="" style="width:54px;height:54px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">
+      <div style="font-size:26px;font-weight:600;line-height:1.08;letter-spacing:-.03em">O imposto se resolve na hora da venda.</div></div>
+    <div style="display:flex;flex-direction:column;gap:9px"><button class="btn w" data-a="prox">Abrir conta</button><button class="btn o pulse" data-a="prox">Já tenho conta</button></div></div>`,
+  // 02 Login
+  () => `<div class="view"><img src="${LOGO_P}" alt="Astro" style="height:15px;align-self:flex-start"><h3>Entrar</h3>
+    <label>E-mail ou CPF<input id="email" value="${S.email}"></label>
+    <label>Senha<input type="password" value="demonstracao"></label>
+    <div class="sm mut">Em seguida, verificação facial.</div>
+    <button class="btn end" data-a="login">Continuar</button></div>`,
+  // 03 Verificação facial
+  () => `<div class="view dark" style="align-items:stretch;gap:16px"><div style="font-size:14px;font-weight:600;text-align:center">Verificação facial</div>
+    <div class="face" id="face"></div>
+    <div id="acao" style="font-size:18px;font-weight:600;text-align:center">Vire o rosto para a esquerda</div>
+    <div class="row" style="background:#141414;border:1px solid #3A3A3A;border-radius:11px;padding:9px 11px"><span style="color:#8C8C8C">Desafio sorteado</span><span class="mono" id="relogio">expira 00:45</span></div>
+    <div class="sm" style="color:#8C8C8C;text-align:center">Demonstração: a câmera não é ligada.</div>
+    <button class="btn w end" data-a="face" id="bface">Simular movimento</button></div>`,
+  // 04 Início PF
+  () => `<div class="view soft"><div class="row"><span class="mut">Olá, Marina</span><b>PF</b></div>
+    <div style="aspect-ratio:1.6;background:#0A0A0A;color:#fff;border-radius:16px;padding:14px;display:flex;flex-direction:column;justify-content:space-between">
+      <div class="row"><img src="${LOGO_B}" alt="Astro" style="height:10px"><img src="${ECL}" alt="" style="width:18px;height:18px;border-radius:50%"></div><div class="mono" style="font-size:13px">•••• 4821</div></div>
+    <div class="card"><span class="sm mut">Saldo · rendendo</span><span class="mono big">R$ ${brl(S.saldo)}</span></div>
+    <div class="grid4"><button class="pulse" data-a="prox">Pix</button><button data-a="t:Cartão virtual ativo •••• 4821">Cartão</button><button data-a="t:Loja: 1 ponto por real">Loja</button><button data-a="t:Viagens: resgate com pontos">Viagens</button></div>
+    <div class="card"><div class="row"><span>Pontos</span><b class="mono">${S.pontos.toLocaleString('pt-BR')}</b></div></div></div>`,
+  // 05 Pix
+  () => `<div class="view"><div class="top"><h3>Pix</h3><span class="mono sm mut">R$ ${brl(S.saldo)}</span></div>
+    <div class="tabs"><button class="${S.pixTab === 'enviar' ? 'on' : ''}" data-a="tab:enviar">Enviar</button><button class="${S.pixTab === 'receber' ? 'on' : ''}" data-a="tab:receber">Receber</button></div>
+    ${S.pixTab === 'enviar'
+      ? `<label>Chave do destinatário<input value="joao.pereira@email.com"></label><label>Valor (R$)<input id="pixv" class="mono" inputmode="decimal" value="${S.pixValor}"></label>
+         <div class="sm mut">Transferência nunca tem imposto retido.</div><button class="btn o" data-a="pix">Enviar Pix</button>`
+      : `${qr(S.email)}<div class="sm"><span class="mut">Chave</span><br><span class="mono">${S.email}</span></div><button class="btn o" data-a="t:Código copiado">Copiar código</button>`}
+    <button class="btn end" data-a="prox">Trocar para a conta da empresa →</button></div>`,
+  // 06 Início PJ
+  () => `<div class="view soft"><div class="row"><b>Rodoforte Autopeças Ltda</b><span class="mut">PJ</span></div>
+    <div class="card" style="background:#0A0A0A;color:#fff"><span class="sm" style="color:#8C8C8C">Saldo</span><span class="mono big">R$ 184.920,00</span></div>
+    <button class="card pulse" data-a="prox" style="border:0;text-align:left;font:inherit;cursor:pointer"><b style="font-size:13px">Imposto das suas vendas ›</b>
+      <div class="row sm"><span class="mut">Retido</span><span class="mono">12.402,50</span></div><div class="row sm"><span class="mut">Repassado</span><span class="mono">9.752,50</span></div>
+      <div class="row sm"><b>Repasse de amanhã</b><b class="mono">2.650,00</b></div></button>
+    <div class="card"><div class="row"><span>Aprovações pendentes</span><b style="color:#B7791F">${S.pend.filter(p => p[3] === 'pendente').length}</b></div></div>
+    <div class="card"><div class="row"><span>Seu papel</span><b>admin · sem limite</b></div></div></div>`,
+  // 07 Entenda o split
+  () => { const v = num(S.sim), s = split(v, S.ano), pc = v ? s.liq / v * 100 : 100;
+    return `<div class="view"><h3>Entenda o split</h3>
+    <div class="bars">${Object.keys(CRONO).map(a => { const t = CRONO[a][0] + CRONO[a][1]; return `<button title="${a}" class="${+a === S.ano ? 'on' : ''}" data-a="ano:${a}" style="height:${Math.max(4, t / (CBS + IBS) * 100)}%"></button>`; }).join('')}</div>
+    <div class="row mono" style="font-size:10px;color:#6B6B6B"><span>2026</span><span>toque num ano</span><span>2033</span></div>
+    <div class="card bd"><span class="sm mut">Simulador · ${S.ano}</span><input id="sim" class="mono" inputmode="decimal" value="${S.sim}">
+      <div style="display:flex;height:8px;gap:2px"><div style="width:${pc}%;background:#1F9D55;border-radius:3px"></div><div style="flex:1;background:#8C8C8C;border-radius:3px"></div></div>
+      <div class="row sm"><span class="mut">CBS</span><span class="mono">${brl(s.cbs)}</span></div><div class="row sm"><span class="mut">IBS</span><span class="mono">${brl(s.ibs)}</span></div>
+      <div class="row"><b>Recebe</b><b class="mono" style="color:#1F9D55">${brl(s.liq)}</b></div></div>
+    <div class="sm mut">Não é imposto a mais: é o mesmo imposto, pago na hora.</div>
+    <button class="btn end" data-a="prox">Cobrar um cliente</button></div>`; },
+  // 08 Cobrar com nota
+  () => { const v = num(S.cob), s = split(v, 2033);
+    return `<div class="view"><h3>Cobrar um cliente</h3>
+    <div class="card bd"><span class="sm mut">Cliente · PJ</span><b style="font-size:12px">Transportadora Horizonte Ltda</b></div>
+    <div class="card bd"><span class="sm mut">NF-e vinculada</span><span class="mono" style="font-size:12px">Nº 004.218</span></div>
+    <label>Valor da nota (R$)<input id="cob" class="mono" inputmode="decimal" style="font-size:18px;font-weight:600" value="${S.cob}"></label>
+    <div class="sm mut"><div class="row" style="padding:5px 0;border-bottom:1px solid #E2E2E2"><span>CBS da nota</span><span class="mono">${brl(s.cbs)}</span></div><div class="row" style="padding:5px 0"><span>IBS da nota</span><span class="mono">${brl(s.ibs)}</span></div></div>
+    <div class="tabs"><button class="${S.meio === 'pix' ? 'on' : ''}" data-a="meio:pix">Pix QR</button><button class="${S.meio === 'boleto' ? 'on' : ''}" data-a="meio:boleto">Boleto</button></div>
+    <button class="btn end" data-a="cobrar">Gerar cobrança</button></div>`; },
+  // 09 Equipe & alçadas
+  () => `<div class="view"><h3>Equipe &amp; alçadas</h3>
+    ${S.txid ? `<div class="card bd"><div class="row"><b>Cobrança ${S.txid}</b><span class="tag">aguardando</span></div><span class="sm mut">${S.meio === 'pix' ? 'Pix QR dinâmico' : 'Boleto'} · R$ ${S.cob}</span></div>` : ''}
+    <div>${S.equipe.map(e => `<div class="row" style="padding:9px 0;border-bottom:1px solid #E2E2E2"><div><b>${e[0]}</b><br><span class="sm mut">${e[1]}</span></div><span class="mono sm">${e[2]}</span></div>`).join('')}</div>
+    <button class="btn o s" data-a="convidar">Convidar pessoa</button>
+    <button class="btn end" data-a="prox">Ver aprovações pendentes</button></div>`,
+  // 10 Aprovações pendentes
+  () => `<div class="view soft"><h3>Aprovações pendentes</h3>
+    ${S.pend.map((p, i) => `<div class="card"><div class="row"><b>${p[0]}</b><span class="tag ${p[3] === 'aprovada' ? 'ok' : p[3] === 'recusada' ? 'no' : ''}">${p[3]}</span></div>
+      <b class="mono" style="font-size:15px">R$ ${brl(p[1])}</b><span class="sm mut">${p[2]}</span>
+      ${p[3] === 'pendente' ? `<div style="display:flex;gap:6px"><button class="btn s" data-a="ap:${i}">Aprovar</button><button class="btn o s" data-a="rec:${i}">Recusar</button></div>` : ''}</div>`).join('')}
+    <span class="sm mut">Aprovar exige verificação facial. Quem lançou não pode aprovar.</span>
+    <button class="btn end" data-a="prox">Ver comprovante da cobrança</button></div>`,
+  // 11 Comprovante
+  () => { const v = num(S.cob), s = split(v, 2033);
+    return `<div class="view" style="align-items:center"><div style="width:48px;height:48px;border-radius:50%;background:#1F9D55;color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700">✓</div>
+    <b>Cobrança paga</b>
+    <div class="card bd" style="width:100%;gap:0;font-size:12px">
+      <div class="row" style="padding:7px 0;border-bottom:1px solid #E2E2E2"><span class="mut">Bruto</span><span class="mono">${brl(v)}</span></div>
+      <div class="row mut" style="padding:7px 0;border-bottom:1px solid #E2E2E2"><span>CBS → Fisco</span><span class="mono">${brl(s.cbs)}</span></div>
+      <div class="row mut" style="padding:7px 0;border-bottom:1px solid #E2E2E2"><span>IBS → Fisco</span><span class="mono">${brl(s.ibs)}</span></div>
+      <div class="row" style="padding:7px 0"><b>Recebido</b><b class="mono" style="color:#1F9D55">${brl(s.liq)}</b></div></div>
+    <div class="mono" style="font-size:10px;color:#6B6B6B">NF-e 004.218 · ID ${S.txid || '8F2A-41C0'}</div>
+    <div class="sm mut" style="text-align:center">O imposto foi separado no pagamento. Sem guia, sem apuração no fim do mês.</div>
+    <button class="btn o end" data-a="reset">Recomeçar a jornada</button></div>`; }
+];
+
+function render() {
+  $('steps').innerHTML = ETAPAS.map((e, i) => `<button class="step ${i === S.etapa ? 'on' : i < S.etapa || i <= S.max && i !== S.etapa ? 'done' : ''}" data-ir="${i}"><span class="n mono">${i < S.etapa ? '✓' : String(i + 1).padStart(2, '0')}</span><span class="t">${e[0]}</span></button>`).join('')
+    + `<div class="hint">${ETAPAS[S.etapa][1]}</div>`;
+  $('screen').innerHTML = TELAS[S.etapa]();
+  if (S.etapa === 2) relogio();
+}
+let tk;
+function relogio() { clearInterval(tk); let s = 45; tk = setInterval(() => { const el = $('relogio'); if (!el || s <= 0) return clearInterval(tk); s--; el.textContent = 'expira 00:' + String(s).padStart(2, '0'); }, 1000); }
+function ler(id, campo) { const el = $(id); if (el) S[campo] = el.value; }
+
+document.addEventListener('click', e => {
+  const st = e.target.closest('[data-ir]'); if (st) return ir(+st.dataset.ir);
+  const b = e.target.closest('[data-a]'); if (!b) return;
+  const [a, arg] = b.dataset.a.split(/:(.*)/);
+  ler('email', 'email'); ler('pixv', 'pixValor'); ler('sim', 'sim'); ler('cob', 'cob');
+  if (a === 'prox') return ir(S.etapa + 1);
+  if (a === 't') return toast(arg);
+  if (a === 'login') { if (!S.email.trim()) return toast('Informe o e-mail ou CPF'); return ir(2); }
+  if (a === 'face') { b.disabled = true; b.textContent = 'Conferindo…'; setTimeout(() => { $('face').classList.add('ok'); $('acao').textContent = 'Rosto confirmado ✓'; setTimeout(() => ir(3), 800); }, 1300); return; }
+  if (a === 'tab') { S.pixTab = arg; salvar(); return render(); }
+  if (a === 'pix') { const v = num(S.pixValor); if (!v) return toast('Informe um valor'); if (v > S.saldo) return toast('Saldo insuficiente'); S.saldo = r2(S.saldo - v); salvar(); render(); return toast('Pix de R$ ' + brl(v) + ' enviado · sem retenção'); }
+  if (a === 'ano') { S.ano = +arg; salvar(); return render(); }
+  if (a === 'meio') { S.meio = arg; salvar(); return render(); }
+  if (a === 'cobrar') { if (!num(S.cob)) return toast('Informe o valor da nota'); S.txid = Math.random().toString(16).slice(2, 6).toUpperCase() + '-' + Math.random().toString(16).slice(2, 6).toUpperCase(); return ir(8); }
+  if (a === 'convidar') { if (S.equipe.length > 4) return toast('Convite já enviado'); S.equipe.push(['Novo convidado', 'operador · convite enviado', '1.000']); salvar(); return render(); }
+  if (a === 'ap' || a === 'rec') { S.pend[+arg][3] = a === 'ap' ? 'aprovada' : 'recusada'; salvar(); render(); return toast(a === 'ap' ? 'Aprovada com verificação facial' : 'Operação recusada'); }
+  if (a === 'reset') { S = INICIAL(); return ir(0); }
+});
+document.addEventListener('input', e => {
+  if (e.target.id === 'sim' || e.target.id === 'cob') { S[e.target.id] = e.target.value; salvar(); const p = e.target.selectionStart; render(); const n = $(e.target.id); n.focus(); try { n.setSelectionRange(p, p); } catch (x) {} }
+});
+// Setas da apresentação (← →) controlam as etapas.
+window.addEventListener('message', e => { if (e.data === 'astro-prev') ir(S.etapa - 1); if (e.data === 'astro-next') ir(S.etapa + 1); });
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Astro — o banco onde o imposto se resolve na hora da venda</title>
+<link rel="icon" href="site/public/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+html{scroll-snap-type:y proximity;-webkit-text-size-adjust:100%}
+body{margin:0;background:#F2F2F2;color:#0A0A0A;font-family:"Instrument Sans",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
+*{box-sizing:border-box}
+a{color:#0A0A0A;text-decoration:underline;text-underline-offset:3px}
+a:hover{color:#6B6B6B}
+::selection{background:#0A0A0A;color:#FFFFFF}
+input:focus{outline:none}
+@keyframes astroSpin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</helmet>
+
+<div style="position:fixed;top:0;left:0;right:0;height:4px;background:{{ ui.track }};z-index:50">
+  <div style="height:100%;width:{{ progress }};background:{{ ui.fill }};transition:width .4s ease, background .3s ease"></div>
+</div>
+<nav style="position:fixed;right:clamp(10px,1.6vw,28px);top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:9px;z-index:50">
+  <sc-for list="{{ dots }}" as="d" hint-placeholder-count="13">
+    <button onClick="{{ d.go }}" title="{{ d.label }}" aria-label="{{ d.label }}" style="width:10px;height:{{ d.h }};border-radius:6px;border:0;padding:0;cursor:pointer;background:{{ d.bg }};transition:height .3s ease, background .3s ease"></button>
+  </sc-for>
+</nav>
+<div style="position:fixed;left:clamp(14px,2vw,32px);bottom:clamp(12px,2vh,24px);display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:500;color:{{ ui.counter }};z-index:50;pointer-events:none">
+  <img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;display:block">
+  <span>{{ counter }}</span>
+</div>
+
+<main>
+
+<!-- 01 CAPA -->
+<section data-sec="Capa" data-screen-label="01 Capa" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px) clamp(96px,13vh,150px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start;position:relative;overflow:hidden">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-wrap:wrap;gap:40px;align-items:center;justify-content:space-between">
+    <div style="flex:1 1 640px;display:flex;flex-direction:column;gap:clamp(28px,5vh,52px)">
+      <img data-reveal="" src="site/public/logo-astro-branco.svg" alt="Astro" style="height:clamp(34px,3.2vw,52px);width:auto;align-self:flex-start;display:block">
+      <h1 data-reveal="" style="margin:0;font-size:clamp(46px,6.2vw,112px);line-height:.98;letter-spacing:-0.04em;font-weight:600;max-width:15ch;text-wrap:balance">O banco onde o imposto se resolve na hora da venda.</h1>
+      <p data-reveal="" style="margin:0;font-size:clamp(22px,2vw,34px);color:#D6D6D6;letter-spacing:-0.01em">Split de IBS/CBS da Reforma Tributária, na prática</p>
+      <div data-reveal="" style="display:flex;flex-direction:column;gap:12px;max-width:760px">
+        <div style="display:flex;height:22px;gap:6px">
+          <div style="width:73.5%;background:#FFFFFF;border-radius:11px"></div>
+          <div style="flex:1;background:#8C8C8C;border-radius:11px"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;gap:12px;font-size:17px;color:#8C8C8C"><span style="color:#FFFFFF">Líquido para a empresa</span><span>CBS + IBS · Fisco</span></div>
+      </div>
+      <div data-reveal="" style="padding-top:28px;border-top:1px solid #3A3A3A;font-size:clamp(18px,1.4vw,22px);font-weight:600">Equipe CYMAG · SENAI São Caetano do Sul</div>
+    </div>
+    <div data-reveal="" style="flex:0 1 auto;width:clamp(180px,22vw,340px);aspect-ratio:1;margin:0 auto">{{ eclipseBig }}</div>
+  </div>
+</section>
+
+<!-- 02 A MUDANÇA -->
+<section data-sec="A mudança" data-screen-label="02 A mudança" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(24px,4vh,44px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">02 · A mudança</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">O imposto sai da apuração e entra na venda.</h2>
+    </div>
+    <div style="width:100%;display:flex;flex-direction:column;align-items:center;gap:14px">
+      <div style="width:100%;display:grid">
+        <div onClick="{{ m2.clickA }}" role="button" style="cursor:pointer;grid-area:1/1;justify-self:center;width:min(620px,max(48%,300px));position:relative;z-index:2;transform:{{ m2.aTf }};opacity:{{ m2.aOp }};filter:{{ m2.aFilter }};transition:transform .9s cubic-bezier(.22,.9,.24,1), opacity .6s ease, filter .6s ease;background:#FFFFFF;color:#0A0A0A;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(26px,3vw,44px);display:flex;flex-direction:column;gap:24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span style="font-size:clamp(32px,3vw,48px);font-weight:600;letter-spacing:-0.03em">Antes</span><span style="font-size:16px;color:#6B6B6B;border:1px solid #D6D6D6;border-radius:999px;padding:6px 14px;white-space:nowrap">modelo atual</span></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:18px;color:#6B6B6B">Na venda</div>
+            <div style="min-height:52px;background:#0A0A0A;border-radius:12px;display:flex;flex-wrap:wrap;align-items:center;padding:8px 18px;color:#FFFFFF;font-size:clamp(16px,1.4vw,20px);font-weight:600;gap:2px 10px">Empresa recebe <span style="font-family:'IBM Plex Mono',monospace;font-weight:500">R$ 10.000,00</span></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:18px;color:#6B6B6B">Semanas depois</div>
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap"><div style="height:52px;width:140px;background:#F2F2F2;border:1.5px dashed #8C8C8C;border-radius:12px"></div><span style="font-size:20px;color:#6B6B6B;font-weight:600">apura e recolhe CBS + IBS</span></div>
+          </div>
+          <p style="margin:0;font-size:clamp(19px,1.5vw,24px);line-height:1.4;text-wrap:pretty">O imposto passa pelo caixa e só é separado na apuração manual.</p>
+        </div>
+        <div onClick="{{ m2.clickD }}" role="button" style="cursor:pointer;grid-area:1/1;justify-self:center;width:min(620px,max(48%,300px));position:relative;z-index:1;transform:{{ m2.dTf }};opacity:{{ m2.dOp }};filter:{{ m2.dFilter }};transition:transform .9s cubic-bezier(.22,.9,.24,1), opacity .5s ease, filter .5s ease;background:#0A0A0A;color:#FFFFFF;border-radius:20px;box-shadow:0 24px 48px -20px rgba(10,10,10,.45);padding:clamp(26px,3vw,44px);display:flex;flex-direction:column;gap:24px">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><span style="font-size:clamp(32px,3vw,48px);font-weight:600;letter-spacing:-0.03em">Depois</span><span style="font-size:16px;color:#0A0A0A;background:#FFFFFF;border-radius:999px;padding:6px 14px;font-weight:600;white-space:nowrap">split payment</span></div>
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <div style="font-size:18px;color:#8C8C8C">No pagamento da cobrança com nota</div>
+            <div style="display:flex;gap:{{ m2.gap }};min-height:52px;transition:gap .6s ease">
+              <div style="width:{{ m2.barW }};background:#1F9D55;border-radius:12px;display:flex;align-items:center;padding:0 20px;color:#FFFFFF;font-size:clamp(16px,1.4vw,20px);font-weight:600;flex-wrap:wrap;gap:2px 10px;padding-top:8px;padding-bottom:8px;overflow:hidden;transition:width 1s cubic-bezier(.2,.8,.2,1)">Recebe <span style="font-family:'IBM Plex Mono',monospace;font-weight:500;white-space:nowrap">{{ m2.barTxt }}</span></div>
+              <div style="flex:1;background:#8C8C8C;border-radius:12px"></div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;font-size:17px;color:#D6D6D6;font-weight:600;opacity:{{ m2.op2 }};transition:opacity .6s ease .3s">CBS + IBS da nota → Fisco, no ato</div>
+          </div>
+          <p style="margin:0;font-size:clamp(19px,1.5vw,24px);line-height:1.4;text-wrap:pretty;opacity:{{ m2.op2 }};transition:opacity .6s ease .5s">O imposto é separado na hora. O caixa já recebe o valor líquido.</p>
+        </div>
+      </div>
+      <span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:#6B6B6B">{{ m2.hint }}</span>
+    </div>
+    <div style="background:#0A0A0A;color:#FFFFFF;border-radius:20px;padding:clamp(22px,2.4vw,34px) clamp(24px,2.8vw,40px);display:flex;flex-wrap:wrap;gap:12px 40px;align-items:center;opacity:{{ m2.op2 }};transform:translateY({{ m2.y2 }});transition:opacity .6s ease .7s, transform .6s ease .7s">
+      <span style="font-size:clamp(26px,2.4vw,40px);font-weight:600;letter-spacing:-0.03em">O split não é dinheiro a mais.</span>
+      <span style="flex:1 1 420px;font-size:clamp(18px,1.4vw,22px);line-height:1.45;color:#D6D6D6;text-wrap:pretty">É o mesmo imposto que já era devido, só separado na hora da venda. Acaba com a apuração manual e dificulta a sonegação.</span>
+    </div>
+    <span style="font-size:15px;color:#6B6B6B">Exemplo: venda de R$ 10.000,00 com nota, regime padrão, regime pleno (2033).</span>
+  </div>
+</section>
+
+<!-- 03 LINHA DO TEMPO -->
+<section data-sec="Linha do tempo" data-screen-label="03 Linha do tempo" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(24px,4vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">03 · Linha do tempo da Reforma</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">2026 → 2033: o imposto cresce aos poucos.</h2>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:stretch">
+      <div style="flex:2 1 560px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:clamp(6px,1vw,14px);height:clamp(220px,34vh,340px);align-items:end;border-bottom:1px solid #3A3A3A">
+          <sc-for list="{{ tl.bars }}" as="b" hint-placeholder-count="8">
+            <button onClick="{{ b.pick }}" aria-label="{{ b.year }}" style="height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;gap:8px;background:transparent;border:0;padding:0;cursor:pointer;font-family:inherit">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(13px,1vw,16px);color:{{ b.labCol }};text-align:center;transition:color .3s ease">{{ b.tot }}</span>
+              <div style="height:{{ b.h }};display:flex;flex-direction:column;border-radius:8px 8px 0 0;overflow:hidden;outline:{{ b.outline }};outline-offset:3px;transition:height .9s cubic-bezier(.2,.8,.2,1) {{ b.delay }}">
+                <div style="flex:{{ b.ibsF }};background:#8C8C8C"></div>
+                <div style="flex:{{ b.cbsF }};background:#D6D6D6"></div>
+              </div>
+            </button>
+          </sc-for>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:clamp(6px,1vw,14px)">
+          <sc-for list="{{ tl.bars }}" as="b" hint-placeholder-count="8">
+            <button onClick="{{ b.pick }}" style="font-family:'IBM Plex Mono',monospace;font-size:clamp(14px,1.1vw,18px);font-weight:600;color:{{ b.yearCol }};background:transparent;border:0;padding:4px 0;cursor:pointer">{{ b.year }}</button>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px 22px;font-size:16px;color:#8C8C8C;padding-top:4px">
+          <span style="display:flex;align-items:center;gap:8px"><span style="width:12px;height:12px;border-radius:3px;background:#D6D6D6"></span>CBS (federal)</span>
+          <span style="display:flex;align-items:center;gap:8px"><span style="width:12px;height:12px;border-radius:3px;background:#8C8C8C"></span>IBS (estados e municípios)</span>
+          <span>Clique em um ano</span>
+        </div>
+      </div>
+      <div style="flex:1 1 320px;background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:18px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(36px,3.4vw,56px);font-weight:600;letter-spacing:-0.03em">{{ tl.sel.year }}</span>
+        <span style="font-size:clamp(22px,1.8vw,30px);font-weight:600;letter-spacing:-0.02em;line-height:1.15">{{ tl.sel.phase }}</span>
+        <div style="display:flex;flex-direction:column;font-size:clamp(17px,1.3vw,21px)">
+          <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #3A3A3A"><span style="color:#8C8C8C">CBS</span><span style="font-family:'IBM Plex Mono',monospace">{{ tl.sel.cbs }}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #3A3A3A"><span style="color:#8C8C8C">IBS</span><span style="font-family:'IBM Plex Mono',monospace">{{ tl.sel.ibs }}</span></div>
+          <div style="display:flex;justify-content:space-between;padding:10px 0"><span style="font-weight:600">Total</span><span style="font-family:'IBM Plex Mono',monospace;font-weight:600">{{ tl.sel.tot }}</span></div>
+        </div>
+        <span style="font-size:clamp(16px,1.2vw,19px);line-height:1.4;color:#D6D6D6;text-wrap:pretty">{{ tl.sel.note }}</span>
+      </div>
+    </div>
+    <span style="font-size:15px;color:#8C8C8C">Alíquotas de referência estimadas; serão fixadas oficialmente.</span>
+  </div>
+</section>
+
+<!-- 04 VEÍCULOS COMERCIAIS -->
+<section data-sec="Veículos comerciais" data-screen-label="04 Veículos comerciais" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(28px,5vh,52px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">04 · Por que importa para veículos comerciais</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Você recebe já líquido, conciliado com a nota.</h2>
+      <p style="margin:0;font-size:clamp(20px,1.6vw,26px);line-height:1.4;color:#6B6B6B;max-width:52ch;text-wrap:pretty">Para um setor que vende majoritariamente a outras empresas — transportadoras, frotistas, concessionárias, peças e serviços.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:18px">
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">01</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Regime padrão</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">Indústria e autopeças pagam a alíquota cheia. Cada venda com nota tem o split integral.</p>
+      </div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">02</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Apuração quase pronta</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">Cada recebimento chega conciliado com a nota e com o imposto separado. O imposto nunca passa pelo caixa.</p>
+      </div>
+      <div data-reveal="" style="background:#F2F2F2;border-radius:20px;padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">03</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Créditos acompanhados</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">A Astro acompanha os créditos de IBS/CBS das compras de insumo e mostra a estimativa do que volta na apuração.</p>
+        <p style="margin:0;font-size:16px;line-height:1.4;color:#6B6B6B">Abatimento automático em tempo real: roadmap — depende da plataforma pública da Receita/CGIBS, ainda sem padrão técnico.</p>
+      </div>
+      <div data-reveal="" style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:clamp(22px,2.2vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#6B6B6B">04</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Governança</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45">Pessoas vinculadas com papéis, alçadas em reais e dupla aprovação acima do limite.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 05 DOIS MUNDOS -->
+<section data-sec="Um banco, dois mundos" data-screen-label="05 Um banco, dois mundos" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(28px,5vh,52px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">05 · Um banco, dois mundos</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Pessoas e empresas, cada uma com o que precisa.</h2>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:20px">
+      <div data-reveal="" style="flex:1 1 420px;background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(24px,2.8vw,40px);display:flex;flex-direction:column;gap:22px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h3 style="margin:0;font-size:clamp(30px,2.6vw,44px);font-weight:600;letter-spacing:-0.03em">Pessoa física</h3><span style="font-size:16px;font-weight:600;color:#FFFFFF;border:1px solid #4A4A4A;border-radius:999px;padding:6px 14px;white-space:nowrap">sem retenção</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Conta e Pix (QR e chaves)</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Cartão virtual</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Rendimento do saldo</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Loja com pontos</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#242424;border-radius:999px;padding:9px 16px">Viagens com pontos</span>
+        </div>
+        <p style="margin:0;font-size:clamp(18px,1.4vw,22px);line-height:1.45;color:#D6D6D6;text-wrap:pretty">1 ponto por real; resgate de passagem com pontos. Transferências nunca têm retenção.</p>
+      </div>
+      <div data-reveal="" style="flex:1 1 420px;background:#FFFFFF;color:#0A0A0A;border-radius:20px;padding:clamp(24px,2.8vw,40px);display:flex;flex-direction:column;gap:22px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h3 style="margin:0;font-size:clamp(30px,2.6vw,44px);font-weight:600;letter-spacing:-0.03em">Pessoa jurídica</h3><span style="font-size:16px;font-weight:600;color:#FFFFFF;background:#0A0A0A;border-radius:999px;padding:6px 14px;white-space:nowrap">split da nota</span></div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px">
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#0A0A0A;color:#FFFFFF;border-radius:999px;padding:9px 16px">Cobrança com nota (Pix QR dinâmico e boleto)</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Split da nota</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Créditos acompanhados</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Pix Automático</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Pagamento em lote</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Webhooks para o ERP</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Equipe &amp; alçadas</span>
+          <span style="font-size:clamp(17px,1.3vw,20px);background:#F2F2F2;border-radius:999px;padding:9px 16px">Aprovações pendentes</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 06 COMO O SPLIT FUNCIONA -->
+<section data-sec="Como o split funciona" data-screen-label="06 Como o split funciona" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.5vh,36px)">
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;justify-content:space-between">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">06 · Como o split funciona</div>
+        <h2 style="margin:0;font-size:clamp(36px,4vw,68px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:22ch;text-wrap:balance">Só no pagamento de uma cobrança com nota fiscal.</h2>
+      </div>
+      <div style="display:flex;gap:6px;background:#F2F2F2;border-radius:14px;padding:5px">
+        <sc-for list="{{ s6.modes }}" as="m" hint-placeholder-count="2">
+          <button onClick="{{ m.pick }}" style="font-family:inherit;font-size:17px;font-weight:600;border:0;border-radius:10px;padding:12px 18px;cursor:pointer;background:{{ m.bg }};color:{{ m.fg }};white-space:nowrap;transition:background .2s ease">{{ m.label }}</button>
+        </sc-for>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+      <sc-for list="{{ s6.steps }}" as="st" hint-placeholder-count="3">
+        <button onClick="{{ st.go }}" style="font-family:inherit;font-size:17px;font-weight:600;border-radius:999px;padding:10px 18px;cursor:pointer;border:1px solid {{ st.bd }};background:{{ st.bg }};color:{{ st.fg }};white-space:nowrap;transition:background .3s ease, color .3s ease">{{ st.label }}</button>
+      </sc-for>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button onClick="{{ replay }}" style="font-family:inherit;font-size:17px;font-weight:600;background:#FFFFFF;color:#0A0A0A;border:1px solid #D6D6D6;border-radius:999px;padding:10px 18px;cursor:pointer;white-space:nowrap" style-hover="background:#F2F2F2">↺ Reiniciar</button>
+        <button onClick="{{ s6.next }}" style="font-family:inherit;font-size:17px;font-weight:600;background:{{ s6.nextBg }};color:#FFFFFF;border:0;border-radius:999px;padding:11px 22px;cursor:pointer;white-space:nowrap;transition:background .3s ease">{{ s6.nextLabel }}</button>
+      </div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;justify-content:space-between;gap:12px;font-size:clamp(17px,1.3vw,21px);color:#6B6B6B"><span>{{ s6.head }}</span><span style="font-family:'IBM Plex Mono',monospace;color:#0A0A0A">R$ 10.000,00</span></div>
+      <div style="display:flex;height:clamp(60px,8.5vh,90px);gap:{{ s6.gap }};transition:gap .6s ease">
+        <div style="width:{{ s6.liqW }};background:{{ s6.liqBg }};color:{{ s6.liqFg }};border-radius:16px;display:flex;align-items:center;padding:0 24px;font-family:'IBM Plex Mono',monospace;font-size:clamp(18px,1.6vw,28px);font-weight:600;white-space:nowrap;overflow:hidden;transition:width .9s cubic-bezier(.2,.8,.2,1), background .5s ease, color .5s ease">{{ s6.liqLabel }}</div>
+        <div style="width:{{ s6.cbsW }};background:#8C8C8C;border-radius:16px;transition:width .9s cubic-bezier(.2,.8,.2,1)"></div>
+        <div style="width:{{ s6.ibsW }};background:#6B6B6B;border-radius:16px;transition:width .9s cubic-bezier(.2,.8,.2,1)"></div>
+      </div>
+    </div>
+
+    <sc-if value="{{ s6.isNota }}" hint-placeholder-val="{{ true }}">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,230px),1fr));gap:14px;opacity:{{ s6.op }};transform:translateY({{ s6.y }});transition:opacity .6s ease, transform .6s ease">
+        <div style="background:#F2F2F2;border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:8px"><span style="font-size:17px;color:#6B6B6B;font-weight:600">CBS → Fisco · 8,8%</span><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(24px,2vw,32px);font-weight:600;color:#4A4A4A">R$ 880,00</span></div>
+        <div style="background:#F2F2F2;border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:8px"><span style="font-size:17px;color:#6B6B6B;font-weight:600">IBS → Fisco · 17,7%</span><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(24px,2vw,32px);font-weight:600;color:#4A4A4A">R$ 1.770,00</span></div>
+        <div style="background:#F2F2F2;border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:8px"><span style="font-size:17px;color:#6B6B6B;font-weight:600">Total ao Fisco</span><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(24px,2vw,32px);font-weight:600;color:#4A4A4A">R$ 2.650,00</span></div>
+        <div style="background:#FFFFFF;border:1px solid #E2E2E2;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);border-radius:20px;padding:20px 22px;display:flex;flex-direction:column;gap:8px"><span style="font-size:17px;color:#6B6B6B;font-weight:600">Empresa recebe</span><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(24px,2vw,32px);font-weight:600;color:#1F9D55">R$ 7.350,00</span></div>
+      </div>
+    </sc-if>
+    <sc-if value="{{ s6.isTransf }}" hint-placeholder-val="{{ false }}">
+      <div style="background:#F2F2F2;border-radius:20px;padding:22px 26px;display:flex;flex-wrap:wrap;gap:10px 28px;align-items:center">
+        <span style="font-size:clamp(22px,1.8vw,30px);font-weight:600;letter-spacing:-0.02em">Transferência comum nunca tem retenção.</span>
+        <span style="font-size:clamp(17px,1.3vw,21px);color:#4A4A4A">Sócio, reembolso, empréstimo, Pix entre contas: chega cheio.</span>
+      </div>
+    </sc-if>
+
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;gap:16px 40px;padding-top:20px;border-top:1px solid #E2E2E2">
+      <p style="flex:1 1 380px;margin:0;font-size:clamp(18px,1.4vw,22px);line-height:1.45;text-wrap:pretty"><strong>O banco não recalcula o imposto.</strong> Ele separa a CBS e o IBS destacados na nota e envia ao Fisco. Quem define o imposto — inclusive reduções por produto — é a nota.</p>
+      <p style="flex:1 1 300px;margin:0;font-size:clamp(17px,1.3vw,20px);line-height:1.45;color:#6B6B6B;text-wrap:pretty">Pix com QR dinâmico ou boleto, vinculados à NF-e. Exemplo: regime padrão, regime pleno (2033).</p>
+    </div>
+  </div>
+</section>
+
+<!-- 07 CALCULADORA -->
+<section data-sec="Calculadora" data-screen-label="07 Calculadora" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.5vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">07 · Calculadora</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600">Simule qualquer venda.</h2>
+    </div>
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;gap:20px;align-items:stretch">
+      <div style="flex:1 1 420px;background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:20px">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:17px;font-weight:600;color:#8C8C8C">Valor</span>
+          <div style="display:flex;align-items:center;gap:10px;background:#0A0A0A;border:1.5px solid #3A3A3A;border-radius:14px;padding:0 18px;height:64px">
+            <span style="font-size:22px;font-weight:600;color:#8C8C8C">R$</span>
+            <input value="{{ valor }}" onChange="{{ onValor }}" inputMode="decimal" aria-label="Valor em reais" style="flex:1;min-width:0;border:0;background:transparent;font-family:'IBM Plex Mono',monospace;font-size:clamp(24px,2vw,30px);font-weight:600;color:#FFFFFF">
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:17px;font-weight:600;color:#8C8C8C">Quem vende</span>
+          <div style="display:flex;gap:6px;background:#0A0A0A;border:1px solid #3A3A3A;border-radius:14px;padding:5px">
+            <sc-for list="{{ destOpts }}" as="o" hint-placeholder-count="2">
+              <button onClick="{{ o.pick }}" style="flex:1;font-family:inherit;font-size:17px;font-weight:600;border:0;border-radius:10px;padding:12px 8px;cursor:pointer;background:{{ o.bg }};color:{{ o.fg }}">{{ o.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <span style="font-size:17px;font-weight:600;color:#8C8C8C">Ano</span>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <sc-for list="{{ anoOpts }}" as="o" hint-placeholder-count="7">
+              <button onClick="{{ o.pick }}" style="flex:1 1 auto;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:600;border:1px solid {{ o.bd }};border-radius:999px;padding:9px 12px;cursor:pointer;background:{{ o.bg }};color:{{ o.fg }}">{{ o.label }}</button>
+            </sc-for>
+          </div>
+        </div>
+        <sc-if value="{{ calc.isPJ }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <span style="font-size:17px;font-weight:600;color:#8C8C8C">Regime do setor</span>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <sc-for list="{{ regOpts }}" as="o" hint-placeholder-count="4">
+                <button onClick="{{ o.pick }}" style="flex:1 1 auto;font-family:inherit;font-size:16px;font-weight:600;border:1px solid {{ o.bd }};border-radius:999px;padding:9px 14px;cursor:pointer;background:{{ o.bg }};color:{{ o.fg }}">{{ o.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="flex:1.1 1 440px;background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:18px">
+        <div style="display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;height:40px;border-radius:12px;overflow:hidden;background:#242424;gap:{{ barGap }}">
+            <div style="width:{{ calc.liqPct }};background:#1F9D55;transition:width .4s ease"></div>
+            <div style="width:{{ calc.cbsPct }};background:#D6D6D6;transition:width .4s ease"></div>
+            <div style="width:{{ calc.ibsPct }};background:#8C8C8C;transition:width .4s ease"></div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px 20px;font-size:15px;color:#8C8C8C">
+            <span style="display:flex;align-items:center;gap:8px"><span style="width:11px;height:11px;border-radius:3px;background:#1F9D55"></span>Líquido</span>
+            <span style="display:flex;align-items:center;gap:8px"><span style="width:11px;height:11px;border-radius:3px;background:#D6D6D6"></span>CBS</span>
+            <span style="display:flex;align-items:center;gap:8px"><span style="width:11px;height:11px;border-radius:3px;background:#8C8C8C"></span>IBS</span>
+          </div>
+        </div>
+        <div style="display:flex;flex-direction:column;font-size:clamp(18px,1.4vw,22px)">
+          <div style="display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #3A3A3A"><span style="color:#8C8C8C">Bruto</span><span style="font-family:'IBM Plex Mono',monospace;font-weight:600">{{ calc.bruto }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #3A3A3A;color:#D6D6D6"><span>CBS → Fisco · {{ calc.cbsRate }}</span><span style="font-family:'IBM Plex Mono',monospace">{{ calc.cbs }}</span></div>
+          <div style="display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid #3A3A3A;color:#D6D6D6"><span>IBS → Fisco · {{ calc.ibsRate }}</span><span style="font-family:'IBM Plex Mono',monospace">{{ calc.ibs }}</span></div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:16px 0 0"><span style="font-weight:600">Destino recebe</span><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(30px,2.8vw,46px);font-weight:600;letter-spacing:-0.02em;color:#FFFFFF">{{ calc.liq }}</span></div>
+        </div>
+        <sc-if value="{{ calc.isPF }}" hint-placeholder-val="{{ false }}">
+          <div style="background:#242424;border-radius:14px;padding:14px 18px;font-size:18px;line-height:1.4;font-weight:600">Sem nota de empresa, não há split: transferências entre contas chegam cheias.</div>
+        </sc-if>
+        <p style="margin:auto 0 0;font-size:15px;line-height:1.4;color:#8C8C8C">Alíquotas de referência estimadas; serão fixadas oficialmente.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 08 SPLIT POR SETOR -->
+<section data-sec="Split por setor" data-screen-label="08 Split por setor" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(24px,4vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">08 · Split por setor</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:22ch;text-wrap:balance">Cada regime paga uma fração da referência de ≈ 26,5%.</h2>
+    </div>
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:10px;overflow-x:auto">
+      <div style="min-width:720px;display:grid;grid-template-columns:1.1fr .6fr 1.3fr 1.6fr;gap:18px;padding:0 24px;font-size:15px;font-weight:600;color:#6B6B6B;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.03em">
+        <span>Regime</span><span>Paga</span><span>Alíquota efetiva</span><span>Setores</span>
+      </div>
+      <div style="min-width:720px;display:grid;grid-template-columns:1.1fr .6fr 1.3fr 1.6fr;gap:18px;align-items:center;padding:20px 24px;background:#0A0A0A;color:#FFFFFF;border-radius:20px">
+        <span style="font-size:clamp(20px,1.6vw,26px);font-weight:600">Padrão</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(18px,1.4vw,22px)">100%</span>
+        <div style="display:flex;flex-direction:column;gap:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(20px,1.6vw,26px);font-weight:600">≈ 26,5%</span><div style="height:8px;background:#3A3A3A;border-radius:4px"><div style="width:100%;height:100%;background:#D6D6D6;border-radius:4px"></div></div></div>
+        <span style="font-size:clamp(18px,1.35vw,21px);font-weight:600">Indústria, comércio, autopeças</span>
+      </div>
+      <div style="min-width:720px;display:grid;grid-template-columns:1.1fr .6fr 1.3fr 1.6fr;gap:18px;align-items:center;padding:20px 24px;background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px">
+        <span style="font-size:clamp(20px,1.6vw,26px);font-weight:600">Reduzido 30%</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(18px,1.4vw,22px)">70%</span>
+        <div style="display:flex;flex-direction:column;gap:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(20px,1.6vw,26px);font-weight:600;color:#4A4A4A">≈ 18,55%</span><div style="height:8px;background:#F2F2F2;border-radius:4px"><div style="width:70%;height:100%;background:#8C8C8C;border-radius:4px"></div></div></div>
+        <span style="font-size:clamp(18px,1.35vw,21px)">Profissões regulamentadas</span>
+      </div>
+      <div style="min-width:720px;display:grid;grid-template-columns:1.1fr .6fr 1.3fr 1.6fr;gap:18px;align-items:center;padding:20px 24px;background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px">
+        <span style="font-size:clamp(20px,1.6vw,26px);font-weight:600">Reduzido 60%</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(18px,1.4vw,22px)">40%</span>
+        <div style="display:flex;flex-direction:column;gap:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(20px,1.6vw,26px);font-weight:600;color:#4A4A4A">≈ 10,6%</span><div style="height:8px;background:#F2F2F2;border-radius:4px"><div style="width:40%;height:100%;background:#8C8C8C;border-radius:4px"></div></div></div>
+        <span style="font-size:clamp(18px,1.35vw,21px)">Saúde, educação, agro, cultura</span>
+      </div>
+      <div style="min-width:720px;display:grid;grid-template-columns:1.1fr .6fr 1.3fr 1.6fr;gap:18px;align-items:center;padding:20px 24px;background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px">
+        <span style="font-size:clamp(20px,1.6vw,26px);font-weight:600">Zero</span>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(18px,1.4vw,22px)">0%</span>
+        <div style="display:flex;flex-direction:column;gap:8px"><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(20px,1.6vw,26px);font-weight:600;color:#4A4A4A">0%</span><div style="height:8px;background:#F2F2F2;border-radius:4px"></div></div>
+        <span style="font-size:clamp(18px,1.35vw,21px)">Cesta básica</span>
+      </div>
+    </div>
+    <div data-reveal="" style="background:#F2F2F2;border-radius:20px;padding:20px 26px;font-size:clamp(18px,1.45vw,23px);line-height:1.4;font-weight:600;text-wrap:pretty">Na prática, a redução vale por produto ou serviço (NCM/NBS) e já vem destacada na nota.</div>
+  </div>
+</section>
+
+<!-- 09 PESSOAS, EMPRESAS E ALÇADAS -->
+<section data-sec="Pessoas, empresas e alçadas" data-screen-label="09 Pessoas, empresas e alçadas" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(24px,4vh,44px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">09 · Pessoas, empresas e alçadas</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">O login é da pessoa. O poder, da alçada.</h2>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:18px">
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#8C8C8C">01 · Login</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Sempre da pessoa</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45;color:#D6D6D6">E-mail ou CPF, senha e verificação facial. No app, ela escolhe operar a conta pessoal ou uma das empresas às quais está vinculada.</p>
+      </div>
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#8C8C8C">02 · Abertura</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">CNPJ conferido</h3>
+        <p style="margin:0;font-size:clamp(18px,1.3vw,21px);line-height:1.45;color:#D6D6D6">Situação ativa na Receita e dígitos verificadores. O CPF de quem abre precisa estar no quadro de sócios.</p>
+      </div>
+      <div data-reveal="" style="background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,32px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:16px;color:#8C8C8C">03 · Papéis</span>
+        <h3 style="margin:0;font-size:clamp(24px,1.9vw,32px);font-weight:600;letter-spacing:-0.02em">Papel e alçada em reais</h3>
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <span style="font-size:16px;background:#FFFFFF;color:#0A0A0A;font-weight:600;border-radius:999px;padding:7px 14px">admin</span>
+          <span style="font-size:16px;border:1px solid #4A4A4A;border-radius:999px;padding:7px 14px">aprovador</span>
+          <span style="font-size:16px;border:1px solid #4A4A4A;border-radius:999px;padding:7px 14px">operador</span>
+          <span style="font-size:16px;border:1px solid #4A4A4A;border-radius:999px;padding:7px 14px">consulta</span>
+        </div>
+        <p style="margin:0;font-size:clamp(17px,1.25vw,20px);line-height:1.45;color:#D6D6D6">A empresa nunca fica sem um admin.</p>
+      </div>
+    </div>
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;font-size:clamp(17px,1.35vw,21px);font-weight:600">
+      <span style="border:1px solid #4A4A4A;border-radius:999px;padding:10px 18px">Operador lança</span><span style="color:#8C8C8C">→</span>
+      <span style="border:1px solid #4A4A4A;border-radius:999px;padding:10px 18px">Acima da alçada</span><span style="color:#8C8C8C">→</span>
+      <span style="border:1px solid #B7791F;color:#FFFFFF;border-radius:999px;padding:10px 18px;display:flex;align-items:center;gap:8px"><span style="width:9px;height:9px;border-radius:50%;background:#B7791F"></span>Pendente</span><span style="color:#8C8C8C">→</span>
+      <span style="background:#FFFFFF;color:#0A0A0A;border-radius:999px;padding:10px 18px">Outra pessoa aprova com verificação facial</span>
+    </div>
+    <span style="font-size:16px;color:#8C8C8C">Integração com certificado e-CNPJ: roadmap.</span>
+  </div>
+</section>
+
+<!-- 10 JORNADA -->
+<section data-sec="Jornada no app" data-screen-label="10 Jornada no app" style="min-height:100vh;display:flex;align-items:center;padding:clamp(56px,8vh,110px) clamp(20px,6vw,110px);background:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(20px,3vh,32px)">
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;gap:24px 16px;align-items:flex-end;justify-content:space-between">
+      <div style="display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">10 · A jornada no app</div>
+        <h2 style="margin:0;font-size:clamp(36px,4vw,68px);line-height:1.02;letter-spacing:-0.035em;font-weight:600">Da boas-vindas ao comprovante.</h2>
+        <span style="font-size:15px;color:#6B6B6B;font-family:'IBM Plex Mono',monospace">App interativo · toque nas telas · conta demonstrativa, dados fictícios</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button onClick="{{ jPrev }}" aria-label="Etapa anterior" style="width:52px;height:52px;border-radius:50%;border:1px solid #D6D6D6;background:#FFFFFF;font-size:22px;cursor:pointer;color:#0A0A0A" style-hover="background:#F2F2F2">←</button>
+        <button onClick="{{ jNext }}" aria-label="Próxima etapa" style="width:52px;height:52px;border-radius:50%;border:0;background:#0A0A0A;font-size:22px;cursor:pointer;color:#FFFFFF" style-hover="background:#242424">→</button>
+      </div>
+    </div>
+    <div data-reveal="" style="width:100%">
+      <iframe ref="{{ jRef }}" src="astro-app.html" title="App Astro — demonstração interativa" style="display:block;width:100%;height:clamp(460px,70vh,680px);border:0;background:#FFFFFF"></iframe>
+    </div>
+  </div>
+</section>
+
+<!-- 11 SEGURANÇA -->
+<section data-sec="Segurança" data-screen-label="11 Segurança" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.5vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#8C8C8C"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%;box-shadow:0 0 0 1px #3A3A3A">11 · Segurança</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600;max-width:20ch;text-wrap:balance">Somos de cibersegurança. Começamos por aqui.</h2>
+      <span style="font-size:16px;color:#8C8C8C">Clique em um item para destacá-lo.</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px">
+      <button data-reveal="" onClick="{{ sc.c0.toggle }}" aria-pressed="{{ sc.c0.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c0.bg }};color:{{ sc.c0.fg }};border:1px solid {{ sc.c0.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c0.op }};transform:{{ sc.c0.tf }};box-shadow:{{ sc.c0.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Prova de vida no servidor</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c0.sub }}">01</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c0.sub }}">Desafio sorteado, com validade e uso único. Anti-spoofing em todos os quadros, medição do giro da cabeça e comparação do rosto.</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c1.toggle }}" aria-pressed="{{ sc.c1.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c1.bg }};color:{{ sc.c1.fg }};border:1px solid {{ sc.c1.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c1.op }};transform:{{ sc.c1.tf }};box-shadow:{{ sc.c1.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Aparelho confiável</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c1.sub }}">02</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c1.sub }}">Aparelho novo de PF: <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:{{ sc.c1.hi }}">R$ 200</span> por transação e <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:{{ sc.c1.hi }}">R$ 1.000</span> por dia até ser confirmado com verificação facial (IN BCB 491/2024).</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c2.toggle }}" aria-pressed="{{ sc.c2.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c2.bg }};color:{{ sc.c2.fg }};border:1px solid {{ sc.c2.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c2.op }};transform:{{ sc.c2.tf }};box-shadow:{{ sc.c2.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Limites no servidor</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c2.sub }}">03</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c2.sub }}">Por transação, diurno e noturno (20h–6h). Reduzir vale na hora; aumentar, só depois de 24h.</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c3.toggle }}" aria-pressed="{{ sc.c3.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c3.bg }};color:{{ sc.c3.fg }};border:1px solid {{ sc.c3.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c3.op }};transform:{{ sc.c3.tf }};box-shadow:{{ sc.c3.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Bloqueio cautelar e MED</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c3.sub }}">04</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c3.sub }}">A partir de <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:{{ sc.c3.hi }}">R$ 1.000</span> para destino novo, retenção de até 72h. Contestação (MED) em até 80 dias.</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c4.toggle }}" aria-pressed="{{ sc.c4.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c4.bg }};color:{{ sc.c4.fg }};border:1px solid {{ sc.c4.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c4.op }};transform:{{ sc.c4.tf }};box-shadow:{{ sc.c4.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Verificação e aprovação</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c4.sub }}">05</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c4.sub }}">Verificação facial acima de <span style="font-family:'IBM Plex Mono',monospace;font-weight:600;color:{{ sc.c4.hi }}">R$ 500</span> e dupla aprovação acima da alçada.</p>
+      </button>
+      <button data-reveal="" onClick="{{ sc.c5.toggle }}" aria-pressed="{{ sc.c5.on }}" style="text-align:left;font-family:inherit;cursor:pointer;background:{{ sc.c5.bg }};color:{{ sc.c5.fg }};border:1px solid {{ sc.c5.bd }};border-radius:20px;padding:clamp(20px,2vw,28px);display:flex;flex-direction:column;gap:10px;opacity:{{ sc.c5.op }};transform:{{ sc.c5.tf }};box-shadow:{{ sc.c5.sh }};transition:background .35s ease, color .35s ease, border-color .35s ease, transform .35s ease, opacity .35s ease, box-shadow .35s ease" style-hover="border-color:#FFFFFF;transform:translateY(-4px)">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%"><h3 style="margin:0;font-size:clamp(21px,1.6vw,26px);font-weight:600;letter-spacing:-0.02em">Sessão e integridade</h3><span style="font-family:'IBM Plex Mono',monospace;font-size:14px;color:{{ sc.c5.sub }}">06</span></div>
+        <p style="margin:0;font-size:clamp(16px,1.2vw,19px);line-height:1.45;color:{{ sc.c5.sub }}">JWT curto com refresh rotativo (só o hash é guardado), bcrypt, rate-limit por e-mail e por IP, idempotência por conta, webhooks HMAC-SHA256, dinheiro como valor exato (Decimal/string) e logs de auditoria.</p>
+      </button>
+    </div>
+  </div>
+</section>
+
+<!-- 12 ARQUITETURA E STATUS -->
+<section data-sec="Arquitetura e status" data-screen-label="12 Arquitetura e status" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#FFFFFF;scroll-snap-align:start">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(22px,3.5vh,40px)">
+    <div data-reveal="" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:10px;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:500;letter-spacing:.04em;text-transform:uppercase;color:#6B6B6B"><img src="site/public/favicon.svg" alt="" style="width:18px;height:18px;border-radius:50%">12 · Arquitetura e status</div>
+      <h2 style="margin:0;font-size:clamp(38px,4.4vw,76px);line-height:1.02;letter-spacing:-0.035em;font-weight:600">Onde estamos, sem exagero.</h2>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:28px;align-items:stretch">
+      <div data-reveal="" style="flex:1 1 380px;display:flex;flex-direction:column">
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <div style="flex:1 1 170px;background:#FFFFFF;border:1px solid #E2E2E2;border-radius:18px;padding:16px 20px;display:flex;flex-direction:column;gap:4px"><span style="font-size:clamp(19px,1.45vw,23px);font-weight:600">App Astro</span><span style="font-size:16px;color:#6B6B6B">web + Android (Capacitor), um código só</span></div>
+          <div style="flex:1 1 140px;background:#FFFFFF;border:1px solid #E2E2E2;border-radius:18px;padding:16px 20px;display:flex;flex-direction:column;gap:4px"><span style="font-size:clamp(19px,1.45vw,23px);font-weight:600">Site</span><span style="font-size:16px;color:#6B6B6B">Next.js</span></div>
+        </div>
+        <div style="display:flex;justify-content:center;height:24px"><div style="width:2px;background:#0A0A0A"></div></div>
+        <div style="background:#0A0A0A;color:#FFFFFF;border-radius:18px;padding:18px 22px;display:flex;flex-direction:column;gap:6px"><span style="font-size:clamp(19px,1.45vw,23px);font-weight:600">API FastAPI</span><span style="font-size:16px;color:#8C8C8C">Split, autenticação, alçadas, limites, auditoria</span></div>
+        <div style="display:flex;justify-content:center;height:24px"><div style="width:2px;background:#0A0A0A"></div></div>
+        <div style="background:#F2F2F2;border-radius:18px;padding:16px 20px;font-size:clamp(19px,1.45vw,23px);font-weight:600">Postgres</div>
+        <p style="margin:14px 0 0;font-size:16px;line-height:1.4;color:#6B6B6B">O app fala com a API e tem um modo demonstração de reserva.</p>
+        <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:18px">
+          <div style="flex:1 1 150px;display:flex;flex-direction:column;gap:2px"><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(44px,4vw,68px);font-weight:600;letter-spacing:-0.04em;line-height:1">99</span><span style="font-size:16px;color:#6B6B6B">testes automatizados no backend</span></div>
+          <div style="flex:1 1 150px;display:flex;flex-direction:column;gap:2px"><span style="font-family:'IBM Plex Mono',monospace;font-size:clamp(28px,2.4vw,40px);font-weight:600;letter-spacing:-0.03em;line-height:1.2">E2E ✓</span><span style="font-size:16px;color:#6B6B6B">teste ponta a ponta app ↔ API passando</span></div>
+        </div>
+      </div>
+      <div data-reveal="" style="flex:1.6 1 540px;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:14px">
+        <div style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:20px;display:flex;flex-direction:column;gap:12px">
+          <span style="align-self:flex-start;font-size:15px;font-weight:600;color:#FFFFFF;background:#1F9D55;border-radius:999px;padding:5px 13px">Pronto</span>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:clamp(15px,1.1vw,18px);line-height:1.35">
+            <li>Split por nota com tabela de transição</li><li>Pessoa × empresa × alçadas</li><li>Limites, aparelho confiável e bloqueio cautelar</li><li>App ligado à API</li><li>Site</li>
+          </ul>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:20px;display:flex;flex-direction:column;gap:12px">
+          <span style="align-self:flex-start;font-size:15px;font-weight:600;color:#FFFFFF;background:#B7791F;border-radius:999px;padding:5px 13px">Em validação</span>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:clamp(15px,1.1vw,18px);line-height:1.35">
+            <li>Prova de vida em aparelho real (calibração)</li><li>APK Android</li><li>Migração em Postgres de produção</li>
+          </ul>
+        </div>
+        <div style="background:#FFFFFF;border:1px solid #E2E2E2;border-radius:20px;box-shadow:0 1px 2px rgba(10,10,10,.04),0 12px 32px -12px rgba(10,10,10,.1);padding:20px;display:flex;flex-direction:column;gap:12px">
+          <span style="align-self:flex-start;font-size:15px;font-weight:600;color:#FFFFFF;background:#6B6B6B;border-radius:999px;padding:5px 13px">Simulado</span>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:clamp(15px,1.1vw,18px);line-height:1.35">
+            <li>Pix copia-e-cola e boleto (emissão real exige SPI/DICT ou um parceiro)</li><li>Cartão virtual</li><li>Contas a pagar (DDA)</li>
+          </ul>
+        </div>
+        <div style="background:#F2F2F2;border:1.5px dashed #D6D6D6;border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:12px">
+          <span style="align-self:flex-start;font-size:15px;font-weight:600;color:#0A0A0A;border:1.5px solid #0A0A0A;border-radius:999px;padding:4px 12px">Próximo passo</span>
+          <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:clamp(15px,1.1vw,18px);line-height:1.35">
+            <li>Abatimento de crédito em tempo real (com padrão da Receita/CGIBS)</li><li>Certificado e-CNPJ</li><li>Caixinhas e cartão de crédito</li><li>Onboarding PJ com documentos</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 ENCERRAMENTO -->
+<section data-sec="Encerramento" data-screen-label="13 Encerramento" style="min-height:100vh;display:flex;align-items:center;padding:clamp(64px,9vh,120px) clamp(20px,6vw,110px);background:#0A0A0A;color:#FFFFFF;scroll-snap-align:start;overflow:hidden">
+  <div style="width:100%;max-width:1360px;margin:0 auto;display:flex;flex-direction:column;gap:clamp(28px,5vh,52px)">
+    <div data-reveal="" style="display:flex;align-items:center;justify-content:space-between;gap:24px">
+      <img src="site/public/logo-astro-branco.svg" alt="Astro" style="height:clamp(30px,2.8vw,46px);width:auto;display:block">
+      <div style="width:clamp(70px,7vw,110px);aspect-ratio:1">{{ eclipseSmall }}</div>
+    </div>
+    <h2 data-reveal="" style="margin:0;font-size:clamp(64px,10vw,180px);line-height:.92;letter-spacing:-0.05em;font-weight:600">Obrigado.</h2>
+    <div data-reveal="" style="display:flex;flex-wrap:wrap;gap:20px;align-items:stretch">
+      <div style="flex:2 1 420px;background:#141414;border:1px solid #3A3A3A;border-radius:20px;padding:clamp(22px,2.4vw,34px);display:flex;flex-direction:column;gap:14px">
+        <span style="font-size:18px;font-weight:600;color:#8C8C8C">Equipe CYMAG · Cibersegurança · SENAI São Caetano do Sul</span>
+        <div style="display:flex;flex-wrap:wrap;gap:10px 28px;font-size:clamp(22px,1.8vw,30px);font-weight:600;letter-spacing:-0.015em;line-height:1.35">
+          <span>Alef Kaue</span><span>Carla Souza</span><span>Gustavo Lopreto</span><span>Matheus Sousa</span><span>Yuri Alves</span>
+        </div>
+      </div>
+      <div style="flex:1 1 300px;background:#FFFFFF;color:#0A0A0A;border-radius:20px;padding:clamp(22px,2.4vw,34px);display:flex;align-items:center">
+        <span style="font-size:clamp(24px,2vw,34px);font-weight:600;letter-spacing:-0.02em">Espaço para perguntas</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+class Component extends DCLogic {
+  state = { cur: 0, stage: 0, d2: 0, f2: 'depois', secSel: -1, mode: 'nota', tlOn: false, ty: 2033, valor: '10.000,00', dest: 'PJ', ano: '2033', reg: 0 };
+  jRef = React.createRef();
+
+  secs() { return Array.from(document.querySelectorAll('[data-sec]')); }
+  curIdx() {
+    const mid = window.innerHeight * 0.45; let idx = 0;
+    this.secs().forEach((s, i) => { if (s.getBoundingClientRect().top <= mid) idx = i; });
+    return idx;
+  }
+  go(i) {
+    const s = this.secs(); if (!s.length) return;
+    const t = s[Math.max(0, Math.min(s.length - 1, i))];
+    window.scrollTo({ top: t.getBoundingClientRect().top + window.scrollY, behavior: 'smooth' });
+  }
+  play() { this.setState({ stage: 0, mode: 'nota' }); }
+  nextStep() { this.setState(s => ({ mode: 'nota', stage: Math.min(3, (s.mode === 'nota' ? s.stage : 0) + 1) })); }
+  openD2() {
+    clearTimeout(this.d2t);
+    this.setState({ d2: 1, f2: 'depois' });
+    this.d2t = setTimeout(() => this.setState({ d2: 2 }), 650);
+  }
+  reveal(el) { el.removeAttribute('data-hidden'); el.style.opacity = '1'; el.style.transform = 'none'; }
+
+  componentDidMount() {
+    document.querySelectorAll('[data-reveal]').forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.top < window.innerHeight && r.bottom > 0) return;
+      el.style.opacity = '0'; el.style.transform = 'translateY(18px)';
+      el.style.transition = 'opacity .7s ease, transform .7s ease';
+      el.setAttribute('data-hidden', '');
+    });
+    this.onScroll = () => {
+      document.querySelectorAll('[data-hidden]').forEach(el => { if (el.getBoundingClientRect().top < window.innerHeight * 0.92) this.reveal(el); });
+      const idx = this.curIdx();
+      this.setState(s => s.cur === idx ? null : { cur: idx });
+      if (idx === 2 && !this.state.tlOn) this.setState({ tlOn: true });
+    };
+    window.addEventListener('scroll', this.onScroll, { passive: true });
+    window.addEventListener('resize', this.onScroll);
+    this.onPrint = () => { document.querySelectorAll('[data-hidden]').forEach(el => this.reveal(el)); this.setState({ stage: 3, tlOn: true, d2: 2 }); };
+    window.addEventListener('beforeprint', this.onPrint);
+    this.onKey = e => {
+      if (/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
+      const k = e.key, c = this.curIdx(); let n = null;
+      if (k === 'ArrowRight' || k === 'PageDown') n = c + 1;
+      else if (k === 'ArrowLeft' || k === 'PageUp') n = c - 1;
+      else if (k === 'Home') n = 0;
+      else if (k === 'End') n = this.secs().length - 1;
+      if (n === null) return;
+      e.preventDefault();
+      if (n === c + 1 && c === 1 && this.state.d2 === 0) return this.openD2();
+      if (n === c + 1 && c === 5 && (this.state.mode !== 'nota' || this.state.stage < 3)) return this.nextStep();
+      this.go(n);
+    };
+    window.addEventListener('keydown', this.onKey);
+    this.t0 = setTimeout(this.onScroll, 120);
+    this.poll = setInterval(this.onScroll, 300);
+    this.tStop = setTimeout(() => clearInterval(this.poll), 6000);
+  }
+  componentWillUnmount() {
+    window.removeEventListener('scroll', this.onScroll);
+    window.removeEventListener('resize', this.onScroll);
+    window.removeEventListener('beforeprint', this.onPrint);
+    window.removeEventListener('keydown', this.onKey);
+    (this.timers || []).forEach(clearTimeout);
+    clearTimeout(this.t0); clearTimeout(this.d2t); clearTimeout(this.tStop); clearInterval(this.poll);
+  }
+
+  toCents(str) {
+    let s = String(str || '').replace(/[^\d,.]/g, '');
+    if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+    else if ((s.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(s)) s = s.replace(/\./g, '');
+    const [ip, dp = ''] = s.split('.');
+    let c = (parseInt(ip || '0', 10) || 0) * 100 + parseInt((dp + '00').slice(0, 2), 10);
+    if ((dp[2] || '0') >= '5') c += 1;
+    return Math.min(c, 100000000000);
+  }
+  brl(c) { return (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }); }
+  pctTxt(x) { return x.toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%'; }
+
+  eclipse(dur) {
+    return React.createElement('img', { src: 'site/public/favicon.svg', alt: '', style: { width: '100%', height: '100%', display: 'block', borderRadius: '50%', animation: 'astroSpin ' + dur + 's linear infinite' } });
+  }
+
+  renderVals() {
+    const { cur, stage, mode, tlOn, ty, valor, dest, ano, reg, d2, f2, secSel } = this.state;
+    const labels = ['Capa', 'A mudança', 'Linha do tempo', 'Veículos comerciais', 'Um banco, dois mundos', 'Como o split funciona', 'Calculadora', 'Split por setor', 'Pessoas, empresas e alçadas', 'Jornada no app', 'Segurança', 'Arquitetura e status', 'Encerramento'];
+    const N = labels.length, dark = cur % 2 === 0;
+
+    // rates in 1/10000
+    const RATES = { '2026': [90, 10], '2027–2028': [880, 10], '2029': [880, 177], '2030': [880, 354], '2031': [880, 531], '2032': [880, 708], '2033': [880, 1770] };
+    const yRates = y => y === 2026 ? RATES['2026'] : y <= 2028 ? RATES['2027–2028'] : RATES[String(y)];
+    const phase = { 2026: ['Ano-teste', 'Alíquota simbólica para testar o mecanismo.'], 2027: ['CBS cheia', 'CBS em ≈ 8,8%; IBS ainda em 0,1%.'], 2028: ['CBS cheia', 'CBS em ≈ 8,8%; IBS ainda em 0,1%.'], 2029: ['IBS a 10% da referência', 'O IBS começa a subir de forma gradual.'], 2030: ['IBS a 20% da referência', 'Transição gradual do IBS.'], 2031: ['IBS a 30% da referência', 'Transição gradual do IBS.'], 2032: ['IBS a 40% da referência', 'Último ano antes do regime pleno.'], 2033: ['Regime pleno', 'CBS ≈ 8,8% + IBS ≈ 17,7%: referência de ≈ 26,5%.'] };
+    const years = [2026, 2027, 2028, 2029, 2030, 2031, 2032, 2033];
+    const sr = yRates(ty);
+
+    const fat = [10, 7, 4, 0][reg], pj = dest === 'PJ';
+    const [rc, ri] = RATES[ano];
+    const hu = (n, d) => Math.floor((2 * n + d) / (2 * d));
+    const bruto = this.toCents(valor);
+    const cbs = pj ? hu(bruto * rc * fat, 100000) : 0;
+    const ibs = pj ? hu(bruto * ri * fat, 100000) : 0;
+    const liq = bruto - cbs - ibs;
+    const pct = v => (bruto ? (v / bruto) * 100 : (v === liq ? 100 : 0)) + '%';
+
+    const onD = { bg: '#FFFFFF', fg: '#0A0A0A', bd: '#FFFFFF' }, offD = { bg: 'transparent', fg: '#FFFFFF', bd: '#4A4A4A' };
+    const isNota = mode === 'nota';
+    const stepLabels = ['1 · Nota emitida', '2 · Cliente paga', '3 · Banco separa o imposto'];
+
+    return {
+      eclipseBig: this.eclipse(60),
+      eclipseSmall: this.eclipse(40),
+      progress: ((cur + 1) / N * 100) + '%',
+      counter: String(cur + 1).padStart(2, '0') + ' / ' + N + ' · ' + labels[cur],
+      ui: { track: dark ? 'rgba(255,255,255,.14)' : 'rgba(10,10,10,.08)', fill: dark ? '#FFFFFF' : '#0A0A0A', counter: dark ? '#8C8C8C' : '#6B6B6B' },
+      dots: labels.map((label, i) => ({
+        label, go: () => this.go(i), h: i === cur ? '28px' : '10px',
+        bg: i === cur ? (dark ? '#FFFFFF' : '#0A0A0A') : (dark ? 'rgba(255,255,255,.3)' : 'rgba(10,10,10,.22)')
+      })),
+
+      tl: {
+        bars: years.map((y, i) => {
+          const [c, b] = yRates(y), tot = (c + b) / 100, sel = y === ty;
+          return {
+            year: y, tot: this.pctTxt(tot), cbsF: c, ibsF: b,
+            h: tlOn ? Math.max(3, (c + b) / 2650 * 82) + '%' : '0%', delay: (i * 0.09) + 's',
+            outline: sel ? '2px solid #FFFFFF' : '0 solid transparent',
+            labCol: sel ? '#FFFFFF' : '#8C8C8C', yearCol: sel ? '#FFFFFF' : '#8C8C8C',
+            pick: () => this.setState({ ty: y, tlOn: true })
+          };
+        }),
+        sel: { year: ty === 2027 || ty === 2028 ? '2027–2028' : String(ty), phase: phase[ty][0], note: phase[ty][1], cbs: this.pctTxt(sr[0] / 100), ibs: this.pctTxt(sr[1] / 100), tot: this.pctTxt((sr[0] + sr[1]) / 100) }
+      },
+
+      replay: () => this.play(),
+      m2: {
+        aTf: d2 >= 1 ? 'translateX(calc(-50% - 14px)) scale(' + (f2 === 'antes' ? 1.02 : .97) + ')' : 'none',
+        aOp: d2 >= 1 && f2 !== 'antes' ? 0.45 : 1,
+        aFilter: d2 >= 1 && f2 !== 'antes' ? 'grayscale(1)' : 'none',
+        dTf: d2 >= 1 ? 'translateX(calc(50% + 14px)) scale(' + (f2 === 'antes' ? .97 : 1.02) + ')' : 'translateX(0) scale(.92)',
+        dOp: d2 >= 1 ? (f2 === 'antes' ? 0.45 : 1) : 0,
+        dFilter: d2 >= 1 && f2 === 'antes' ? 'grayscale(1)' : 'none',
+        clickA: () => d2 === 0 ? this.openD2() : this.setState({ f2: 'antes' }),
+        clickD: () => d2 >= 1 && this.setState({ f2: 'depois' }),
+        hint: d2 === 0 ? 'Clique no card (ou tecla →) para ver o depois' : 'Clique em um card para destacá-lo',
+        op: d2 >= 1 ? 1 : 0, tf: d2 >= 1 ? 'none' : 'translateY(24px) scale(.97)',
+        gap: d2 >= 2 ? '6px' : '0px', barW: d2 >= 2 ? '73.5%' : '100%', barTxt: d2 >= 2 ? 'R$ 7.350,00' : 'R$ 10.000,00',
+        op2: d2 >= 2 ? 1 : 0, y2: d2 >= 2 ? '0px' : '14px'
+      },
+      sc: Object.fromEntries([0, 1, 2, 3, 4, 5].map(i => {
+        const on = secSel === i, dim = secSel >= 0 && !on;
+        return ['c' + i, { on, toggle: () => this.setState({ secSel: on ? -1 : i }),
+          bg: on ? '#FFFFFF' : '#141414', fg: on ? '#0A0A0A' : '#FFFFFF', bd: on ? '#FFFFFF' : '#3A3A3A',
+          sub: on ? '#3A3A3A' : '#D6D6D6', hi: on ? '#0A0A0A' : '#FFFFFF',
+          op: dim ? 0.45 : 1, tf: on ? 'scale(1.03)' : 'none', sh: on ? '0 24px 60px -20px rgba(255,255,255,.25)' : 'none' }];
+      })),
+      s6: {
+        isNota, isTransf: !isNota,
+        modes: [['nota', 'Cobrança com nota'], ['transf', 'Transferência comum']].map(([k, label]) => ({
+          label, bg: mode === k ? '#0A0A0A' : 'transparent', fg: mode === k ? '#FFFFFF' : '#0A0A0A',
+          pick: () => this.setState({ mode: k, stage: 0 })
+        })),
+        steps: stepLabels.map((label, i) => {
+          const on = isNota && stage >= i + 1;
+          return { label, bd: on ? '#0A0A0A' : '#D6D6D6', bg: on ? '#0A0A0A' : '#FFFFFF', fg: on ? '#FFFFFF' : (isNota ? '#0A0A0A' : '#8C8C8C'),
+            go: () => this.setState({ stage: i + 1, mode: 'nota' }) };
+        }),
+        head: isNota ? (stage >= 1 ? 'NF-e: CBS R$ 880,00 + IBS R$ 1.770,00 destacados' : 'Venda com nota fiscal') : 'Pix entre contas',
+        split: isNota && stage >= 3,
+        gap: isNota && stage >= 3 ? '8px' : '0px',
+        liqW: isNota && stage >= 3 ? '73.5%' : '100%',
+        cbsW: isNota && stage >= 3 ? '8.8%' : '0%',
+        ibsW: isNota && stage >= 3 ? '17.7%' : '0%',
+        liqBg: (!isNota || stage >= 3) ? '#1F9D55' : (stage >= 2 ? '#0A0A0A' : '#F2F2F2'),
+        liqFg: (!isNota || stage >= 2) ? '#FFFFFF' : '#0A0A0A',
+        liqLabel: !isNota ? 'R$ 10.000,00 · chega cheio' : stage >= 3 ? 'R$ 7.350,00 · empresa recebe' : stage >= 2 ? 'R$ 10.000,00 · pago pelo cliente' : 'R$ 10.000,00 · cobrança emitida',
+        op: stage >= 3 ? 1 : 0, y: stage >= 3 ? '0px' : '16px',
+        next: () => this.nextStep(),
+        nextLabel: isNota && stage >= 3 ? 'Concluído ✓' : 'Próxima etapa →',
+        nextBg: isNota && stage >= 3 ? '#1F9D55' : '#0A0A0A'
+      },
+
+      jRef: this.jRef,
+      jPrev: () => this.jRef.current && this.jRef.current.contentWindow.postMessage('astro-prev', '*'),
+      jNext: () => this.jRef.current && this.jRef.current.contentWindow.postMessage('astro-next', '*'),
+
+      valor,
+      onValor: e => this.setState({ valor: e.target.value }),
+      destOpts: [['PF', 'Pessoa — PF'], ['PJ', 'Empresa com nota — PJ']].map(([k, label]) => ({ label, pick: () => this.setState({ dest: k }), ...(dest === k ? onD : { bg: 'transparent', fg: '#FFFFFF' }) })),
+      anoOpts: ['2026', '2027–2028', '2029', '2030', '2031', '2032', '2033'].map(k => ({ label: k, pick: () => this.setState({ ano: k }), ...(ano === k ? onD : offD) })),
+      regOpts: ['Padrão', 'Reduzido 30%', 'Reduzido 60%', 'Zero'].map((label, i) => ({ label, pick: () => this.setState({ reg: i }), ...(reg === i ? onD : offD) })),
+      barGap: pj && (cbs + ibs) ? '3px' : '0px',
+      calc: {
+        bruto: this.brl(bruto), cbs: this.brl(cbs), ibs: this.brl(ibs), liq: this.brl(liq),
+        cbsRate: pj ? this.pctTxt(rc * fat / 1000) : '0%', ibsRate: pj ? this.pctTxt(ri * fat / 1000) : '0%',
+        liqPct: pct(liq), cbsPct: pct(cbs), ibsPct: pct(ibs),
+        isPF: !pj, isPJ: pj
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>
