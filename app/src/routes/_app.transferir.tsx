@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Clock, ScanFace } from "lucide-react";
-import { consultarDestino, transferir } from "@/lib/api";
+import { consultarDestino, MODO_API, transferir } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, parseValor } from "@/lib/format";
 import type { CarteiraInfo, ProvaBiometrica } from "@/lib/types";
@@ -51,6 +51,15 @@ function Transferir() {
     e.preventDefault();
     setErro(null);
     if (!destino.trim()) return setErro("Informe a chave Pix ou o número da conta.");
+    // Código de cobrança (6 dígitos) digitado aqui: é o Pix de uma venda, com split.
+    if (!MODO_API && /^\d{3}\s?\d{3}$/.test(destino.trim())) {
+      try {
+        sessionStorage.setItem("astro-codigo-cobranca", destino.replace(/\D/g, ""));
+      } catch {
+        /* sem storage: a pessoa digita o código na área Pix */
+      }
+      return void nav({ to: "/pix" });
+    }
     if (!(valor > 0)) return setErro("Informe um valor válido.");
     setLoading(true);
     try {

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -16,11 +16,15 @@ import {
 import {
   consultarCobranca,
   criarChave,
+  criarCobranca,
   minhasChaves,
+  MODO_API,
   pagarCobranca,
   removerChave,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { fmtBRL, parseValor } from "@/lib/format";
+import { calcularSplit } from "@/lib/split";
 import type { Cobranca, ProvaBiometrica } from "@/lib/types";
 import { Empty, ErrorBox, PageTitle, ValueRow } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
@@ -59,6 +63,9 @@ function Pix() {
         )}
         <AcaoPix icon={SlidersHorizontal} label="Limites" to="/config" />
       </div>
+
+      {/* Empresa: gera o Pix de uma venda (o split sai sozinho no pagamento) */}
+      {ehPJ && !MODO_API && <CobrarVenda />}
 
       {/* Colar código */}
       <ColaCodigo />
@@ -119,6 +126,121 @@ function AcaoPix({
 }
 
 const LIMITE_FACIAL = 500;
+/** Código levado da tela Transferir para cá (a pessoa digitou um código de cobrança lá). */
+const K_CODIGO_COBRANCA = "astro-codigo-cobranca";
+
+/**
+ * Conta de empresa (modo demonstração): gera o Pix de uma venda só com o valor.
+ * A nota de exemplo já vai junto, então quando o cliente paga o imposto é
+ * separado na hora e a empresa recebe o líquido.
+ */
+function CobrarVenda() {
+  const qc = useQueryClient();
+  const [valorStr, setValorStr] = useState("");
+  const [descricao, setDescricao] = useState("");
+  const [erro, setErro] = useState<string | null>(null);
+  const [cob, setCob] = useState<Cobranca | null>(null);
+  const valor = parseValor(valorStr);
+  const previa = valor > 0 ? calcularSplit(valor, "PJ", 2033) : null;
+
+  const mut = useMutation({
+    mutationFn: criarCobranca,
+    onSuccess: (cs) => {
+      setCob(cs[0] ?? null);
+      void qc.invalidateQueries({ queryKey: ["faturas"] });
+    },
+    onError: (e: Error) => setErro(e.message),
+  });
+
+  function gerar(e: React.FormEvent) {
+    e.preventDefault();
+    setErro(null);
+    if (!previa) return setErro("Informe o valor da venda.");
+    mut.mutate({
+      valor,
+      ...(descricao ? { descricao } : {}),
+      nota_fiscal: {
+        chave: Array.from({ length: 44 }, () => Math.floor(Math.random() * 10)).join(""),
+        cbs: previa.cbs,
+        ibs: previa.ibs,
+      },
+    });
+  }
+
+  if (cob)
+    return (
+      <section className="surface enter flex flex-col items-center p-6 text-center">
+        <h2 className="self-start text-lg text-ink">Pix da venda gerado</h2>
+        <div className="mt-4 rounded-[20px] border border-border bg-background p-4">
+          <FakeQR seed={cob.txid} />
+        </div>
+        <p className="mt-4 text-xs text-mut3">Código do Pix</p>
+        <p className="tabular text-4xl font-semibold tracking-[0.18em] text-ink">{cob.codigo}</p>
+        <p className="mt-1 text-xs text-mut3">
+          O cliente paga em Pix → Pagar cobrança (ou em Transferir), digitando este código.
+        </p>
+        <div className="mt-4 w-full divide-y divide-border text-left">
+          <ValueRow label="Cliente paga" value={cob.valor} />
+          <ValueRow label="CBS da nota → Fisco" value={cob.cbs} tax />
+          <ValueRow label="IBS da nota → Fisco" value={cob.ibs} tax />
+          <ValueRow label="Você recebe (líquido)" value={cob.valor - cob.cbs - cob.ibs} strong />
+        </div>
+        <button
+          className="btn btn-ink mt-5 w-full"
+          onClick={() => {
+            setCob(null);
+            setValorStr("");
+            setDescricao("");
+          }}
+        >
+          Gerar outro
+        </button>
+      </section>
+    );
+
+  return (
+    <form onSubmit={gerar} className="surface p-5">
+      <h2 className="flex items-center gap-2 text-lg text-ink">
+        <QrCode size={18} /> Receber venda com Pix
+      </h2>
+      <p className="mt-1 text-sm text-mut3">
+        Gere o Pix da venda. No pagamento, o imposto da nota é separado na hora e você recebe o
+        líquido.
+      </p>
+      <div className="mt-3 grid gap-2">
+        <input
+          className="field tabular"
+          inputMode="decimal"
+          placeholder="Valor da venda (R$)"
+          value={valorStr}
+          onChange={(e) => setValorStr(e.target.value)}
+        />
+        <input
+          className="field"
+          placeholder="Descrição (opcional)"
+          value={descricao}
+          onChange={(e) => setDescricao(e.target.value)}
+        />
+      </div>
+      {previa && (
+        <p className="mt-2 text-sm text-mut2">
+          Imposto da nota: {fmtBRL(previa.imposto_total)} · você recebe {fmtBRL(previa.liquido)}
+        </p>
+      )}
+      {erro && (
+        <div className="mt-3">
+          <ErrorBox>{erro}</ErrorBox>
+        </div>
+      )}
+      <button className="btn btn-ink mt-3 w-full" disabled={mut.isPending}>
+        {mut.isPending ? "Gerando…" : "Gerar Pix da venda"}
+      </button>
+      <p className="mt-2 text-[11px] text-mut3">
+        Demonstração: nota fiscal de exemplo, com a alíquota cheia de 2033.
+      </p>
+    </form>
+  );
+}
 
 /**
  * Pagar uma cobrança pelo código. É o pagamento de cobrança com nota fiscal que
@@ -133,11 +255,27 @@ function ColaCodigo() {
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function consultar() {
+  // Veio da tela Transferir com um código de cobrança: já abre a revisão.
+  useEffect(() => {
+    let trazido: string | null = null;
+    try {
+      trazido = sessionStorage.getItem(K_CODIGO_COBRANCA);
+      sessionStorage.removeItem(K_CODIGO_COBRANCA);
+    } catch {
+      /* sem storage: a pessoa digita o código aqui */
+    }
+    if (trazido) {
+      setCodigo(trazido);
+      void consultar(trazido);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function consultar(cod = codigo) {
     setErro(null);
     setLoading(true);
     try {
-      setCob(await consultarCobranca(codigo));
+      setCob(await consultarCobranca(cod));
     } catch (e) {
       setErro((e as Error).message);
     } finally {
