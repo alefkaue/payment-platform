@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Check, Loader2, X } from "lucide-react";
-import { pedirDesafio } from "@/lib/api";
+import { MODO_API, pedirDesafio } from "@/lib/api";
 import type { Desafio, ProvaBiometrica } from "@/lib/types";
 
 /**
@@ -60,6 +60,16 @@ export function LivenessCheck({
   const [temRosto, setTemRosto] = useState(false);
   const onSuccessRef = useRef(onSuccess);
   onSuccessRef.current = onSuccess;
+  // Só no modo demonstração (sem servidor para conferir o rosto): se a câmera ou o
+  // modelo não ajudarem, a pessoa segue sem a verificação em vez de ficar presa.
+  const [podePular, setPodePular] = useState(false);
+  useEffect(() => {
+    if (MODO_API) return;
+    const t = setTimeout(() => setPodePular(true), 8000);
+    return () => clearTimeout(t);
+  }, []);
+  const pular = () =>
+    onSuccessRef.current({ desafio_id: desafio?.desafio_id ?? "demo", quadros: [] });
 
   const passos: Passo[] = desafio
     ? ["frente", desafio.acao === "virar_esquerda" ? "esquerda" : "direita"]
@@ -213,6 +223,11 @@ export function LivenessCheck({
             <button onClick={onClose} className="btn btn-glass mt-5 w-full">
               Fechar
             </button>
+            {!MODO_API && (
+              <button onClick={pular} className="btn btn-glass mt-3 w-full">
+                Continuar sem câmera (demonstração)
+              </button>
+            )}
           </>
         ) : fase === "ok" ? (
           <p className="text-lg font-semibold text-pos">Pronto! Conferindo com o banco…</p>
@@ -230,6 +245,11 @@ export function LivenessCheck({
                 />
               ))}
             </div>
+            {podePular && (
+              <button onClick={pular} className="btn btn-glass mt-5 w-full">
+                Continuar sem câmera (demonstração)
+              </button>
+            )}
           </>
         )}
       </div>

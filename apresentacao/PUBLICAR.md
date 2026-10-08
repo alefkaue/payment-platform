@@ -50,6 +50,20 @@ extrato "Pix de …").
 
 O que publicar é **o conteúdo da pasta `apresentacao/`** (a raiz do site é ela).
 
+> ⚠️ **A raiz do site TEM que ser a pasta `apresentacao/`.** O app usa caminhos
+> absolutos (`/assets/...`, `/bem-vindo`, `/inicio`). Se o site publicado for a raiz do
+> repositório, o endereço vira `.../apresentacao/apresentacao.html` e o app dá 404 /
+> tela branca. Teste rápido: `https://SEU-SITE/` tem que abrir o app (tela "Criar conta /
+> Entrar"). Se abrir uma lista de arquivos, um 404 ou o README, a raiz está errada.
+>
+> No Netlify **pelo GitHub**, o `netlify.toml` da raiz do repositório já aponta para
+> `apresentacao/` (não precisa configurar nada; se o painel tiver "Publish directory"
+> preenchido com outra coisa, apague).
+>
+> Pelo mesmo motivo, **localmente use só `py servir.py`** dentro de `apresentacao/`.
+> Abrir o `.html` com duplo clique, Live Server ou `python -m http.server` na raiz do
+> repositório não funciona.
+
 ### A) Netlify — arrastar e soltar (mais rápido)
 1. https://app.netlify.com/drop (entrar com conta grátis, ex.: login do GitHub).
 2. Arrastar a pasta `apresentacao/` inteira. Pronto: aparece `https://xxxx.netlify.app`.
@@ -75,10 +89,16 @@ para não pegar versão antiga do cache.
 ## 4. Conferir que está certo (2 minutos)
 
 1. Notebook: `https://SEU-SITE/apresentacao.html` → ir ao slide 10 → o app aparece no celular desenhado.
-2. Celular: `https://SEU-SITE/` → **Criar conta** (dados fictícios) → depositar R$ 100 em **Depositar**.
-3. Notebook (no app do slide): criar outra conta → **Pix → Minhas chaves → Cadastrar e-mail**.
-4. Celular: **Transferir** → digitar a chave do notebook → confirmar.
-5. Notebook: **Início/Extrato** → o Pix tem que aparecer.
+   No app do slide: **Entrar** com qualquer e-mail e senha → cai na conta de exemplo (Marina).
+2. Celular: `https://SEU-SITE/` → **Criar conta** (dados fictícios, CPF válido, ex.: 111.444.777-35)
+   → **Iniciar verificação**. Se a câmera não ajudar, depois de 8 s aparece
+   **Continuar sem câmera (demonstração)**. → **Criar conta** → **Depositar** R$ 100.
+3. Celular: **Transferir** → chave `marina@email.com` → valor → **Revisar** → **Confirmar**.
+4. Notebook (app do slide): **Extrato** (menu "Mais") → aparece "Pix de …".
+
+A conta de exemplo e as chaves dela (`marina@email.com`) existem sempre: o app as recria
+se o JSON compartilhado estiver sem elas. O caminho inverso também funciona (notebook
+cria uma chave em **Pix → Minhas chaves** e o celular manda para ela).
 
 Se o passo 4 der "Chave Pix ou conta não encontrada": o site publicado é um build
 **sem** `VITE_DEMO_SYNC_URL` (antigo). Conferir com:

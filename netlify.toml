@@ -1,0 +1,12 @@
+# Netlify (deploy pelo GitHub): o site é a pasta apresentacao/, já pronta, sem build.
+# Sem isto o Netlify publica a raiz do repositório e o app dá 404 (ele usa caminhos
+# absolutos: /assets, /bem-vindo, /inicio...).
+[build]
+  publish = "apresentacao"
+  command = ""
+
+# Rotas do app (SPA): o que não for arquivo devolve o index.html.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

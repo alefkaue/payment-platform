@@ -74,6 +74,52 @@ let memoria: BancoDemo | null = null;
 // --- Sincronização entre aparelhos (opcional) ---------------------------------------
 const SYNC = (import.meta.env["VITE_DEMO_SYNC_URL"] as string | undefined) || undefined;
 let envio: Promise<void> | null = null;
+// true enquanto existe mudança local que o banco compartilhado ainda não recebeu.
+let pendente = false;
+let envios = 0;
+const TEMPO_REDE_MS = 5000;
+
+/** fetch com tempo limite: rede lenta ou bloqueada não pode travar o app. */
+async function comLimite(url: string, init?: RequestInit): Promise<Response> {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), TEMPO_REDE_MS);
+  try {
+    return await fetch(url, { ...init, signal: c.signal });
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+/**
+ * Garante que as contas do roteiro (Marina e a empresa) e as chaves delas existem.
+ * O banco compartilhado pode ter sido gravado sem elas; sem isso, um Pix para a
+ * Marina dá "chave não encontrada" em todos os aparelhos.
+ */
+function curar(b: BancoDemo): boolean {
+  const s = semente();
+  let mudou = false;
+  b.pessoas ??= [];
+  b.contas ??= {};
+  b.chaves ??= [];
+  b.transacoes ??= [];
+  if (!b.pessoas.some((p) => p.email === MARINA.email)) {
+    b.pessoas.unshift({ ...MARINA });
+    mudou = true;
+  }
+  for (const [id, c] of Object.entries(s.contas)) {
+    if (!b.contas[id]) {
+      b.contas[id] = c;
+      mudou = true;
+    }
+  }
+  for (const k of s.chaves) {
+    if (!b.chaves.some((x) => x.tipo === k.tipo && x.valor === k.valor)) {
+      b.chaves.push(k);
+      mudou = true;
+    }
+  }
+  return mudou;
+}
 
 /** Espera o último envio terminar (para o outro aparelho já ver a mudança). */
 export async function aguardarEnvio(): Promise<void> {
@@ -84,11 +130,21 @@ export async function aguardarEnvio(): Promise<void> {
 export async function puxar(): Promise<void> {
   if (!SYNC || typeof window === "undefined") return;
   await aguardarEnvio(); // não sobrescreve uma mudança local ainda não enviada
+  if (pendente) {
+    // O último envio falhou: tenta de novo e fica com o que está neste aparelho,
+    // senão a leitura apagaria o que a pessoa acabou de fazer.
+    enviar(banco());
+    await aguardarEnvio();
+    return;
+  }
   try {
-    const r = await fetch(SYNC, { cache: "no-store" });
+    const r = await comLimite(SYNC, { cache: "no-store" });
     if (!r.ok) return;
     const b = (await r.json()) as BancoDemo | null;
-    if (b?.versao === 1) window.localStorage.setItem(KEY, JSON.stringify(b));
+    if (b?.versao === 1) {
+      curar(b);
+      window.localStorage.setItem(KEY, JSON.stringify(b));
+    }
   } catch {
     /* offline: usa o que está no aparelho */
   }
@@ -98,16 +154,20 @@ function enviar(b: BancoDemo) {
   if (!SYNC) return;
   const corpo = JSON.stringify(b);
   const anterior = envio;
+  pendente = true;
+  const meu = ++envios;
   envio = (async () => {
     if (anterior) await anterior;
     try {
-      await fetch(SYNC, {
+      const r = await comLimite(SYNC, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: corpo,
       });
+      // Só baixa a bandeira se nenhum envio mais novo entrou na fila.
+      if (r.ok && meu === envios) pendente = false;
     } catch {
-      /* offline: fica só neste aparelho */
+      /* offline: fica só neste aparelho; puxar() tenta de novo */
     }
   })();
 }
@@ -136,6 +196,7 @@ export function banco(): BancoDemo {
       if (raw) {
         const b = JSON.parse(raw) as BancoDemo;
         if (b?.versao === 1) {
+          curar(b);
           memoria = b;
           reservarIds(maiorId(b));
           return b;
