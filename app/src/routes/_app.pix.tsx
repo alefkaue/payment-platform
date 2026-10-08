@@ -13,9 +13,17 @@ import {
   SlidersHorizontal,
   Trash2,
 } from "lucide-react";
-import { criarChave, minhasChaves, removerChave } from "@/lib/api";
+import {
+  consultarCobranca,
+  criarChave,
+  minhasChaves,
+  pagarCobranca,
+  removerChave,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { Empty, ErrorBox, PageTitle } from "@/components/payflow/ui";
+import type { Cobranca, ProvaBiometrica } from "@/lib/types";
+import { Empty, ErrorBox, PageTitle, ValueRow } from "@/components/payflow/ui";
+import { LivenessCheck } from "@/components/payflow/liveness";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/pix")({
@@ -110,30 +118,121 @@ function AcaoPix({
   );
 }
 
+const LIMITE_FACIAL = 500;
+
+/**
+ * Pagar uma cobrança pelo código. É o pagamento de cobrança com nota fiscal que
+ * separa o imposto: a tela mostra quanto vai ao Fisco e quanto a empresa recebe.
+ */
 function ColaCodigo() {
   const nav = useNavigate();
+  const qc = useQueryClient();
   const [codigo, setCodigo] = useState("");
+  const [cob, setCob] = useState<Cobranca | null>(null);
+  const [liveness, setLiveness] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function consultar() {
+    setErro(null);
+    setLoading(true);
+    try {
+      setCob(await consultarCobranca(codigo));
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function pagar(prova: ProvaBiometrica | null) {
+    setErro(null);
+    setLoading(true);
+    try {
+      const t = await pagarCobranca(codigo, prova);
+      void qc.invalidateQueries();
+      void nav({ to: "/comprovante/$id", params: { id: String(t.id) } });
+    } catch (e) {
+      setErro((e as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const imposto = cob?.vai_reter_imposto ? cob.cbs + cob.ibs : 0;
+
   return (
     <section className="surface p-5">
       <h2 className="flex items-center gap-2 text-lg text-ink">
-        <ClipboardPaste size={18} /> Pix copia e cola
+        <ClipboardPaste size={18} /> Pagar cobrança
       </h2>
-      <p className="mt-1 text-sm text-mut3">Cole um código Pix para pagar.</p>
-      <div className="mt-3 flex gap-2">
-        <input
-          className="field flex-1"
-          placeholder="Cole o código aqui"
-          value={codigo}
-          onChange={(e) => setCodigo(e.target.value)}
+      <p className="mt-1 text-sm text-mut3">
+        Digite o código da cobrança ou cole o Pix copia e cola.
+      </p>
+      {!cob ? (
+        <div className="mt-3 flex gap-2">
+          <input
+            className="field min-w-0 flex-1"
+            placeholder="Código da cobrança"
+            value={codigo}
+            onChange={(e) => setCodigo(e.target.value)}
+          />
+          <button
+            className="btn btn-ink px-5"
+            disabled={!codigo.trim() || loading}
+            onClick={() => void consultar()}
+          >
+            {loading ? "…" : "Pagar"}
+          </button>
+        </div>
+      ) : (
+        <div className="mt-3">
+          <p className="text-sm text-mut2">Para</p>
+          <p className="font-semibold text-ink">{cob.recebedor_nome ?? "Empresa"}</p>
+          {cob.descricao && <p className="text-sm text-mut3">{cob.descricao}</p>}
+          <div className="mt-3 divide-y divide-border">
+            <ValueRow label="Você paga" value={cob.valor} />
+            {imposto > 0 && <ValueRow label="CBS da nota → Fisco" value={cob.cbs} tax />}
+            {imposto > 0 && <ValueRow label="IBS da nota → Fisco" value={cob.ibs} tax />}
+            <ValueRow
+              label={imposto > 0 ? "Empresa recebe (líquido)" : "Empresa recebe"}
+              value={cob.valor - imposto}
+              strong
+            />
+          </div>
+          <p className="mt-2 text-sm text-mut2">
+            {imposto > 0
+              ? "Cobrança com nota fiscal: o imposto da nota é separado na hora do pagamento."
+              : "Cobrança sem retenção de imposto."}
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <button className="btn btn-ghost" onClick={() => setCob(null)} disabled={loading}>
+              Voltar
+            </button>
+            <button
+              className="btn btn-ink"
+              disabled={loading}
+              onClick={() => (cob.valor > LIMITE_FACIAL ? setLiveness(true) : void pagar(null))}
+            >
+              {loading ? "Pagando…" : "Confirmar pagamento"}
+            </button>
+          </div>
+        </div>
+      )}
+      {erro && (
+        <div className="mt-3">
+          <ErrorBox>{erro}</ErrorBox>
+        </div>
+      )}
+      {liveness && (
+        <LivenessCheck
+          onClose={() => setLiveness(false)}
+          onSuccess={(prova) => {
+            setLiveness(false);
+            void pagar(prova);
+          }}
         />
-        <button
-          className="btn btn-ink px-5"
-          disabled={!codigo.trim()}
-          onClick={() => nav({ to: "/transferir" })}
-        >
-          Pagar
-        </button>
-      </div>
+      )}
     </section>
   );
 }

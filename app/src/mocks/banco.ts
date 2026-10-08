@@ -9,7 +9,7 @@
  *
  * As regras de chave espelham backend/app/services/pix_service.py.
  */
-import type { Conta, Transacao } from "@/lib/types";
+import type { Cobranca, Conta, Transacao } from "@/lib/types";
 import { contasDemo, reservarIds, transacoes as transacoesSemeadas } from "./data";
 
 export interface PessoaDemo {
@@ -33,6 +33,8 @@ interface BancoDemo {
   contas: Record<string, Conta>;
   chaves: ChaveDemo[];
   transacoes: Transacao[];
+  /** Cobranças emitidas pelas empresas (bancos gravados antes disso não têm o campo). */
+  cobrancas?: Cobranca[];
 }
 
 const KEY = "astro-demo-banco";
@@ -102,6 +104,7 @@ function curar(b: BancoDemo): boolean {
   b.contas ??= {};
   b.chaves ??= [];
   b.transacoes ??= [];
+  b.cobrancas ??= [];
   if (!b.pessoas.some((p) => p.email === MARINA.email)) {
     b.pessoas.unshift({ ...MARINA });
     mudou = true;
@@ -227,6 +230,7 @@ function maiorId(b: BancoDemo): number {
   const ids = [
     ...b.transacoes.map((t) => t.id),
     ...b.chaves.map((k) => k.id),
+    ...(b.cobrancas ?? []).map((c) => c.id),
     ...Object.values(b.contas).map((c) => c.id),
   ];
   return ids.length ? Math.max(...ids) : 0;
@@ -291,6 +295,36 @@ export function guardarTransacao(t: Transacao) {
 
 export function todasTransacoes(): Transacao[] {
   return [...transacoesSemeadas, ...banco().transacoes];
+}
+
+// --- Cobranças (a empresa cobra; o cliente paga pelo código) -----------------------
+
+export function cobrancasDe(carteira_id: number): Cobranca[] {
+  return (banco().cobrancas ?? []).filter((c) => c.recebedor_carteira_id === carteira_id);
+}
+
+/** Código curto ainda não usado (6 dígitos: fácil de ditar e digitar no celular). */
+export function novoCodigoCobranca(): string {
+  const usados = new Set((banco().cobrancas ?? []).map((c) => c.codigo));
+  for (;;) {
+    const cod = String(Math.floor(100000 + Math.random() * 900000));
+    if (!usados.has(cod)) return cod;
+  }
+}
+
+export function guardarCobranca(c: Cobranca) {
+  const b = banco();
+  b.cobrancas = [...(b.cobrancas ?? []).filter((x) => x.id !== c.id), c];
+  salvar(b);
+}
+
+/** Acha a cobrança pelo código curto ou pelo Pix copia e cola inteiro. */
+export function cobrancaPorCodigo(texto: string): Cobranca | undefined {
+  const t = texto.trim();
+  const d = digitos(t);
+  return (banco().cobrancas ?? []).find(
+    (c) => c.pix_copia_e_cola === t || c.txid === t || (d.length === 6 && c.codigo === d),
+  );
 }
 
 // --- Chaves Pix --------------------------------------------------------------------

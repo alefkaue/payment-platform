@@ -239,6 +239,9 @@ export interface Cobranca {
   parcelas_total: number;
   vai_reter_imposto: boolean;
   recebedor_nome?: string | null;
+  /** Modo demonstração: código curto que o cliente digita para pagar. */
+  codigo?: string;
+  recebedor_carteira_id?: number;
 }
 
 export interface CobrancaPayload {

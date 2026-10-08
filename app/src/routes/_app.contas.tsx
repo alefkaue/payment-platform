@@ -2,7 +2,8 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Copy, FileText, Plus } from "lucide-react";
-import { criarCobranca, listarFaturas } from "@/lib/api";
+import { criarCobranca, listarFaturas, MODO_API } from "@/lib/api";
+import { calcularSplit } from "@/lib/split";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, parseValor } from "@/lib/format";
 import type { Cobranca, DirecaoFatura } from "@/lib/types";
@@ -151,6 +152,17 @@ function NovaCobranca({ onFechar }: { onFechar: () => void }) {
     });
   }
 
+  /** Modo demonstração: nota fictícia com a CBS e o IBS do ano sobre o valor digitado. */
+  function notaExemplo() {
+    const valor = parseValor(valorStr);
+    if (!(valor > 0)) return setErro("Informe o valor antes de preencher a nota.");
+    setErro(null);
+    const s = calcularSplit(valor, "PJ", 2033); // alíquota cheia: o split fica visível
+    setChave(Array.from({ length: 44 }, () => Math.floor(Math.random() * 10)).join(""));
+    setCbsStr(s.cbs.toFixed(2).replace(".", ","));
+    setIbsStr(s.ibs.toFixed(2).replace(".", ","));
+  }
+
   async function copiar(texto: string) {
     try {
       await navigator.clipboard.writeText(texto);
@@ -175,6 +187,17 @@ function NovaCobranca({ onFechar }: { onFechar: () => void }) {
                 ? `No pagamento, ${fmtBRL(criadas.reduce((a, c) => a + c.cbs + c.ibs, 0))} de CBS/IBS da nota vão direto ao Fisco e você recebe o líquido.`
                 : "Sem retenção de imposto nesta cobrança."}
             </p>
+            {primeira.codigo && (
+              <div className="rounded-[16px] bg-tint p-4 text-center">
+                <p className="text-xs text-mut3">Código da cobrança</p>
+                <p className="tabular mt-1 text-4xl font-semibold tracking-[0.18em] text-ink">
+                  {primeira.codigo}
+                </p>
+                <p className="mt-1 text-xs text-mut3">
+                  O cliente paga em Pix → Pagar cobrança, digitando este código.
+                </p>
+              </div>
+            )}
             <div>
               <p className="text-xs text-mut3">
                 Pix copia e cola{criadas.length > 1 ? " (1ª parcela)" : ""}
@@ -258,6 +281,11 @@ function NovaCobranca({ onFechar }: { onFechar: () => void }) {
       </label>
       {comNota && (
         <div className="space-y-4 rounded-[16px] border border-line2 p-4">
+          {!MODO_API && (
+            <button type="button" className="btn btn-ghost h-9 px-3 text-sm" onClick={notaExemplo}>
+              Preencher com nota de exemplo (alíquota de 2033)
+            </button>
+          )}
           <Field
             label="Chave de acesso da NF-e"
             id="cob-chave"

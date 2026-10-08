@@ -58,7 +58,6 @@ import {
   BANCO_CARTEIRA,
   carteiras,
   cartoes,
-  cobrancasDemo,
   contasDemo,
   equipeDemo,
   faturas,
@@ -79,6 +78,10 @@ import {
   puxar,
   senhaConfere,
   chavesDa,
+  cobrancaPorCodigo,
+  cobrancasDe,
+  guardarCobranca,
+  novoCodigoCobranca,
   contaPorId,
   contasDa,
   donoDaConta,
@@ -490,7 +493,9 @@ export async function transacoes_(): Promise<Transacao[]> {
       t.destino_carteira_id === minha &&
       t.descricao?.startsWith("Pix para")
         ? { ...t, descricao: `Pix de ${nomeDaCarteira(t.origem_carteira_id)}` }
-        : t,
+        : t.categoria === "cobranca" && t.destino_carteira_id === minha
+          ? { ...t, descricao: `Venda com nota · ${nomeDaCarteira(t.origem_carteira_id)}` }
+          : t,
     )
     .sort((a, b) => b.criado_em.localeCompare(a.criado_em));
 }
@@ -810,15 +815,28 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
       vendas_com_split: t.transacoes_com_split,
     };
   }
-  if (ehContaDoRoteiro()) return { ...apuracaoDemo };
-  // Conta criada agora: apura só as vendas com nota que ela recebeu de fato.
+  await sincronizar();
+  // Vendas com nota que a conta recebeu de fato (cobranças pagas nesta demonstração).
   const minha = sessao.conta.carteira_id;
-  const vendas = todasTransacoes().filter(
+  const vendas = banco().transacoes.filter(
     (t) => t.destino_carteira_id === minha && t.aplicou_split,
   );
   const soma = (f: (t: Transacao) => number) => r2(vendas.reduce((a, t) => a + f(t), 0));
   const cbs = soma((t) => t.cbs);
   const ibs = soma((t) => t.ibs);
+  if (ehContaDoRoteiro()) {
+    // Conta do roteiro: o histórico semeado mais o que foi recebido agora.
+    const imposto = r2(cbs + ibs);
+    return {
+      ...apuracaoDemo,
+      faturamento: r2(apuracaoDemo.faturamento + soma((t) => t.valor_bruto)),
+      cbs_retido: r2(apuracaoDemo.cbs_retido + cbs),
+      ibs_retido: r2(apuracaoDemo.ibs_retido + ibs),
+      imposto_retido: r2(apuracaoDemo.imposto_retido + imposto),
+      a_repassar: r2(apuracaoDemo.a_repassar + imposto),
+      vendas_com_split: apuracaoDemo.vendas_com_split + vendas.length,
+    };
+  }
   const creditos = sessao.conta.creditos ?? 0;
   const mes = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   return {
@@ -835,14 +853,79 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
   };
 }
 
-/** Cobranças emitidas pela conta em uso (no modo demonstração ficam em memória). */
-const minhasCobrancasDemo = () =>
-  cobrancasDemo.filter((c) => c.recebedor_nome === sessao.conta.nome);
+/** Cobranças emitidas pela conta em uso (no modo demonstração ficam no banco demo). */
+const minhasCobrancasDemo = () => cobrancasDe(sessao.conta.carteira_id);
 
 export async function listarCobrancas(): Promise<Cobranca[]> {
   await delay(300);
   if (MODO_API) return (await get<CobrancaApi[]>("/cobrancas?limite=100")).map(mapCobranca);
+  await sincronizar();
   return minhasCobrancasDemo().sort((a, b) => b.id - a.id);
+}
+
+/** Quem vai pagar consulta a cobrança pelo código antes de confirmar. */
+export async function consultarCobranca(codigo: string): Promise<Cobranca> {
+  await delay(300);
+  if (!codigo.trim()) throw new ApiError("Informe o código da cobrança.");
+  if (MODO_API) return mapCobranca(await get<CobrancaApi>(`/cobrancas/${codigo.trim()}`));
+  await sincronizar();
+  const c = cobrancaPorCodigo(codigo);
+  if (!c) throw new ApiError("Cobrança não encontrada. Confira o código.", 404);
+  if (c.status !== "aberta") throw new ApiError("Esta cobrança já foi paga.", 409);
+  return { ...c };
+}
+
+/**
+ * Paga uma cobrança. É AQUI que o split acontece: o cliente paga o valor cheio, a
+ * CBS e o IBS destacados na nota são separados e a empresa recebe o líquido.
+ */
+export async function pagarCobranca(
+  codigo: string,
+  biometria?: ProvaBiometrica | null,
+): Promise<Transacao> {
+  await delay(800);
+  if (MODO_API) {
+    const c = await get<ContaApi>("/contas/atual");
+    const t = await post<TransacaoApi>(`/cobrancas/${codigo.trim()}/pagar`, {
+      biometria: biometria ?? undefined,
+      idempotency_key: `${dispositivoId()}-${Date.now()}`,
+    });
+    return { ...mapTransacao(t, c.carteira_id), categoria: "cobranca" };
+  }
+  const c = await consultarCobranca(codigo);
+  const destino = c.recebedor_carteira_id;
+  if (destino == null || !contaPorId(destino))
+    throw new ApiError("A conta que emitiu esta cobrança não foi encontrada.", 404);
+  if (destino === sessao.conta.carteira_id)
+    throw new ApiError("Não é possível pagar a própria cobrança.");
+  if (c.valor > sessao.conta.saldo) throw new ApiError("Saldo insuficiente.");
+  if (c.valor > LIMITE_SELFIE && !biometria)
+    throw new ApiError("Valores acima de R$ 500,00 exigem verificação facial.", 400);
+  const cbs = c.vai_reter_imposto ? c.cbs : 0;
+  const ibs = c.vai_reter_imposto ? c.ibs : 0;
+  const t: Transacao = {
+    id: genId(),
+    origem_carteira_id: sessao.conta.carteira_id,
+    destino_carteira_id: destino,
+    valor_bruto: c.valor,
+    cbs,
+    ibs,
+    liquido: r2(c.valor - cbs - ibs),
+    tipo_destino: "PJ",
+    aplicou_split: cbs + ibs > 0,
+    auth_metodo: biometria ? "selfie" : "senha",
+    status: "concluida",
+    categoria: "cobranca",
+    descricao: `${c.recebedor_nome ?? "Empresa"}${c.descricao ? ` · ${c.descricao}` : ""}`,
+    criado_em: new Date().toISOString(),
+  };
+  sessao.conta.saldo = r2(sessao.conta.saldo - c.valor);
+  persistirSessao();
+  creditar(destino, t.liquido);
+  guardarTransacao(t);
+  guardarCobranca({ ...c, status: "paga" });
+  await aguardarEnvio();
+  return t;
 }
 
 /** A empresa cobra um cliente. Com a nota fiscal, o pagamento retém a CBS e o IBS dela. */
@@ -864,9 +947,15 @@ export async function criarCobranca(p: CobrancaPayload): Promise<Cobranca[]> {
   }
   if (p.nota_fiscal && p.nota_fiscal.cbs + p.nota_fiscal.ibs > p.valor)
     throw new ApiError("CBS + IBS da nota não podem passar do valor cobrado.");
-  const txid = crypto.randomUUID().replace(/-/g, "");
+  if (sessao.conta.tipo !== "PJ") throw new ApiError("Só contas de empresa emitem cobranças.", 403);
+  await sincronizar(); // e reserva os ids já guardados antes de gerar um novo
+  const txid = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 12)}`;
+  // Simples e MEI não têm retenção; no regime regular, retém o que a nota destaca.
+  const retem = (sessao.conta.regime_apuracao ?? "regular") === "regular";
   const c: Cobranca = {
     id: genId(),
+    codigo: novoCodigoCobranca(),
+    recebedor_carteira_id: sessao.conta.carteira_id,
     txid,
     valor: p.valor,
     descricao: p.descricao ?? null,
@@ -879,10 +968,13 @@ export async function criarCobranca(p: CobrancaPayload): Promise<Cobranca[]> {
     status: "aberta",
     parcela_numero: 1,
     parcelas_total: 1,
-    vai_reter_imposto: Boolean(p.nota_fiscal && p.nota_fiscal.cbs + p.nota_fiscal.ibs > 0),
+    vai_reter_imposto: Boolean(
+      retem && p.nota_fiscal && p.nota_fiscal.cbs + p.nota_fiscal.ibs > 0,
+    ),
     recebedor_nome: sessao.conta.nome,
   };
-  cobrancasDemo.push(c);
+  guardarCobranca(c);
+  await aguardarEnvio();
   return [c];
 }
 
@@ -911,6 +1003,7 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
         };
       });
   }
+  await sincronizar();
   const criadas: Fatura[] = minhasCobrancasDemo().map((c) => {
     const imposto = c.vai_reter_imposto ? c.cbs + c.ibs : 0;
     return {
@@ -923,7 +1016,7 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
       liquido: r2(c.valor - imposto),
       credito_gerado: 0,
       vencimento: c.vencimento ?? new Date().toISOString(),
-      status: "pendente",
+      status: c.status === "paga" ? "liquidado" : "pendente",
     };
   });
   return [...(ehContaDoRoteiro() ? faturas : []), ...criadas]

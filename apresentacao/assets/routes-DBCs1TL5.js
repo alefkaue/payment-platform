@@ -1,1 +1,0 @@
-import{Y as e}from"./api-BeVneoqB.js";import{d as t,p as n}from"./index-BJABqZQD.js";var r=e();function i(){let{ready:e,conta:i}=t();return e?(0,r.jsx)(n,{to:i?`/inicio`:`/bem-vindo`,replace:!0}):null}export{i as component};

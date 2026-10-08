@@ -37,7 +37,7 @@ const PRIMARIA_PF: NavItem[] = [
 ];
 const PRIMARIA_PJ: NavItem[] = [
   { to: "/inicio", label: "Início", icon: Home },
-  { to: "/transferir", label: "Pagar", icon: ArrowUpRight },
+  { to: "/pix", label: "Pix", icon: QrCode },
   { to: "/contas", label: "Contas", icon: FileText },
   { to: "/split", label: "Split", icon: Split },
 ];
@@ -52,6 +52,7 @@ const SECUNDARIA_PF: NavItem[] = [
   { to: "/ajuda", label: "Ajuda", icon: CircleHelp, hint: "Dúvidas e suporte" },
 ];
 const SECUNDARIA_PJ: NavItem[] = [
+  { to: "/transferir", label: "Pagar", icon: ArrowUpRight, hint: "Pix e transferências da empresa" },
   { to: "/extrato", label: "Extrato", icon: ListOrdered, hint: "Entradas e saídas da empresa" },
   {
     to: "/equipe",
