@@ -1,4 +1,4 @@
-# PayFlow — plano de produto
+# ASTRO — plano de produto
 
 Banco digital **para pessoas e empresas**, cujo diferencial é resolver o imposto da
 Reforma Tributária (IBS/CBS) no ato do pagamento — o **split**. Documento vivo:
