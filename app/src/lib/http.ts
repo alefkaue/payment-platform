@@ -108,12 +108,13 @@ export async function requisitar<T>(
   caminho: string,
   corpo?: unknown,
   tentouRenovar = false,
+  anonimo = false,
 ): Promise<Resposta<T>> {
   if (!API_URL) throw new ApiError("Backend não configurado (VITE_API_URL).", 500);
   const headers: Record<string, string> = { "X-Dispositivo-Id": dispositivoId() };
   if (corpo !== undefined) headers["Content-Type"] = "application/json";
-  if (tokens?.access_token) headers["Authorization"] = `Bearer ${tokens.access_token}`;
-  if (contaNumero) headers["X-Conta"] = contaNumero;
+  if (!anonimo && tokens?.access_token) headers["Authorization"] = `Bearer ${tokens.access_token}`;
+  if (!anonimo && contaNumero) headers["X-Conta"] = contaNumero;
 
   let r: Response;
   try {
@@ -129,6 +130,7 @@ export async function requisitar<T>(
   if (
     r.status === 401 &&
     !tentouRenovar &&
+    !anonimo &&
     tokens?.refresh_token &&
     !caminho.startsWith("/auth/")
   ) {
@@ -155,6 +157,11 @@ export async function get<T>(caminho: string): Promise<T> {
 
 export async function post<T>(caminho: string, corpo?: unknown): Promise<T> {
   return (await requisitar<T>("POST", caminho, corpo ?? {})).dados;
+}
+
+/** Sem credenciais, mesmo com alguém logado neste navegador (ex.: abrir outra conta). */
+export async function postAnonimo<T>(caminho: string, corpo?: unknown): Promise<T> {
+  return (await requisitar<T>("POST", caminho, corpo ?? {}, false, true)).dados;
 }
 
 export async function patch<T>(caminho: string, corpo: unknown): Promise<T> {

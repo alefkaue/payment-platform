@@ -97,3 +97,83 @@ describe.runIf(Boolean(URL_API))("api.ts contra o backend v9", () => {
     expect((await api.listarCobrancas()).length).toBe(1);
   });
 });
+
+describe.runIf(Boolean(URL_API))("equipe PJ contra o backend v9 (precisa DEPOSITO_DEMO=1)", () => {
+  it("convite por CPF, aceite com o rosto e aprovação acima da alçada", async () => {
+    const api = await import("./api");
+    const quadros = ["YQ==", "Yg=="];
+    const SENHA = "Cofre-Astro#2026";
+    const sufixo = Date.now();
+    const rosto = (d: { desafio_id: string }) => ({ desafio_id: d.desafio_id, quadros });
+
+    async function cadastrar(nome: string, email: string, cpf: string) {
+      const d = await api.pedirDesafio("cadastro");
+      return api.registrar({
+        nome,
+        email,
+        senha: SENHA,
+        cpf,
+        data_nascimento: "1990-05-04",
+        celular: "11987654321",
+        documento: null,
+        biometria: rosto(d),
+      });
+    }
+    async function entrar(email: string) {
+      const etapa = await api.login({ email, senha: SENHA });
+      return api.concluirLogin(etapa, rosto(etapa.desafio));
+    }
+
+    // a pessoa convidada já tem conta pessoal
+    const cpfOp = cpfValido();
+    const emailOp = `op${sufixo}@ex.com`;
+    await cadastrar("Olivia Operadora", emailOp, cpfOp);
+
+    // dona abre a empresa e convida pelo CPF (operador com alçada = rosto de quem concede)
+    const emailDona = `dona${sufixo}@ex.com`;
+    const c = await cadastrar("Dora Dona", emailDona, cpfValido());
+    const { resposta } = await api.concluirCadastro(c.etapa, rosto(c.etapa.desafio), {
+      cnpj: cnpjValido(),
+      porte: "PME",
+      regime_apuracao: "regular",
+      nome_fantasia: "Equipe E2E",
+    });
+    const pj = resposta.contas.find((x) => x.tipo === "PJ")!;
+    api.selecionarConta(pj);
+    expect((await api.politicaEmpresa()).porte).toBe("PME");
+    const convite = await api.convidarMembro({
+      nome: "Olivia Operadora",
+      cpf: cpfOp,
+      papel: "operador",
+      alcada: 100,
+      biometria: rosto(await api.pedirDesafio()),
+    });
+    expect(convite.status).toBe("pendente");
+    expect(convite.cpf).toMatch(/\*/);
+    await api.depositar({ valor: 5000 });
+
+    // a operadora entra, vê o convite e aceita com o rosto
+    await entrar(emailOp);
+    const [recebido] = await api.meusConvites();
+    expect(recebido?.empresa).toBe("Equipe E2E");
+    const contas = await api.aceitarConvite(recebido!.id, rosto(await api.pedirDesafio()));
+    const pjOp = contas.find((x) => x.tipo === "PJ")!;
+    api.selecionarConta(pjOp);
+    const pfDona = resposta.contas.find((x) => x.tipo === "PF")!;
+    const destino = await api.consultarDestino(pfDona.numero!);
+    const r = await api.transferir({ destino: destino.destino!, valor: 300 });
+    expect(r.tipo).toBe("pendente");
+
+    // a dona aprova (valor <= R$ 500: sem rosto)
+    await entrar(emailDona);
+    api.selecionarConta(pj);
+    const [op] = (await api.pendentes()).filter((o) => o.status === "aguardando");
+    expect(op?.criado_por).toBe("Olivia Operadora");
+    expect(api.aprovacaoPedeRosto(op!)).toBe(false);
+    expect((await api.decidirPendente(op!.id, true)).status).toBe("aprovada");
+    const membros = await api.equipe();
+    expect(membros.find((m) => m.nome === "Olivia Operadora")?.status).toBe("ativo");
+    const suspensa = await api.mudarAcessoMembro(convite.id, "suspender");
+    expect(suspensa.status).toBe("suspenso");
+  });
+});

@@ -14,11 +14,13 @@ import { calcularSplit, semSplit, VIGENCIA_ATUAL } from "./split";
 import {
   ApiError,
   definirConta,
+  del,
   dispositivoId,
   get,
   MODO_API,
   num,
   post,
+  postAnonimo,
   requisitar,
   salvarTokens,
 } from "./http";
@@ -32,6 +34,8 @@ import type {
   CadastroResposta,
   ComprarProdutoPayload,
   Conta,
+  ConvidarPayload,
+  ConviteRecebido,
   CvvDinamico,
   DepositarPayload,
   Desafio,
@@ -47,12 +51,14 @@ import type {
   Notificacao,
   OperacaoPendente,
   Pessoa,
+  PoliticaEmpresa,
   Produto,
   ProvaBiometrica,
   RegistrarPayload,
   ResultadoTransferencia,
   SplitResultado,
   TipoConta,
+  TipoPendente,
   Transacao,
   TransferirPayload,
   Voo,
@@ -362,7 +368,7 @@ export async function registrar(p: RegistrarPayload): Promise<CadastroResposta> 
   await delay(700);
   if (p.senha.length < 10) throw new ApiError("A senha precisa ter ao menos 10 caracteres.");
   if (MODO_API) {
-    const conta = await post<{ kyc?: KycResultado }>("/usuarios", {
+    const conta = await postAnonimo<{ kyc?: KycResultado }>("/usuarios", {
       nome: p.nome,
       email: p.email,
       senha: p.senha,
@@ -492,7 +498,12 @@ function desafioDemo(modo: import("./types").ModoBiometria): Desafio {
 export async function pedirDesafio(
   modo: import("./types").ModoBiometria = "login",
 ): Promise<Desafio> {
-  if (MODO_API) return post<Desafio>("/biometria/desafios", { modo });
+  // O desafio de cadastro não pode ficar preso a quem estiver logado neste
+  // navegador: o servidor só aceita desafio livre em POST /usuarios.
+  if (MODO_API)
+    return modo === "cadastro"
+      ? postAnonimo<Desafio>("/biometria/desafios", { modo })
+      : post<Desafio>("/biometria/desafios", { modo });
   return desafioDemo(modo);
 }
 
@@ -1222,6 +1233,7 @@ function listaEquipe(): MembroEquipe[] {
             email: dono.email,
             papel: "admin",
             alcada: null,
+            status: "ativo",
             ativo: true,
             eu: true,
           },
@@ -1248,39 +1260,227 @@ export async function marcarNotificacoesLidas(): Promise<void> {
   });
 }
 
+// =============================================================================
+// Equipe da empresa (vínculos por CPF), convites recebidos e aprovações
+// =============================================================================
+
+interface VinculoApi {
+  id: number;
+  nome: string | null;
+  email: string | null;
+  cpf: string | null;
+  cargo: string | null;
+  papel: MembroEquipe["papel"];
+  alcada: string | null;
+  status: MembroEquipe["status"];
+  ativo: boolean;
+  ultimo_acesso_em: string | null;
+  eu: boolean;
+}
+
+function mapVinculo(v: VinculoApi): MembroEquipe {
+  return {
+    id: v.id,
+    nome: v.nome ?? "Pessoa convidada",
+    email: v.email,
+    cpf: v.cpf,
+    cargo: v.cargo,
+    papel: v.papel,
+    alcada: v.alcada == null ? null : num(v.alcada),
+    status: v.status,
+    ativo: v.ativo,
+    ultimo_acesso_em: v.ultimo_acesso_em,
+    eu: v.eu,
+  };
+}
+
 export async function equipe(): Promise<MembroEquipe[]> {
   await delay(300);
+  if (MODO_API) return (await get<VinculoApi[]>("/empresas/atual/vinculos")).map(mapVinculo);
   return [...listaEquipe()];
 }
 
-export async function convidarMembro(p: {
-  nome: string;
-  email: string;
-  papel: MembroEquipe["papel"];
-  alcada: number | null;
-}): Promise<MembroEquipe> {
+export async function politicaEmpresa(): Promise<PoliticaEmpresa> {
+  if (MODO_API) {
+    const p = await get<
+      Omit<PoliticaEmpresa, "duas_aprovacoes_acima"> & { duas_aprovacoes_acima: string | null }
+    >("/empresas/atual/politica");
+    return {
+      ...p,
+      duas_aprovacoes_acima: p.duas_aprovacoes_acima == null ? null : num(p.duas_aprovacoes_acima),
+    };
+  }
+  const porte = sessao.conta.porte ?? "PME";
+  return {
+    porte,
+    max_usuarios: porte === "MEI" ? 3 : porte === "GRANDE" ? 500 : 30,
+    papeis_convidaveis:
+      porte === "MEI" ? ["operador", "consulta"] : ["admin", "aprovador", "operador", "consulta"],
+    operador_exige_alcada: porte !== "PME",
+    quatro_olhos_acesso: porte === "GRANDE",
+    duas_aprovacoes_acima: porte === "GRANDE" ? 250000 : null,
+    resumo:
+      porte === "MEI"
+        ? "Dono único: só o titular administra. Acesso extra só como operador (com alçada) ou consulta."
+        : porte === "GRANDE"
+          ? "Quatro olhos em pagamentos e na gestão de acesso; operador sempre com alçada; valores altos exigem duas aprovações."
+          : "Vários usuários; acima da alçada outra pessoa aprova; dar poder exige o rosto de quem concede.",
+    usuarios_ocupados: listaEquipe().filter((m) => m.status !== "revogado").length,
+  };
+}
+
+/** O admin convida uma PESSOA pelo CPF; ela aceita com o próprio login e rosto. */
+export async function convidarMembro(p: ConvidarPayload): Promise<MembroEquipe> {
   await delay(500);
+  if (MODO_API)
+    return mapVinculo(
+      await post<VinculoApi>("/empresas/atual/vinculos", {
+        nome: p.nome,
+        cpf: p.cpf,
+        papel: p.papel,
+        alcada: p.alcada == null ? null : p.alcada.toFixed(2),
+        ...(p.email ? { email: p.email } : {}),
+        ...(p.cargo ? { cargo: p.cargo } : {}),
+        ...(p.biometria ? { biometria: p.biometria } : {}),
+      }),
+    );
+  const dig = p.cpf.replace(/\D/g, "");
   const novo: MembroEquipe = {
     id: genId(),
     nome: p.nome,
-    email: p.email,
+    email: p.email ?? null,
+    cpf: `***.${dig.slice(3, 6)}.${dig.slice(6, 9)}-**`,
     papel: p.papel,
     alcada: p.alcada,
-    ativo: true,
+    status: "pendente",
+    ativo: false,
   };
   listaEquipe().push(novo);
   return novo;
 }
 
+export type AcaoMembro = "suspender" | "reativar" | "revogar";
+
+export async function mudarAcessoMembro(
+  id: number,
+  acao: AcaoMembro,
+  biometria?: ProvaBiometrica,
+): Promise<MembroEquipe> {
+  await delay(400);
+  if (MODO_API) {
+    if (acao === "revogar")
+      return mapVinculo(await del<VinculoApi>(`/empresas/atual/vinculos/${id}`));
+    return mapVinculo(
+      await post<VinculoApi>(
+        `/empresas/atual/vinculos/${id}/${acao}`,
+        acao === "reativar" ? { biometria: biometria ?? null } : undefined,
+      ),
+    );
+  }
+  const m = listaEquipe().find((x) => x.id === id);
+  if (!m) throw new ApiError("Pessoa não encontrada nesta empresa.", 404);
+  if (m.eu) throw new ApiError("A empresa precisa de pelo menos um administrador ativo.");
+  m.status = acao === "suspender" ? "suspenso" : acao === "revogar" ? "revogado" : "ativo";
+  m.ativo = m.status === "ativo";
+  return { ...m };
+}
+
+export async function meusConvites(): Promise<ConviteRecebido[]> {
+  if (!MODO_API) return [];
+  const lista =
+    await get<(VinculoApi & { empresa: { nome: string }; convidado_por: string | null })[]>(
+      "/convites",
+    );
+  return lista.map((c) => ({
+    id: c.id,
+    empresa: c.empresa.nome,
+    papel: c.papel,
+    alcada: c.alcada == null ? null : num(c.alcada),
+    convidado_por: c.convidado_por,
+  }));
+}
+
+/** Aceitar exige o rosto de quem foi convidado (e o KYC dela concluído). */
+export async function aceitarConvite(id: number, biometria: ProvaBiometrica): Promise<Conta[]> {
+  await post(`/convites/${id}/aceitar`, { biometria });
+  return (await contasDaPessoa()).contas;
+}
+
+export async function recusarConvite(id: number): Promise<void> {
+  await post(`/convites/${id}/recusar`);
+}
+
+interface PendenteApi {
+  id: number;
+  tipo: TipoPendente;
+  valor: string;
+  descricao: string | null;
+  status: "pendente" | "aprovada" | "rejeitada" | "falhou";
+  criado_por_nome?: string;
+  criado_em: string;
+  aprovacoes_necessarias: number;
+  aprovacoes: { usuario_id: number; nome: string }[];
+}
+
+const TIPO_PENDENTE: Record<TipoPendente, string> = {
+  transferencia: "Transferência",
+  pagamento_cobranca: "Pagamento de cobrança",
+  folha: "Folha de pagamento",
+  acesso: "Acesso à conta",
+};
+
+function mapPendente(p: PendenteApi): OperacaoPendente {
+  return {
+    id: p.id,
+    tipo: p.tipo,
+    descricao: p.descricao ?? TIPO_PENDENTE[p.tipo],
+    contraparte: TIPO_PENDENTE[p.tipo] ?? p.tipo,
+    valor: num(p.valor),
+    criado_por: p.criado_por_nome ?? "—",
+    criado_em: p.criado_em,
+    status:
+      p.status === "pendente" ? "aguardando" : p.status === "aprovada" ? "aprovada" : "recusada",
+    aprovacoes_necessarias: p.aprovacoes_necessarias,
+    aprovadores: p.aprovacoes.map((a) => a.nome),
+  };
+}
+
 export async function pendentes(): Promise<OperacaoPendente[]> {
   await delay(300);
+  if (MODO_API) {
+    const listas = await Promise.all(
+      ["pendente", "aprovada", "rejeitada"].map((st) =>
+        get<PendenteApi[]>(`/empresas/atual/pendentes?status=${st}`),
+      ),
+    );
+    return listas
+      .flat()
+      .map(mapPendente)
+      .sort((a, b) => b.criado_em.localeCompare(a.criado_em));
+  }
   return (ehContaDoRoteiro() ? [...pendentesDemo] : []).sort((a, b) =>
     b.criado_em.localeCompare(a.criado_em),
   );
 }
 
-export async function decidirPendente(id: number, aprovar: boolean): Promise<OperacaoPendente> {
+/** Rosto de quem aprova: exigido acima do limite facial e em mudança de acesso. */
+export function aprovacaoPedeRosto(o: OperacaoPendente): boolean {
+  return o.tipo === "acesso" || o.valor > LIMITE_SELFIE;
+}
+
+export async function decidirPendente(
+  id: number,
+  aprovar: boolean,
+  biometria?: ProvaBiometrica,
+): Promise<OperacaoPendente & { mensagem?: string }> {
   await delay(600);
+  if (MODO_API) {
+    const r = await post<PendenteApi & { mensagem?: string }>(
+      `/pagamentos/pendentes/${id}/decidir`,
+      { aprovar, ...(biometria ? { biometria } : {}) },
+    );
+    return { ...mapPendente(r), ...(r.mensagem ? { mensagem: r.mensagem } : {}) };
+  }
   const op = pendentesDemo.find((o) => o.id === id);
   if (!op) throw new ApiError("Operação não encontrada.", 404);
   op.status = aprovar ? "aprovada" : "recusada";

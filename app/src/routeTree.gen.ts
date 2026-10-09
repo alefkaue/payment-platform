@@ -18,6 +18,7 @@ import { Route as AppAjudaRouteImport } from './routes/_app.ajuda'
 import { Route as AppCartoesRouteImport } from './routes/_app.cartoes'
 import { Route as AppConfigRouteImport } from './routes/_app.config'
 import { Route as AppContasRouteImport } from './routes/_app.contas'
+import { Route as AppConvitesRouteImport } from './routes/_app.convites'
 import { Route as AppDepositarRouteImport } from './routes/_app.depositar'
 import { Route as AppEquipeRouteImport } from './routes/_app.equipe'
 import { Route as AppExtratoRouteImport } from './routes/_app.extrato'
@@ -75,6 +76,11 @@ const AppConfigRoute = AppConfigRouteImport.update({
 const AppContasRoute = AppContasRouteImport.update({
   id: '/contas',
   path: '/contas',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppConvitesRoute = AppConvitesRouteImport.update({
+  id: '/convites',
+  path: '/convites',
   getParentRoute: () => AppRoute,
 } as any)
 const AppDepositarRoute = AppDepositarRouteImport.update({
@@ -157,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/cartoes': typeof AppCartoesRoute
   '/config': typeof AppConfigRoute
   '/contas': typeof AppContasRoute
+  '/convites': typeof AppConvitesRoute
   '/depositar': typeof AppDepositarRoute
   '/equipe': typeof AppEquipeRoute
   '/extrato': typeof AppExtratoRoute
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/cartoes': typeof AppCartoesRoute
   '/config': typeof AppConfigRoute
   '/contas': typeof AppContasRoute
+  '/convites': typeof AppConvitesRoute
   '/depositar': typeof AppDepositarRoute
   '/equipe': typeof AppEquipeRoute
   '/extrato': typeof AppExtratoRoute
@@ -207,6 +215,7 @@ export interface FileRoutesById {
   '/_app/cartoes': typeof AppCartoesRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/contas': typeof AppContasRoute
+  '/_app/convites': typeof AppConvitesRoute
   '/_app/depositar': typeof AppDepositarRoute
   '/_app/equipe': typeof AppEquipeRoute
   '/_app/extrato': typeof AppExtratoRoute
@@ -233,6 +242,7 @@ export interface FileRouteTypes {
     | '/cartoes'
     | '/config'
     | '/contas'
+    | '/convites'
     | '/depositar'
     | '/equipe'
     | '/extrato'
@@ -257,6 +267,7 @@ export interface FileRouteTypes {
     | '/cartoes'
     | '/config'
     | '/contas'
+    | '/convites'
     | '/depositar'
     | '/equipe'
     | '/extrato'
@@ -282,6 +293,7 @@ export interface FileRouteTypes {
     | '/_app/cartoes'
     | '/_app/config'
     | '/_app/contas'
+    | '/_app/convites'
     | '/_app/depositar'
     | '/_app/equipe'
     | '/_app/extrato'
@@ -369,6 +381,13 @@ declare module '@tanstack/react-router' {
       path: '/contas'
       fullPath: '/contas'
       preLoaderRoute: typeof AppContasRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/convites': {
+      id: '/_app/convites'
+      path: '/convites'
+      fullPath: '/convites'
+      preLoaderRoute: typeof AppConvitesRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/depositar': {
@@ -488,6 +507,7 @@ interface AppRouteChildren {
   AppCartoesRoute: typeof AppCartoesRoute
   AppConfigRoute: typeof AppConfigRoute
   AppContasRoute: typeof AppContasRoute
+  AppConvitesRoute: typeof AppConvitesRoute
   AppDepositarRoute: typeof AppDepositarRoute
   AppEquipeRoute: typeof AppEquipeRoute
   AppExtratoRoute: typeof AppExtratoRoute
@@ -508,6 +528,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppCartoesRoute: AppCartoesRoute,
   AppConfigRoute: AppConfigRoute,
   AppContasRoute: AppContasRoute,
+  AppConvitesRoute: AppConvitesRoute,
   AppDepositarRoute: AppDepositarRoute,
   AppEquipeRoute: AppEquipeRoute,
   AppExtratoRoute: AppExtratoRoute,

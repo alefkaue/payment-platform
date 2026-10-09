@@ -576,6 +576,7 @@ export const equipeDemo: MembroEquipe[] = [
     email: "marina@rodoforte.com.br",
     papel: "admin",
     alcada: null,
+    status: "ativo",
     ativo: true,
     eu: true,
   },
@@ -585,6 +586,7 @@ export const equipeDemo: MembroEquipe[] = [
     email: "carlos@rodoforte.com.br",
     papel: "aprovador",
     alcada: 200000,
+    status: "ativo",
     ativo: true,
   },
   {
@@ -593,6 +595,7 @@ export const equipeDemo: MembroEquipe[] = [
     email: "beatriz@rodoforte.com.br",
     papel: "operador",
     alcada: 50000,
+    status: "ativo",
     ativo: true,
   },
   {
@@ -601,6 +604,7 @@ export const equipeDemo: MembroEquipe[] = [
     email: "diego@rodoforte.com.br",
     papel: "operador",
     alcada: 20000,
+    status: "ativo",
     ativo: true,
   },
   {
@@ -609,6 +613,7 @@ export const equipeDemo: MembroEquipe[] = [
     email: "contato@contabilsul.com.br",
     papel: "consulta",
     alcada: 0,
+    status: "ativo",
     ativo: true,
   },
 ];

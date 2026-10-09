@@ -352,28 +352,73 @@ export interface Notificacao {
 }
 
 /** Pessoa com vínculo na empresa (conta PJ) — papel + alçada. */
+/**
+ * Situação do acesso de uma pessoa à empresa. O admin convida pelo CPF
+ * (pendente); na grande empresa, dar poder espera outro admin (aguardando);
+ * a pessoa aceita com o próprio rosto (ativo).
+ */
+export type StatusVinculo = "pendente" | "aguardando" | "ativo" | "suspenso" | "revogado";
 export interface MembroEquipe {
   id: number;
   nome: string;
-  email: string;
+  email: string | null;
+  /** Sempre mascarado (***.456.789-**). */
+  cpf?: string | null;
+  cargo?: string | null;
   papel: PapelVinculo;
   /** Alçada por operação em R$; null = sem limite. */
   alcada: number | null;
+  status: StatusVinculo;
   ativo: boolean;
+  ultimo_acesso_em?: string | null;
   /** É a pessoa logada neste momento. */
   eu?: boolean;
+}
+export interface ConvidarPayload {
+  nome: string;
+  cpf: string;
+  email?: string;
+  cargo?: string;
+  papel: PapelVinculo;
+  alcada: number | null;
+  /** Rosto de quem concede (exigido ao dar poder: admin, aprovador, alçada). */
+  biometria?: ProvaBiometrica;
+}
+/** Convite que a PESSOA logada recebeu para acessar uma empresa. */
+export interface ConviteRecebido {
+  id: number;
+  empresa: string;
+  papel: PapelVinculo;
+  alcada: number | null;
+  convidado_por: string | null;
+}
+/** Regras de acesso do porte (MEI / PME / Grande). */
+export interface PoliticaEmpresa {
+  porte: PortePJ;
+  max_usuarios: number;
+  papeis_convidaveis: PapelVinculo[];
+  operador_exige_alcada: boolean;
+  quatro_olhos_acesso: boolean;
+  duas_aprovacoes_acima: number | null;
+  resumo: string;
+  usuarios_ocupados?: number;
 }
 
 /** Operação acima da alçada de quem lançou, aguardando um 2º aprovador (maker-checker). */
 export type StatusPendente = "aguardando" | "aprovada" | "recusada";
+export type TipoPendente = "transferencia" | "pagamento_cobranca" | "folha" | "acesso";
 export interface OperacaoPendente {
   id: number;
+  tipo?: TipoPendente;
   descricao: string;
   contraparte: string;
   valor: number;
   criado_por: string;
   criado_em: string; // ISO
   status: StatusPendente;
+  /** Grande empresa acima do limite: 2 pessoas diferentes aprovam. */
+  aprovacoes_necessarias?: number;
+  aprovadores?: string[];
 }
 
 export type DirecaoFatura = "receber" | "pagar";

@@ -1,6 +1,7 @@
 import {
   ArrowUpRight,
   Bell,
+  Building2,
   CircleHelp,
   CreditCard,
   FileText,
@@ -48,6 +49,12 @@ const SECUNDARIA_PF: NavItem[] = [
   { to: "/viagens", label: "Viagens", icon: Plane, hint: "Voe pagando em reais ou com pontos" },
   { to: "/split", label: "Entenda o split", icon: Split, hint: "O imposto da Reforma, explicado" },
   { to: "/notificacoes", label: "Notificações", icon: Bell, hint: "Avisos da sua conta" },
+  {
+    to: "/convites",
+    label: "Convites de empresas",
+    icon: Building2,
+    hint: "Acesso a contas PJ que convidaram você",
+  },
   { to: "/perfil", label: "Meu perfil", icon: User, hint: "Dados, documentos e dispositivos" },
   { to: "/ajuda", label: "Ajuda", icon: CircleHelp, hint: "Dúvidas e suporte" },
 ];

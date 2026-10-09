@@ -1,11 +1,13 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Check, Clock, ScanFace, X } from "lucide-react";
-import { decidirPendente, pendentes } from "@/lib/api";
+import { aprovacaoPedeRosto, decidirPendente, pendentes } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, fmtData } from "@/lib/format";
-import type { OperacaoPendente } from "@/lib/types";
+import type { OperacaoPendente, ProvaBiometrica } from "@/lib/types";
 import { Empty, ErrorBox, PageTitle, TxSkeleton } from "@/components/payflow/ui";
+import { LivenessCheck } from "@/components/payflow/liveness";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/pendentes")({
@@ -25,7 +27,7 @@ function Pendentes() {
 
   return (
     <div className="enter">
-      <PageTitle sub="Pagamentos acima da alçada de quem lançou, aguardando um segundo aprovador.">
+      <PageTitle sub="Operações acima da alçada de quem lançou e mudanças de acesso, aguardando outra pessoa aprovar.">
         Aprovações pendentes
       </PageTitle>
 
@@ -68,14 +70,20 @@ function Pendentes() {
 
 function Card({ o, podeAprovar }: { o: OperacaoPendente; podeAprovar: boolean }) {
   const qc = useQueryClient();
+  const [rosto, setRosto] = useState(false);
   const mut = useMutation({
-    mutationFn: (aprovar: boolean) => decidirPendente(o.id, aprovar),
+    mutationFn: ({ aprovar, prova }: { aprovar: boolean; prova?: ProvaBiometrica }) =>
+      decidirPendente(o.id, aprovar, prova),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["pendentes"] });
       void qc.invalidateQueries({ queryKey: ["nao-lidas"] });
+      void qc.invalidateQueries({ queryKey: ["equipe"] });
+      void qc.invalidateQueries({ queryKey: ["conta"] });
     },
   });
   const decidida = o.status !== "aguardando";
+  const necessarias = o.aprovacoes_necessarias ?? 1;
+  const feitas = o.aprovadores?.length ?? 0;
 
   return (
     <section className={cn("surface p-5", decidida && "opacity-80")}>
@@ -93,21 +101,26 @@ function Card({ o, podeAprovar }: { o: OperacaoPendente; podeAprovar: boolean })
       {o.status === "aguardando" ? (
         <>
           <div className="mt-3 flex items-center gap-1.5 text-xs font-medium text-tax2">
-            <Clock size={13} /> Aguardando 2º aprovador
+            <Clock size={13} />
+            {necessarias > 1
+              ? `${feitas} de ${necessarias} aprovações${feitas ? ` (${o.aprovadores!.join(", ")})` : ""}`
+              : "Aguardando 2º aprovador"}
           </div>
           {podeAprovar && (
             <div className="mt-4 grid grid-cols-2 gap-3">
               <button
                 className="btn btn-ghost gap-2 text-err"
                 disabled={mut.isPending}
-                onClick={() => mut.mutate(false)}
+                onClick={() => mut.mutate({ aprovar: false })}
               >
                 <X size={18} /> Recusar
               </button>
               <button
                 className="btn btn-ink gap-2"
                 disabled={mut.isPending}
-                onClick={() => mut.mutate(true)}
+                onClick={() =>
+                  aprovacaoPedeRosto(o) ? setRosto(true) : mut.mutate({ aprovar: true })
+                }
               >
                 <ScanFace size={18} /> {mut.isPending ? "Enviando…" : "Aprovar"}
               </button>
@@ -117,6 +130,16 @@ function Card({ o, podeAprovar }: { o: OperacaoPendente; podeAprovar: boolean })
             <div className="mt-3">
               <ErrorBox>{(mut.error as Error).message}</ErrorBox>
             </div>
+          )}
+          {mut.data?.mensagem && <p className="mt-3 text-sm text-mut2">{mut.data.mensagem}</p>}
+          {rosto && (
+            <LivenessCheck
+              onClose={() => setRosto(false)}
+              onSuccess={(prova) => {
+                setRosto(false);
+                mut.mutate({ aprovar: true, prova });
+              }}
+            />
           )}
         </>
       ) : (
