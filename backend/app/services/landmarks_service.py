@@ -19,30 +19,23 @@ biometria_service, de forma temporal e com histerese. Aqui só extraímos númer
 - olho direito:    33 160 158 133 153 144
 Boca (MAR): abertura 13/14, cantos 61/291. Giro: nariz 1, bochechas 234/454.
 
-O modelo (.task) é baixado uma vez para FACE_LANDMARKER_MODEL (ou um cache em
-~/.cache/payflow). Import e download são preguiçosos: a API e os testes sobem sem
-MediaPipe (modo stub). Se o pacote faltar no modo real, devolvemos 503 com um
-recado claro em vez de estourar no import.
+O modelo (.task) vem do registro core/modelos (SHA-256 conferido). Import e
+download são preguiçosos: a API e os testes sobem sem MediaPipe (modo stub). Se o
+pacote faltar no modo real, devolvemos 503 com um recado claro.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-import os
 import threading
-import urllib.request
 from dataclasses import dataclass
-from pathlib import Path
 
 from fastapi import HTTPException
 
-logger = logging.getLogger("payflow.landmarks")
+from app.core import modelos
 
-MODEL_URL = (
-    "https://storage.googleapis.com/mediapipe-models/face_landmarker/"
-    "face_landmarker/float16/1/face_landmarker.task"
-)
+logger = logging.getLogger("payflow.landmarks")
 
 # Seis pontos por olho, na ordem p1..p6 da fórmula do EAR.
 _OLHO_ESQ = (362, 385, 387, 263, 373, 380)
@@ -69,55 +62,32 @@ class SinaisQuadro:
     yaw: float = 0.0        # >0 nariz à direita da imagem (sem espelho)
 
 
-_landmarker = None
-_lock = threading.Lock()
-
-
-def _modelo_path() -> str:
-    env = os.environ.get("FACE_LANDMARKER_MODEL")
-    if env:
-        return env
-    destino = Path.home() / ".cache" / "payflow" / "face_landmarker.task"
-    if not destino.exists():
-        destino.parent.mkdir(parents=True, exist_ok=True)
-        logger.info("Baixando o modelo do Face Landmarker (uma vez) para %s", destino)
-        try:
-            urllib.request.urlretrieve(MODEL_URL, destino)  # noqa: S310 (URL fixa do Google)
-        except Exception as e:  # pragma: no cover - rede
-            raise HTTPException(
-                status_code=503,
-                detail="Não foi possível preparar o verificador facial (download do modelo). Tente de novo.",
-            ) from e
-    return str(destino)
+_local = threading.local()
 
 
 def _obter_landmarker():
-    """Cria o FaceLandmarker uma vez (IMAGE mode, 1 rosto, com blendshapes)."""
-    global _landmarker
-    if _landmarker is not None:
-        return _landmarker
-    with _lock:
-        if _landmarker is not None:
-            return _landmarker
-        try:
-            import mediapipe as mp
-            from mediapipe.tasks import python as mp_python
-            from mediapipe.tasks.python import vision
-        except ImportError as e:  # pragma: no cover - ambiente sem mediapipe
-            raise HTTPException(
-                status_code=503,
-                detail="Verificador facial indisponível neste servidor (MediaPipe não instalado).",
-            ) from e
-        opcoes = vision.FaceLandmarkerOptions(
-            base_options=mp_python.BaseOptions(model_asset_path=_modelo_path()),
-            running_mode=vision.RunningMode.IMAGE,
-            num_faces=1,
-            output_face_blendshapes=True,
-            min_face_detection_confidence=0.5,
-            min_face_presence_confidence=0.5,
-        )
-        _landmarker = vision.FaceLandmarker.create_from_options(opcoes)
-        return _landmarker
+    """Um FaceLandmarker por thread (IMAGE mode, 1 rosto, com blendshapes)."""
+    lm = getattr(_local, "landmarker", None)
+    if lm is not None:
+        return lm
+    try:
+        from mediapipe.tasks import python as mp_python
+        from mediapipe.tasks.python import vision
+    except ImportError as e:  # pragma: no cover - ambiente sem mediapipe
+        raise HTTPException(
+            status_code=503,
+            detail="Verificador facial indisponível neste servidor (MediaPipe não instalado).",
+        ) from e
+    opcoes = vision.FaceLandmarkerOptions(
+        base_options=mp_python.BaseOptions(model_asset_path=modelos.caminho("face_landmarker")),
+        running_mode=vision.RunningMode.IMAGE,
+        num_faces=1,
+        output_face_blendshapes=True,
+        min_face_detection_confidence=0.5,
+        min_face_presence_confidence=0.5,
+    )
+    _local.landmarker = vision.FaceLandmarker.create_from_options(opcoes)
+    return _local.landmarker
 
 
 def _dist(a, b) -> float:

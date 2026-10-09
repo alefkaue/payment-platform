@@ -21,6 +21,24 @@ from app.services import (
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
+@router.get("/kyc/casos")
+def casos_kyc(_: dict = Depends(admin_atual), repo: Repositorio = Depends(get_repo),
+              status: str = Query(default="em_analise", pattern="^(em_analise|aprovado|reprovado)$")):
+    """Fila de análise humana: documentos que a máquina não conseguiu conferir sozinha."""
+    return repo.listar_casos_kyc(status)
+
+
+@router.post("/kyc/casos/{caso_id}/decidir")
+def decidir_kyc(caso_id: int, aprovar: bool = Query(...), admin: dict = Depends(admin_atual),
+                repo: Repositorio = Depends(get_repo), ip: str | None = Depends(ip_cliente)):
+    c = repo.decidir_caso_kyc(caso_id, "aprovado" if aprovar else "reprovado")
+    if c is None:
+        raise HTTPException(status_code=409, detail="Caso não encontrado ou já decidido.")
+    repo.registrar_log(ator=admin["email"], acao="kyc_decidido", ip=ip, usuario_id=admin["id"],
+                       detalhe={"caso_id": caso_id, "aprovado": aprovar})
+    return c
+
+
 @router.post("/depositar", response_model=TransacaoResponse)
 def depositar(dados: DepositoRequest, admin: dict = Depends(admin_atual), repo: Repositorio = Depends(get_repo),
               ip: str | None = Depends(ip_cliente)):

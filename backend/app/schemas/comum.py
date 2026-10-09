@@ -60,6 +60,9 @@ class ContaResponse(BaseModel):
     saldo_bloqueado: Decimal
     papel: str | None = None
     alcada: Decimal | None = None
+    # Abertura de conta: resultado da verificação de identidade/empresa.
+    kyc: dict | None = None
+    kyb_status: str | None = None
 
 
 class TransacaoResponse(BaseModel):

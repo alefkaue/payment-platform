@@ -107,10 +107,12 @@ def confiar_dispositivo(repo: Repositorio, *, usuario: dict, dispositivo: dict |
         raise HTTPException(status_code=400, detail="Envie o header X-Dispositivo-Id do aparelho a confirmar.")
     if dispositivo["confiavel"]:
         return dispositivo
+    if dispositivo.get("bloqueado"):
+        raise HTTPException(status_code=403, detail="Este aparelho foi bloqueado. Desbloqueie em Segurança > Aparelhos.")
     verificacao = verificar_rosto(repo, usuario=usuario, prova=prova, ip=ip, tipo="confiar_dispositivo")
     d = repo.marcar_dispositivo_confiavel(usuario["id"], dispositivo["id"])
-    repo.registrar_log(ator=usuario["email"], acao="dispositivo_confiavel", ip=ip,
-                       detalhe={"dispositivo_id": d["id"], "distancia": verificacao.get("distancia")})
+    repo.registrar_log(ator=usuario["email"], acao="dispositivo_confiavel", ip=ip, usuario_id=usuario["id"],
+                       detalhe={"dispositivo_id": d["id"], "similaridade": verificacao.get("similaridade")})
     return d
 
 
@@ -128,18 +130,18 @@ def verificar_rosto(repo: Repositorio, *, usuario: dict, prova, ip: str | None, 
         raise HTTPException(status_code=400, detail="Esta operação exige verificação facial (envie `biometria`).")
     checar_rate_limit_biometria(repo, usuario["id"])
     blob = repo.obter_embedding_cifrado(usuario["id"])
-    embedding = security.decifrar_embedding(blob) if blob else None
-    if embedding is None:
+    template = security.decifrar_embedding(blob) if blob else None
+    if template is None:
         raise HTTPException(status_code=400, detail="Sua conta não tem biometria cadastrada. Operação bloqueada.")
     try:
-        v = biometria_service.verificar(repo, prova, usuario_id=usuario["id"], embedding_cadastrado=embedding)
+        v = biometria_service.verificar(repo, prova, usuario_id=usuario["id"], template=template)
     except HTTPException as e:
         if e.status_code == 401:
             repo.registrar_sessao_mfa(tipo="biometria", sucesso=False, usuario_id=usuario["id"], ip=ip,
                                       detalhe={"operacao": tipo, "motivo": e.detail})
         raise
     repo.registrar_sessao_mfa(tipo="biometria", sucesso=True, usuario_id=usuario["id"], ip=ip,
-                              detalhe={"operacao": tipo, "distancia": v.get("distancia")})
+                              detalhe={"operacao": tipo, "similaridade": v.get("similaridade")})
     return v
 
 

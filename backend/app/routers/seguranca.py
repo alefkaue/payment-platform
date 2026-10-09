@@ -67,10 +67,59 @@ def confiar_aparelho(prova: ProvaBiometrica, usuario: dict = Depends(usuario_atu
 
 
 @router.delete("/seguranca/dispositivos/{dispositivo_id}", status_code=204)
-def remover_aparelho(dispositivo_id: int, usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo)):
+def remover_aparelho(dispositivo_id: int, usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo),
+                     ip: str | None = Depends(ip_cliente)):
+    repo.revogar_sessoes_do_dispositivo(usuario["id"], dispositivo_id)
     if not repo.remover_dispositivo(usuario["id"], dispositivo_id):
         raise HTTPException(status_code=404, detail="Aparelho não encontrado.")
+    repo.registrar_log(ator=usuario["email"], acao="dispositivo_removido", ip=ip, usuario_id=usuario["id"],
+                       detalhe={"dispositivo_id": dispositivo_id})
     return Response(status_code=204)
+
+
+@router.post("/seguranca/dispositivos/{dispositivo_id}/bloquear")
+def bloquear_aparelho(dispositivo_id: int, usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo),
+                      ip: str | None = Depends(ip_cliente)):
+    """Celular perdido/roubado: o aparelho deixa de ser confiável, TODAS as sessões
+    dele caem na hora e novos logins nele são recusados."""
+    d = repo.bloquear_dispositivo(usuario["id"], dispositivo_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail="Aparelho não encontrado.")
+    n = repo.revogar_sessoes_do_dispositivo(usuario["id"], dispositivo_id)
+    repo.registrar_log(ator=usuario["email"], acao="dispositivo_bloqueado", ip=ip, usuario_id=usuario["id"],
+                       detalhe={"dispositivo_id": dispositivo_id, "sessoes_encerradas": n})
+    return {**d, "sessoes_encerradas": n}
+
+
+@router.post("/seguranca/dispositivos/{dispositivo_id}/desbloquear")
+def desbloquear_aparelho(dispositivo_id: int, prova: ProvaBiometrica, usuario: dict = Depends(usuario_atual),
+                         repo: Repositorio = Depends(get_repo), ip: str | None = Depends(ip_cliente)):
+    """Exige o rosto. O aparelho volta como NÃO confiável (precisa de um login com rosto nele)."""
+    seguranca_service.verificar_rosto(repo, usuario=usuario, prova=prova, ip=ip, tipo="desbloquear_dispositivo")
+    d = repo.desbloquear_dispositivo(usuario["id"], dispositivo_id)
+    if d is None:
+        raise HTTPException(status_code=404, detail="Aparelho não encontrado.")
+    repo.registrar_log(ator=usuario["email"], acao="dispositivo_desbloqueado", ip=ip, usuario_id=usuario["id"],
+                       detalhe={"dispositivo_id": dispositivo_id})
+    return d
+
+
+# ------------------------------------------------------------------ atividade e auditoria
+
+
+@router.get("/seguranca/atividade")
+def minha_atividade(usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo), limite: int = 50):
+    """O que eu fiz (logins, aparelhos, pagamentos, aprovações...)."""
+    return repo.listar_auditoria(usuario_id=usuario["id"], limite=limite)
+
+
+@router.get("/empresas/atual/auditoria")
+def auditoria_da_empresa(conta: dict = Depends(conta_atual), repo: Repositorio = Depends(get_repo), limite: int = 100):
+    """Trilha da empresa: quem convidou quem, quem mudou alçada, quem lançou e quem
+    aprovou cada pagamento. Admin e aprovador."""
+    exigir_pj(conta)
+    exigir_papel(conta, PapelVinculo.ADMIN, PapelVinculo.APROVADOR)
+    return repo.listar_auditoria(empresa_id=conta["empresa_id"], limite=limite)
 
 
 # ------------------------------------------------------------------ chaves Pix

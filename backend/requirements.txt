@@ -4,13 +4,10 @@ pydantic==2.9.2
 pydantic-settings==2.5.2
 email-validator==2.2.0
 
-# Autenticação: JWT (access + refresh) e hash de senha.
-# PyJWT é a lib mantida e simples para assinar/validar os tokens -- os repos de
-# referência (fastapi-jwt-auth) estão em manutenção mínima/arquivados, então
-# implementamos o fluxo de access+refresh sobre PyJWT direto (ver core/security.py
-# e services/auth_service.py). bcrypt pinado em 4.0.1 para não brigar com passlib
-# 1.7.4 (versões 4.1+ emitem o warning "trapped error reading bcrypt version").
-passlib[bcrypt]==1.7.4
+# Autenticação: senha em Argon2id (OWASP: m=19MiB, t=2, p=1) + JWT (PyJWT).
+# bcrypt fica só para VERIFICAR hashes antigos (v6/v7) e migrá-los no login.
+# passlib saiu (sem manutenção, quebra com bcrypt >= 4.1).
+argon2-cffi>=23.1.0
 bcrypt==4.0.1
 PyJWT==2.9.0
 
@@ -18,26 +15,22 @@ PyJWT==2.9.0
 # dado sensível (ver core/security.py:cifrar_embedding / services/biometria_service.py).
 cryptography>=43.0.0
 
-# MFA - liveness + reconhecimento facial (ver services/biometria_service.py)
-# "[tensorflow]" é explícito de propósito: o deepface avisa que vai parar de
-# instalar um backend por padrão, então fixamos o backend em vez de confiar
-# no default.
-deepface[tensorflow]>=0.0.93
-tf-keras>=2.15.0
-# Pinado (não >=) e SEM "-headless": esse é o fix do conflito opencv-python x
-# opencv-python-headless x opencv-contrib-python que resolvemos na venv. Não
-# precisa de headless porque libgl1/libglib2.0-0 já estão instalados no host
-# (ver README) -- só não pode ter os dois pacotes juntos.
-opencv-python==4.10.0.84
-numpy>=1.24.0
-
-# Prova de vida por LANDMARKS (olhos/boca/giro) -- ver services/landmarks_service.py.
-# O Face Landmarker (468 pontos + blendshapes) é o que permite detectar piscada
-# (EAR), abrir a boca e sorrir de verdade, no SERVIDOR. Suporta Python 3.9-3.12
-# (use py -3.12 no venv; o 3.14 ainda não tem wheel). O modelo .task é baixado
-# uma vez em runtime (FACE_LANDMARKER_MODEL ou ~/.cache/payflow). Import
-# preguiçoso: a API/os testes sobem sem ele no modo BIOMETRIA_STUB.
+# Biometria (v9) SEM TensorFlow: OpenCV YuNet (detecção) + SFace (reconhecimento)
+# + MiniFASNet (anti-spoof via cv2.dnn), e MediaPipe Face Landmarker (piscar/
+# sorrir/virar). Modelos com SHA-256 fixado em app/core/modelos.py.
+# SÓ opencv-contrib-python: o mediapipe depende dele, e ter também o
+# opencv-python instalado gera dois cv2 brigando. Python 3.9-3.12.
+opencv-contrib-python==5.0.0.93
+numpy>=1.24.0,<2.3
 mediapipe>=0.10.14
+# Legado (BIOMETRIA_MOTOR=deepface, ~1 GB). Não instale a não ser que precise:
+# deepface[tensorflow]>=0.0.93
+# tf-keras>=2.15.0
+
+# Documentos (KYC/KYB): texto de PDF e OCR. O OCR precisa do BINÁRIO do
+# Tesseract + idioma por (Dockerfile: apt install tesseract-ocr tesseract-ocr-por).
+pypdf>=4.2.0
+pytesseract>=0.3.10
 
 # Persistência - Postgres (ver app/db/ e app/repositories/postgres_repository.py)
 sqlalchemy>=2.0.30

@@ -51,9 +51,19 @@ def precisa_aprovacao(conta: dict, valor: Decimal) -> bool:
     return bool(v and v["alcada"] is not None and valor > v["alcada"])
 
 
-def criar_pendente(repo: Repositorio, *, conta: dict, usuario: dict, tipo: str, valor: Decimal, payload: dict, ip: str | None) -> dict:
-    p = repo.criar_pendente(empresa_id=conta["empresa_id"], tipo=tipo, valor=valor, payload=payload, criado_por=usuario["id"])
-    repo.registrar_log(ator=usuario["email"], acao="operacao_pendente", ip=ip, detalhe={"operacao_id": p["id"], "valor": str(valor)})
+def criar_pendente(repo: Repositorio, *, conta: dict, usuario: dict, tipo: str, valor: Decimal, payload: dict,
+                   ip: str | None, descricao: str | None = None) -> dict:
+    """Operação acima da alçada (ou mudança de acesso na grande empresa): espera
+    aprovação de OUTRA pessoa. Quantas aprovações, decide a política do porte."""
+    from app.services import politica_pj
+
+    porte = repo.obter_empresa(conta["empresa_id"])["porte"]
+    necessarias = 1 if tipo == "acesso" else politica_pj.aprovacoes_necessarias(porte, Decimal(valor))
+    p = repo.criar_pendente(empresa_id=conta["empresa_id"], tipo=tipo, valor=valor, payload=payload,
+                            criado_por=usuario["id"], descricao=descricao, aprovacoes_necessarias=necessarias)
+    repo.registrar_log(ator=usuario["email"], acao="operacao_pendente", ip=ip, usuario_id=usuario["id"],
+                       empresa_id=conta["empresa_id"],
+                       detalhe={"operacao_id": p["id"], "tipo": tipo, "valor": str(valor), "aprovacoes_necessarias": necessarias})
     webhook_service.emitir(repo, empresa_id=conta["empresa_id"], evento="operacao.pendente",
                            payload={"operacao_id": p["id"], "tipo": tipo, "valor": valor})
     return p
@@ -75,8 +85,12 @@ def transferir(
     verificacao_previa: dict | None = None,
     pular_alcada: bool = False,
     auth_metodo: AuthMetodo | None = None,
+    sem_bloqueio_cautelar: bool = False,
 ) -> dict:
-    """Devolve {"transacao": ...} ou {"pendente": ...}."""
+    """Devolve {"transacao": ...} ou {"pendente": ...}.
+
+    sem_bloqueio_cautelar: só a folha usa -- o destino é a conta do próprio
+    funcionário, resolvida pelo CPF no servidor, então não é "destino novo de risco"."""
     valor = Decimal(valor)
     if destino["carteira_id"] == conta["carteira_id"]:
         raise HTTPException(status_code=400, detail="Não é possível transferir para a própria conta.")
@@ -84,7 +98,8 @@ def transferir(
     seguranca_service.exigir_dispositivo(dispositivo)
 
     if not pular_alcada and precisa_aprovacao(conta, valor):
-        p = criar_pendente(repo, conta=conta, usuario=usuario, tipo="transferencia", valor=valor, ip=ip, payload={
+        p = criar_pendente(repo, conta=conta, usuario=usuario, tipo="transferencia", valor=valor, ip=ip,
+                           descricao=f"Pix para {destino.get('nome') or 'conta'}"[:200], payload={
             "destino_carteira_id": destino["carteira_id"], "valor": str(valor), "descricao": descricao,
             "idempotency_key": idempotency_key,
         })
@@ -96,7 +111,8 @@ def transferir(
         verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="transferencia")
         metodo = auth_metodo or AuthMetodo.SELFIE
 
-    bloqueio = seguranca_service.bloqueio_cautelar(repo, origem_id=conta["carteira_id"], destino=destino, valor=valor)
+    bloqueio = None if sem_bloqueio_cautelar else seguranca_service.bloqueio_cautelar(
+        repo, origem_id=conta["carteira_id"], destino=destino, valor=valor)
     try:
         t = repo.executar_movimento(
             origem_id=conta["carteira_id"], destino_id=destino["carteira_id"], split=sem_split(valor),
@@ -109,7 +125,8 @@ def transferir(
     except SaldoInsuficienteError:
         raise HTTPException(status_code=400, detail="Saldo insuficiente.")
 
-    repo.registrar_log(ator=usuario["email"], acao="transferencia", ip=ip, detalhe={
+    repo.registrar_log(ator=usuario["email"], acao="transferencia", ip=ip, usuario_id=usuario["id"],
+                       empresa_id=conta.get("empresa_id"), detalhe={
         "transacao_id": t["id"], "valor": str(valor), "destino": destino["carteira_id"], "auth": metodo.value,
         "status": t["status"],
     })
@@ -149,7 +166,14 @@ def transferir_lote(repo: Repositorio, *, usuario: dict, conta: dict, dispositiv
 
 def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, operacao_id: int,
                      aprovar: bool, biometria, ip: str | None) -> dict:
-    from app.services import cobranca_service  # import tardio: cobranca_service importa este módulo
+    """Maker-checker com N aprovadores. Regras:
+    - quem lançou NUNCA aprova (segregação de funções);
+    - cada pessoa aprova uma vez; a operação só executa quando atinge
+      `aprovacoes_necessarias` (2 na grande empresa acima do limite);
+    - pagamento: admin ou aprovador, dentro da própria alçada; mudança de ACESSO:
+      só admin;
+    - aprovar exige o rosto acima do limite facial (acesso: sempre)."""
+    from app.services import cobranca_service, equipe_service, folha_service  # import tardio (ciclos)
 
     exigir_pj(conta)
     p = repo.obter_pendente(operacao_id)
@@ -157,25 +181,35 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
         raise HTTPException(status_code=404, detail="Operação não encontrada.")
     if p["status"] != "pendente":
         raise HTTPException(status_code=409, detail=f"Operação já está '{p['status']}'.")
-    exigir_papel(conta, PapelVinculo.ADMIN, PapelVinculo.APROVADOR)
+    if p["tipo"] == "acesso":
+        exigir_papel(conta, PapelVinculo.ADMIN)
+    else:
+        exigir_papel(conta, PapelVinculo.ADMIN, PapelVinculo.APROVADOR)
     if p["criado_por_usuario_id"] == usuario["id"]:
         raise HTTPException(status_code=403, detail="A aprovação precisa ser feita por outra pessoa.")
+    if any(a.get("usuario_id") == usuario["id"] for a in p["aprovacoes"]):
+        raise HTTPException(status_code=409, detail="Você já aprovou esta operação. Falta outra pessoa.")
     v = conta["vinculo"]
-    if v["alcada"] is not None and p["valor"] > v["alcada"]:
+    if p["tipo"] != "acesso" and v["alcada"] is not None and p["valor"] > v["alcada"]:
         raise HTTPException(status_code=403, detail="O valor passa da sua alçada de aprovação.")
 
+    log = {"usuario_id": usuario["id"], "empresa_id": conta["empresa_id"]}
     if not aprovar:
         if not repo.reservar_pendente(operacao_id, usuario["id"], "rejeitada"):
             raise HTTPException(status_code=409, detail="Operação já foi decidida.")
-        repo.registrar_log(ator=usuario["email"], acao="operacao_rejeitada", ip=ip, detalhe={"operacao_id": operacao_id})
+        repo.registrar_log(ator=usuario["email"], acao="operacao_rejeitada", ip=ip, detalhe={"operacao_id": operacao_id}, **log)
         return repo.obter_pendente(operacao_id)
 
     seguranca_service.exigir_dispositivo(dispositivo)
     verificacao = None
-    if p["valor"] > _limite_facial():
+    if p["tipo"] == "acesso" or p["valor"] > _limite_facial():
         verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="aprovacao")
-    if not repo.reservar_pendente(operacao_id, usuario["id"], "aprovada"):
+    situacao = repo.registrar_aprovacao(operacao_id, usuario["id"], usuario["nome"])
+    if situacao is None:
         raise HTTPException(status_code=409, detail="Operação já foi decidida.")
+    if situacao == "parcial":
+        repo.registrar_log(ator=usuario["email"], acao="aprovacao_parcial", ip=ip, detalhe={"operacao_id": operacao_id}, **log)
+        return {**repo.obter_pendente(operacao_id), "mensagem": "Aprovação registrada. Falta outra pessoa aprovar."}
 
     payload = p["payload"]
     try:
@@ -187,18 +221,31 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
                 idempotency_key=f"pendente-{operacao_id}", ip=ip, mfa_resolvido=True,
                 verificacao_previa=verificacao, pular_alcada=True, auth_metodo=AuthMetodo.APROVACAO,
             )
-            transacao = r["transacao"]
-        else:  # pagamento_cobranca
+            resultado = {"transacao_id": r["transacao"]["id"]}
+        elif p["tipo"] == "pagamento_cobranca":
             transacao = cobranca_service.pagar(
                 repo, usuario=usuario, conta=conta, dispositivo=dispositivo, txid=payload["txid"], biometria=None,
                 idempotency_key=f"pendente-{operacao_id}", ip=ip, mfa_resolvido=True,
                 verificacao_previa=verificacao, pular_alcada=True, auth_metodo=AuthMetodo.APROVACAO,
             )["transacao"]
+            resultado = {"transacao_id": transacao["id"]}
+        elif p["tipo"] == "folha":
+            resultado = {"resultados": folha_service.executar(
+                repo, usuario=usuario, conta=conta, dispositivo=dispositivo, itens=payload["itens"],
+                descricao=payload["descricao"], ip=ip, verificacao=verificacao, chave_base=f"pendente-{operacao_id}",
+                auth_metodo=AuthMetodo.APROVACAO,
+            )}
+        elif p["tipo"] == "acesso":
+            vinc = equipe_service.aplicar_aprovacao_acesso(repo, conta=conta, aprovador=usuario, payload=payload, ip=ip)
+            resultado = {"vinculo_id": vinc["id"], "status": vinc["status"]}
+        else:
+            raise HTTPException(status_code=400, detail=f"Tipo de operação desconhecido: {p['tipo']}.")
     except HTTPException as e:
         repo.concluir_pendente(operacao_id, "falhou", {"erro": str(e.detail)})
         raise
-    repo.concluir_pendente(operacao_id, "aprovada", {"transacao_id": transacao["id"]})
-    repo.registrar_log(ator=usuario["email"], acao="operacao_aprovada", ip=ip, detalhe={"operacao_id": operacao_id, "transacao_id": transacao["id"]})
+    repo.concluir_pendente(operacao_id, "aprovada", resultado)
+    repo.registrar_log(ator=usuario["email"], acao="operacao_aprovada", ip=ip,
+                       detalhe={"operacao_id": operacao_id, "tipo": p["tipo"], **resultado}, **log)
     return repo.obter_pendente(operacao_id)
 
 

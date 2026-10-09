@@ -116,12 +116,16 @@ class Usuario(Base):
     papel: Mapped[Papel] = mapped_column(Enum(Papel, name="papel_usuario"), nullable=False, default=Papel.USUARIO)
     # Template biométrico CIFRADO (Fernet). Nunca a foto, nunca o vetor em texto puro.
     embedding_facial_cifrado: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    data_nascimento: Mapped[date | None] = mapped_column(Date, nullable=True)
+    celular: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Situação da verificação de identidade: pendente | em_analise | aprovado | reprovado.
+    kyc_status: Mapped[str] = mapped_column(String(12), nullable=False, default="pendente")
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Pontos PayFlow (PF): ganha comprando na Loja/Viagens, resgata em passagens.
     pontos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    vinculos: Mapped[list["Vinculo"]] = relationship(back_populates="usuario")
+    vinculos: Mapped[list["Vinculo"]] = relationship(back_populates="usuario", foreign_keys="Vinculo.usuario_id")
 
 
 class Empresa(Base):
@@ -142,27 +146,61 @@ class Empresa(Base):
     # Quando e por qual provedor o CNPJ foi conferido (ver services/cnpj_service.py).
     verificada_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     verificada_por: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # Representante legal que abriu a conta (pessoa com KYC aprovado). Responde pela
+    # empresa perante o banco; os demais usuários entram por convite.
+    representante_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    # pendente | em_analise | aprovado (KYB: CNPJ + documentos + representante).
+    kyb_status: Mapped[str] = mapped_column(String(12), nullable=False, default="pendente")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     vinculos: Mapped[list["Vinculo"]] = relationship(back_populates="empresa")
 
 
+class StatusVinculo(str, enum.Enum):
+    PENDENTE = "pendente"      # convite enviado, a pessoa ainda não aceitou
+    AGUARDANDO = "aguardando"  # grande empresa: aguarda a aprovação de outro admin
+    ATIVO = "ativo"
+    SUSPENSO = "suspenso"      # bloqueio temporário (pode reativar)
+    REVOGADO = "revogado"      # acesso encerrado
+    RECUSADO = "recusado"      # a pessoa recusou o convite
+
+
 class Vinculo(Base):
-    """Pessoa <-> empresa, com papel e alçada (valor máximo por operação sem
-    precisar de aprovação de outra pessoa). Alçada nula = sem limite (admin)."""
+    """Acesso de UMA PESSOA à conta de uma empresa, com papel e alçada (valor
+    máximo por operação sem aprovação de outra pessoa; nula = sem limite).
+
+    Cada pessoa tem o próprio login, a própria biometria e o próprio vínculo --
+    não existe "login da empresa" compartilhado. O admin convida pelo CPF; o
+    vínculo nasce PENDENTE e só vira ATIVO quando a dona daquele CPF (com KYC
+    aprovado) aceita com o rosto. `ativo` espelha status == ATIVO para as
+    consultas de permissão continuarem simples."""
 
     __tablename__ = "vinculos"
-    __table_args__ = (UniqueConstraint("usuario_id", "empresa_id", name="uq_vinculo_usuario_empresa"),)
+    __table_args__ = (
+        UniqueConstraint("usuario_id", "empresa_id", name="uq_vinculo_usuario_empresa"),
+        UniqueConstraint("empresa_id", "cpf", name="uq_vinculo_empresa_cpf"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False, index=True)
+    # Nulo enquanto o convite não for aceito (a pessoa pode nem ter conta ainda).
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
     empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), nullable=False, index=True)
+    cpf: Mapped[str | None] = mapped_column(String(11), nullable=True, index=True)
+    nome: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    celular: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    cargo: Mapped[str | None] = mapped_column(String(80), nullable=True)
     papel: Mapped[PapelVinculo] = mapped_column(Enum(PapelVinculo, name="papel_vinculo"), nullable=False)
     alcada: Mapped[Decimal | None] = mapped_column(Dinheiro, nullable=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default=StatusVinculo.ATIVO.value)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_por_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    aceito_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    status_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ultimo_acesso_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    usuario: Mapped["Usuario"] = relationship(back_populates="vinculos")
+    usuario: Mapped["Usuario | None"] = relationship(back_populates="vinculos", foreign_keys=[usuario_id])
     empresa: Mapped["Empresa"] = relationship(back_populates="vinculos")
 
 
@@ -363,9 +401,15 @@ class OperacaoPendente(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), nullable=False, index=True)
-    tipo: Mapped[str] = mapped_column(String(20), nullable=False)  # transferencia
+    # transferencia | pagamento_cobranca | folha | acesso (mudança de vínculo)
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Dinheiro, nullable=False)
     payload: Mapped[dict] = mapped_column(JSONTipo, nullable=False)
+    descricao: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # Grande empresa: valores altos pedem 2 aprovações de pessoas diferentes.
+    aprovacoes_necessarias: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    # [{"usuario_id": 3, "nome": "...", "em": "..."}] -- quem já aprovou.
+    aprovacoes: Mapped[list | None] = mapped_column(JSONTipo, nullable=True)
     criado_por_usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id"), nullable=False)
     # pendente | aprovada | rejeitada | falhou
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="pendente")
@@ -410,6 +454,9 @@ class Dispositivo(Base):
     nome: Mapped[str | None] = mapped_column(String(80), nullable=True)
     confiavel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     confiavel_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Celular perdido/roubado: bloqueado derruba as sessões dele e recusa novos logins.
+    bloqueado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    bloqueado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ultimo_uso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -460,6 +507,12 @@ class RefreshToken(Base):
     expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revogado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     substituido_por: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Sessão = família de refresh tokens (a rotação mantém o mesmo sessao_id).
+    # "Encerrar sessão" revoga a família e o access com esse `sid` cai na hora.
+    sessao_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    dispositivo_id: Mapped[int | None] = mapped_column(ForeignKey("dispositivos.id"), nullable=True)
+    ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[str | None] = mapped_column(String(200), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -487,9 +540,95 @@ class LogAuditoria(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     ator: Mapped[str] = mapped_column(String(80), nullable=False)
     acao: Mapped[str] = mapped_column(String(80), nullable=False)
+    # Quem e em qual empresa -- é o que permite a trilha "Atividade da empresa".
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), nullable=True, index=True)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     detalhe: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+
+# =============================================================================
+# Identidade (KYC/KYB)
+# =============================================================================
+
+
+class CasoKyc(Base):
+    """Uma verificação de identidade (pessoa) ou de empresa. Documento, rosto e
+    autenticação NÃO ficam misturados numa coluna do usuário: cada tentativa vira
+    um caso com o resultado de cada checagem."""
+
+    __tablename__ = "kyc_casos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True, index=True)
+    empresa_id: Mapped[int | None] = mapped_column(ForeignKey("empresas.id"), nullable=True, index=True)
+    tipo: Mapped[str] = mapped_column(String(4), nullable=False)  # pf | pj
+    # aprovado | em_analise (precisa de olho humano) | reprovado
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    nivel_risco: Mapped[str] = mapped_column(String(8), nullable=False, default="baixo")
+    motivos: Mapped[list | None] = mapped_column(JSONTipo, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    concluido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DocumentoIdentidade(Base):
+    """Resultado da análise de um documento de identidade. A IMAGEM não é
+    guardada (LGPD: dado sensível sem finalidade de retenção) -- só o SHA-256
+    dela, os campos lidos mascarados e o que foi conferido."""
+
+    __tablename__ = "documentos_identidade"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    caso_id: Mapped[int] = mapped_column(ForeignKey("kyc_casos.id"), nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(12), nullable=False)  # rg | cnh | cin | passaporte
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    provedor: Mapped[str] = mapped_column(String(20), nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    campos: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
+    verificacoes: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DocumentoEmpresa(Base):
+    """Documento societário enviado na abertura/atualização da conta PJ
+    (contrato social, CCMEI, cartão CNPJ, procuração). Guardamos hash, tipo e o que
+    foi conferido (ex.: o CNPJ aparece no texto); o arquivo vai para armazenamento
+    privado em produção (Blob Storage), nunca para pasta pública."""
+
+    __tablename__ = "documentos_empresa"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), nullable=False, index=True)
+    tipo: Mapped[str] = mapped_column(String(20), nullable=False)
+    mime: Mapped[str] = mapped_column(String(40), nullable=False)
+    tamanho: Mapped[int] = mapped_column(Integer, nullable=False)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False)
+    verificacoes: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
+    enviado_por_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Funcionario(Base):
+    """Cadastro de funcionários da empresa para a FOLHA. É diferente do vínculo
+    (acesso ao app): o funcionário pode não operar a conta. Salário só pode ir
+    para a conta PF cujo titular tem ESTE CPF -- o servidor resolve o destino, o
+    app não informa conta nenhuma (impede desviar salário para terceiro)."""
+
+    __tablename__ = "funcionarios"
+    __table_args__ = (UniqueConstraint("empresa_id", "cpf", name="uq_funcionario_empresa_cpf"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), nullable=False, index=True)
+    nome: Mapped[str] = mapped_column(String(120), nullable=False)
+    cpf: Mapped[str] = mapped_column(String(11), nullable=False)
+    cargo: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    salario: Mapped[Decimal | None] = mapped_column(Dinheiro, nullable=True)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_por_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    desligado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 # =============================================================================

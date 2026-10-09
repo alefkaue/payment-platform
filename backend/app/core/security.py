@@ -2,39 +2,46 @@
 Primitivas de segurança, isoladas aqui para o resto do código nunca mexer em
 cripto na mão:
 
-- Hash de senha (bcrypt via passlib) -- nunca guardamos senha em texto puro.
-- JWT access + refresh (PyJWT) -- assinados com JWT_SECRET, cada um com um `type`
-  embutido pra um access token nunca ser aceito onde se espera um refresh.
-- Hash de refresh token (SHA-256) -- no banco guardamos só o hash do refresh, não
-  o token em si; se o banco vazar, os refresh tokens não são reutilizáveis.
-- Cifra do embedding facial (Fernet) -- o vetor do rosto é dado biométrico (LGPD,
-  dado sensível), então vai cifrado em repouso. Fecha o item #12 da auditoria.
+- Hash de senha: **Argon2id** (argon2-cffi) com os parâmetros mínimos do OWASP
+  Password Storage Cheat Sheet (m=19 MiB, t=2, p=1). Hashes bcrypt antigos
+  continuam sendo aceitos e são trocados por Argon2id no próximo login
+  (`precisa_rehash`) -- migração sem forçar ninguém a trocar a senha.
+- JWT (PyJWT, HS256) seguindo o RFC 8725: algoritmo fixo na validação, `iss` e
+  `aud` conferidos, tipo explícito no cabeçalho (`typ`) E no payload (`type`), e
+  tipos mutuamente exclusivos -- um token de MFA ou refresh nunca vale como access.
+- Amarração ao aparelho: o access token carrega `dev` (SHA-256 do
+  X-Dispositivo-Id do login) e `sid` (sessão). Token vazado não funciona em outro
+  aparelho e "encerrar sessão" derruba o access na hora (ver deps.usuario_atual).
+- Hash de refresh token (SHA-256): no banco fica só o hash.
+- Template biométrico cifrado (Fernet) com o nome do modelo junto -- vetores de
+  motores diferentes (Facenet x SFace) nunca são comparados entre si.
 
 Em desenvolvimento, se JWT_SECRET / EMBEDDING_KEY não vierem no ambiente, geramos
-um valor efêmero e avisamos no log (ver core/config.py). Em produção isso é um erro
-duro (ver `_exigir_segredo`).
+um valor efêmero e avisamos no log. Em produção isso é erro duro.
 """
 
-import base64
 import hashlib
 import json
 import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 
+import bcrypt
 import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 from cryptography.fernet import Fernet, InvalidToken
-from passlib.context import CryptContext
 
 from app.core.config import get_settings
 
 logger = logging.getLogger("payflow.security")
 
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# OWASP Password Storage Cheat Sheet: Argon2id, m=19 MiB, t=2, p=1 (mínimo).
+_ph = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
+_SENHA_MAX_BYTES = 1024  # evita DoS com senha gigante (Argon2 não trunca)
 
-# bcrypt trunca em 72 bytes silenciosamente -- validamos o tamanho antes de hashear
-# pra ninguém achar que uma senha de 100 chars está sendo usada inteira.
-_BCRYPT_MAX_BYTES = 72
+# Tipos de token -> valor do cabeçalho `typ` (RFC 8725 §3.11, explicit typing).
+_TYP = {"access": "at+jwt", "refresh": "rt+jwt", "mfa": "mfa+jwt"}
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +70,10 @@ def _exigir_segredo(nome_env: str, valor: str | None, gerar) -> str:
 
 
 def _jwt_secret() -> str:
-    return _exigir_segredo("JWT_SECRET", get_settings().jwt_secret, lambda: secrets.token_urlsafe(48))
+    segredo = _exigir_segredo("JWT_SECRET", get_settings().jwt_secret, lambda: secrets.token_urlsafe(48))
+    if get_settings().em_producao and len(segredo) < 32:
+        raise RuntimeError("JWT_SECRET curto demais para produção (mínimo 32 caracteres).")
+    return segredo
 
 
 def _fernet() -> Fernet:
@@ -75,84 +85,126 @@ def _fernet() -> Fernet:
 # Senha
 # ---------------------------------------------------------------------------
 def hash_senha(senha: str) -> str:
-    if len(senha.encode("utf-8")) > _BCRYPT_MAX_BYTES:
-        raise ValueError("Senha muito longa (máximo 72 bytes).")
-    return _pwd_context.hash(senha)
+    if len(senha.encode("utf-8")) > _SENHA_MAX_BYTES:
+        raise ValueError("Senha muito longa.")
+    return _ph.hash(senha)
 
 
 def verificar_senha(senha: str, senha_hash: str) -> bool:
-    try:
-        return _pwd_context.verify(senha, senha_hash)
-    except ValueError:
+    if len(senha.encode("utf-8")) > _SENHA_MAX_BYTES or not senha_hash:
         return False
+    if senha_hash.startswith("$argon2"):
+        try:
+            return _ph.verify(senha_hash, senha)
+        except (VerifyMismatchError, VerificationError, InvalidHashError):
+            return False
+    if senha_hash.startswith("$2"):  # bcrypt legado (v6/v7): só verifica, nunca gera
+        try:
+            return bcrypt.checkpw(senha.encode("utf-8")[:72], senha_hash.encode("utf-8"))
+        except ValueError:
+            return False
+    return False
+
+
+def precisa_rehash(senha_hash: str) -> bool:
+    """True para bcrypt legado ou Argon2 com parâmetros antigos."""
+    if not senha_hash.startswith("$argon2"):
+        return True
+    try:
+        return _ph.check_needs_rehash(senha_hash)
+    except InvalidHashError:
+        return True
 
 
 # ---------------------------------------------------------------------------
-# JWT access + refresh
+# JWT
 # ---------------------------------------------------------------------------
 def _criar_token(sub: str, tipo: str, expira_em: timedelta, extra: dict | None = None) -> tuple[str, str, datetime]:
-    """Retorna (token, jti, expira_em_utc). `jti` é o id único do token -- usado
-    pra rastrear/revogar refresh tokens individualmente."""
+    """Retorna (token, jti, expira_em_utc)."""
+    s = get_settings()
     agora = datetime.now(timezone.utc)
     exp = agora + expira_em
     jti = secrets.token_urlsafe(16)
     payload = {
+        "iss": s.jwt_issuer,
+        "aud": s.jwt_audience,
         "sub": str(sub),
         "type": tipo,
         "jti": jti,
         "iat": int(agora.timestamp()),
+        "nbf": int(agora.timestamp()),
         "exp": int(exp.timestamp()),
     }
     if extra:
-        payload.update(extra)
-    token = jwt.encode(payload, _jwt_secret(), algorithm=get_settings().jwt_algoritmo)
+        payload.update({k: v for k, v in extra.items() if v is not None})
+    token = jwt.encode(payload, _jwt_secret(), algorithm=s.jwt_algoritmo, headers={"typ": _TYP[tipo]})
     return token, jti, exp
 
 
-def criar_access_token(usuario_id: int, papel: str) -> tuple[str, datetime]:
-    settings = get_settings()
+def criar_access_token(usuario_id: int, papel: str, *, dispositivo_hash: str | None = None,
+                       sessao_id: str | None = None) -> tuple[str, datetime]:
+    s = get_settings()
     token, _, exp = _criar_token(
-        usuario_id, "access", timedelta(minutes=settings.access_token_exp_min), extra={"papel": papel}
+        usuario_id, "access", timedelta(minutes=s.access_token_exp_min),
+        extra={"papel": papel, "dev": dispositivo_hash, "sid": sessao_id},
     )
     return token, exp
 
 
-def criar_refresh_token(usuario_id: int) -> tuple[str, str, datetime]:
-    """Retorna (token_bruto, jti, expira_em). O token_bruto vai pro cliente; no
-    banco guardamos só hash_refresh(token_bruto)."""
-    settings = get_settings()
-    return _criar_token(usuario_id, "refresh", timedelta(days=settings.refresh_token_exp_dias))
+def criar_refresh_token(usuario_id: int, *, sessao_id: str | None = None) -> tuple[str, str, datetime]:
+    """Retorna (token_bruto, jti, expira_em). No banco vai só hash_refresh(token)."""
+    s = get_settings()
+    return _criar_token(usuario_id, "refresh", timedelta(days=s.refresh_token_exp_dias), extra={"sid": sessao_id})
+
+
+def criar_mfa_token(usuario_id: int, *, dispositivo_hash: str | None) -> tuple[str, str, datetime]:
+    """Token intermediário: a senha confere, falta a prova facial. Só serve em
+    POST /auth/login/mfa e expira em minutos."""
+    s = get_settings()
+    return _criar_token(usuario_id, "mfa", timedelta(minutes=s.mfa_token_exp_min), extra={"dev": dispositivo_hash})
 
 
 def decodificar_token(token: str, tipo_esperado: str) -> dict:
-    """Valida assinatura + expiração e confere o `type`. Levanta jwt.PyJWTError
-    (ou ValueError se o type não bater) -- quem chama traduz pra 401."""
-    payload = jwt.decode(token, _jwt_secret(), algorithms=[get_settings().jwt_algoritmo])
+    """Valida assinatura, algoritmo, exp/nbf, iss, aud e o tipo (cabeçalho e
+    payload). Levanta jwt.PyJWTError ou ValueError -- quem chama traduz pra 401."""
+    s = get_settings()
+    cabecalho = jwt.get_unverified_header(token)
+    if cabecalho.get("typ") != _TYP[tipo_esperado]:
+        raise ValueError(f"Token do tipo errado (esperado {tipo_esperado}).")
+    payload = jwt.decode(
+        token, _jwt_secret(), algorithms=[s.jwt_algoritmo], issuer=s.jwt_issuer, audience=s.jwt_audience,
+        options={"require": ["exp", "iat", "iss", "aud", "sub", "jti"]},
+    )
     if payload.get("type") != tipo_esperado:
         raise ValueError(f"Token do tipo '{payload.get('type')}', esperado '{tipo_esperado}'.")
     return payload
 
 
 def hash_refresh(token: str) -> str:
-    """Hash determinístico (SHA-256) do refresh token, pra guardar/comparar no
-    banco sem armazenar o token em si."""
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+def novo_sessao_id() -> str:
+    return secrets.token_urlsafe(18)
+
+
 # ---------------------------------------------------------------------------
-# Embedding facial cifrado em repouso (LGPD)
+# Template biométrico cifrado em repouso (LGPD: dado sensível)
 # ---------------------------------------------------------------------------
-def cifrar_embedding(embedding: list[float]) -> bytes:
-    bruto = json.dumps(embedding).encode("utf-8")
+def cifrar_embedding(vetor: list[float], modelo: str = "sface") -> bytes:
+    bruto = json.dumps({"m": modelo, "v": [float(x) for x in vetor]}).encode("utf-8")
     return _fernet().encrypt(bruto)
 
 
-def decifrar_embedding(blob: bytes) -> list[float] | None:
+def decifrar_embedding(blob: bytes) -> dict | None:
+    """{"modelo": str, "vetor": list[float]} ou None (chave trocada/corrompido).
+    Templates da v7 eram uma lista pura do Facenet -- marcados como "facenet"."""
     try:
         bruto = _fernet().decrypt(blob)
     except InvalidToken:
-        # Chave trocada (ex: segredo efêmero após reboot) -- não dá pra ler o
-        # template antigo. Trata como "sem biometria" em vez de derrubar a request.
-        logger.error("Falha ao decifrar embedding facial -- chave EMBEDDING_KEY mudou?")
+        logger.error("Falha ao decifrar template facial -- EMBEDDING_KEY mudou?")
         return None
-    return json.loads(bruto.decode("utf-8"))
+    dado = json.loads(bruto.decode("utf-8"))
+    if isinstance(dado, list):
+        return {"modelo": "facenet", "vetor": dado}
+    return {"modelo": dado.get("m", "desconhecido"), "vetor": dado.get("v", [])}

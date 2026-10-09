@@ -64,6 +64,7 @@ from app.repositories.exceptions import (
     EmailDuplicadoError,
     SaldoInsuficienteError,
 )
+from app.repositories.extras import RepositorioExtras
 from app.services.split_service import ResultadoSplit
 
 ZERO = Decimal("0.00")
@@ -77,7 +78,7 @@ def _utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-class Repositorio:
+class Repositorio(RepositorioExtras):
     def __init__(self, session_factory: sessionmaker):
         self._sf = session_factory
 
@@ -96,6 +97,9 @@ class Repositorio:
         papel: Papel = Papel.USUARIO,
         com_carteira: bool = True,
         limites_padrao: Optional[dict] = None,
+        data_nascimento: Optional[date] = None,
+        celular: Optional[str] = None,
+        kyc_status: str = "pendente",
     ) -> dict:
         """Cria a pessoa e (opcional) a carteira PF com os limites padrão, numa
         transação só."""
@@ -103,6 +107,7 @@ class Repositorio:
             u = Usuario(
                 nome=nome, email=email.lower().strip(), cpf=cpf, senha_hash=senha_hash,
                 papel=papel, embedding_facial_cifrado=embedding_cifrado,
+                data_nascimento=data_nascimento, celular=celular, kyc_status=kyc_status,
             )
             s.add(u)
             try:
@@ -179,13 +184,16 @@ class Repositorio:
         verificada_por: str,
         limites_padrao: Optional[dict] = None,
         setor: Optional[str] = None,
+        kyb_status: str = "pendente",
     ) -> dict:
-        """Empresa + carteira PJ + vínculo ADMIN do criador, numa transação."""
+        """Empresa + carteira PJ + vínculo ADMIN do representante legal (quem
+        abriu), numa transação."""
         with self._sf() as s:
             e = Empresa(
                 cnpj=cnpj, razao_social=razao_social, nome_fantasia=nome_fantasia, porte=porte,
                 regime_apuracao=regime_apuracao, cnae=cnae, setor=setor, situacao_cadastral=situacao_cadastral,
                 verificada_em=tempo.agora(), verificada_por=verificada_por,
+                representante_usuario_id=usuario_id, kyb_status=kyb_status,
             )
             s.add(e)
             try:
@@ -196,7 +204,11 @@ class Repositorio:
             carteira = self._nova_carteira(s, TipoPessoa.PJ, empresa_id=e.id)
             if limites_padrao:
                 s.add(Limite(carteira_id=carteira.id, **limites_padrao))
-            s.add(Vinculo(usuario_id=usuario_id, empresa_id=e.id, papel=PapelVinculo.ADMIN, alcada=None))
+            rep = s.get(Usuario, usuario_id)
+            agora = tempo.agora()
+            s.add(Vinculo(usuario_id=usuario_id, empresa_id=e.id, papel=PapelVinculo.ADMIN, alcada=None,
+                          cpf=rep.cpf, nome=rep.nome, email=rep.email, cargo="Representante legal",
+                          status="ativo", ativo=True, aceito_em=agora, status_em=agora))
             s.commit()
             return self._conta_dict(s, carteira)
 
@@ -222,7 +234,7 @@ class Repositorio:
             if v is None:
                 v = Vinculo(usuario_id=usuario_id, empresa_id=empresa_id)
                 s.add(v)
-            v.papel, v.alcada, v.ativo = papel, alcada, True
+            v.papel, v.alcada, v.ativo, v.status = papel, alcada, True, "ativo"
             s.commit()
             s.refresh(v)
             return self._vinculo_dict(v)
@@ -859,9 +871,11 @@ class Repositorio:
     # Operações pendentes (dupla aprovação)
     # =========================================================================
 
-    def criar_pendente(self, *, empresa_id: int, tipo: str, valor: Decimal, payload: dict, criado_por: int) -> dict:
+    def criar_pendente(self, *, empresa_id: int, tipo: str, valor: Decimal, payload: dict, criado_por: int,
+                       descricao: Optional[str] = None, aprovacoes_necessarias: int = 1) -> dict:
         with self._sf() as s:
-            p = OperacaoPendente(empresa_id=empresa_id, tipo=tipo, valor=valor, payload=payload, criado_por_usuario_id=criado_por)
+            p = OperacaoPendente(empresa_id=empresa_id, tipo=tipo, valor=valor, payload=payload, criado_por_usuario_id=criado_por,
+                                 descricao=descricao, aprovacoes_necessarias=aprovacoes_necessarias, aprovacoes=[])
             s.add(p)
             s.commit()
             return self._pendente_dict(p)
@@ -1208,9 +1222,13 @@ class Repositorio:
     # Refresh tokens
     # =========================================================================
 
-    def salvar_refresh(self, *, usuario_id: int, jti: str, token_hash: str, expira_em: datetime) -> None:
+    def salvar_refresh(self, *, usuario_id: int, jti: str, token_hash: str, expira_em: datetime,
+                       sessao_id: Optional[str] = None, dispositivo_id: Optional[int] = None,
+                       ip: Optional[str] = None, user_agent: Optional[str] = None) -> None:
         with self._sf() as s:
-            s.add(RefreshToken(usuario_id=usuario_id, jti=jti, token_hash=token_hash, expira_em=expira_em))
+            s.add(RefreshToken(usuario_id=usuario_id, jti=jti, token_hash=token_hash, expira_em=expira_em,
+                               sessao_id=sessao_id, dispositivo_id=dispositivo_id, ip=ip,
+                               user_agent=(user_agent or "")[:200] or None, criado_em=tempo.agora()))
             s.commit()
 
     def obter_refresh(self, token_hash: str) -> Optional[dict]:
@@ -1219,7 +1237,8 @@ class Repositorio:
             if not rt:
                 return None
             return {"id": rt.id, "usuario_id": rt.usuario_id, "jti": rt.jti, "revogado": rt.revogado,
-                    "expira_em": rt.expira_em, "substituido_por": rt.substituido_por}
+                    "expira_em": rt.expira_em, "substituido_por": rt.substituido_por, "sessao_id": rt.sessao_id,
+                    "dispositivo_id": rt.dispositivo_id, "ip": rt.ip, "user_agent": rt.user_agent}
 
     def revogar_refresh(self, jti: str, substituido_por: Optional[str] = None) -> None:
         with self._sf() as s:
@@ -1265,9 +1284,11 @@ class Repositorio:
                 stmt = stmt.where(SessaoMfa.ip == ip)
             return int(s.scalar(stmt) or 0)
 
-    def registrar_log(self, *, ator: str, acao: str, ip: Optional[str] = None, detalhe: Optional[dict] = None) -> None:
+    def registrar_log(self, *, ator: str, acao: str, ip: Optional[str] = None, detalhe: Optional[dict] = None,
+                      usuario_id: Optional[int] = None, empresa_id: Optional[int] = None) -> None:
         with self._sf() as s:
-            s.add(LogAuditoria(ator=ator, acao=acao, ip=ip, detalhe=detalhe))
+            s.add(LogAuditoria(ator=ator, acao=acao, ip=ip, detalhe=detalhe, usuario_id=usuario_id,
+                               empresa_id=empresa_id, criado_em=tempo.agora()))
             s.commit()
 
     # =========================================================================
@@ -1306,7 +1327,8 @@ class Repositorio:
         return {
             "id": u.id, "nome": u.nome, "email": u.email, "cpf": u.cpf, "senha_hash": u.senha_hash,
             "papel": u.papel.value, "ativo": u.ativo, "tem_biometria": u.embedding_facial_cifrado is not None,
-            "pontos": u.pontos,
+            "pontos": u.pontos, "data_nascimento": u.data_nascimento, "celular": u.celular,
+            "kyc_status": u.kyc_status,
         }
 
     @staticmethod
@@ -1315,14 +1337,20 @@ class Repositorio:
             "id": e.id, "cnpj": e.cnpj, "razao_social": e.razao_social, "nome_fantasia": e.nome_fantasia,
             "porte": e.porte, "regime_apuracao": e.regime_apuracao.value, "cnae": e.cnae, "setor": e.setor,
             "situacao_cadastral": e.situacao_cadastral, "verificada_por": e.verificada_por,
+            "representante_usuario_id": e.representante_usuario_id, "kyb_status": e.kyb_status,
         }
 
     @staticmethod
     def _vinculo_dict(v: Vinculo) -> dict:
         return {
             "id": v.id, "usuario_id": v.usuario_id, "empresa_id": v.empresa_id, "papel": v.papel.value,
-            "alcada": v.alcada, "ativo": v.ativo, "nome": v.usuario.nome if v.usuario else None,
-            "email": v.usuario.email if v.usuario else None,
+            "alcada": v.alcada, "ativo": v.ativo, "status": v.status,
+            "nome": v.usuario.nome if v.usuario else v.nome,
+            "email": v.usuario.email if v.usuario else v.email,
+            "cpf": v.cpf or (v.usuario.cpf if v.usuario else None), "celular": v.celular, "cargo": v.cargo,
+            "criado_por_usuario_id": v.criado_por_usuario_id, "aceito_em": _utc(v.aceito_em),
+            "status_em": _utc(v.status_em), "ultimo_acesso_em": _utc(v.ultimo_acesso_em),
+            "criado_em": _utc(v.criado_em),
         }
 
     @staticmethod
@@ -1337,7 +1365,8 @@ class Repositorio:
 
     @staticmethod
     def _dispositivo_dict(d: Dispositivo) -> dict:
-        return {"id": d.id, "nome": d.nome, "confiavel": d.confiavel, "confiavel_em": _utc(d.confiavel_em),
+        return {"id": d.id, "nome": d.nome, "confiavel": d.confiavel and not d.bloqueado,
+                "confiavel_em": _utc(d.confiavel_em), "bloqueado": d.bloqueado, "bloqueado_em": _utc(d.bloqueado_em),
                 "ultimo_uso": _utc(d.ultimo_uso), "criado_em": _utc(d.criado_em)}
 
     def _transacao_dict(self, s: Session, t: Transacao) -> dict:
@@ -1392,7 +1421,8 @@ class Repositorio:
     def _pendente_dict(p: OperacaoPendente) -> dict:
         return {
             "id": p.id, "empresa_id": p.empresa_id, "tipo": p.tipo, "valor": p.valor, "payload": p.payload,
-            "criado_por_usuario_id": p.criado_por_usuario_id, "status": p.status,
+            "descricao": p.descricao, "criado_por_usuario_id": p.criado_por_usuario_id, "status": p.status,
+            "aprovacoes_necessarias": p.aprovacoes_necessarias or 1, "aprovacoes": list(p.aprovacoes or []),
             "decidido_por_usuario_id": p.decidido_por_usuario_id, "decidido_em": _utc(p.decidido_em),
             "resultado": p.resultado, "criado_em": _utc(p.criado_em),
         }

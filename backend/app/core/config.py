@@ -32,6 +32,12 @@ class Settings(BaseSettings):
     # ---------- JWT ----------
     jwt_secret: str | None = Field(default=None, alias="JWT_SECRET")
     jwt_algoritmo: str = Field(default="HS256", alias="JWT_ALGORITMO")
+    # Emissor e audiência validados em todo token (RFC 8725 §3.8/3.9): um token
+    # emitido para outro serviço com o mesmo segredo não é aceito aqui.
+    jwt_issuer: str = Field(default="astro-api", alias="JWT_ISSUER")
+    jwt_audience: str = Field(default="astro-app", alias="JWT_AUDIENCE")
+    # Token intermediário do login (senha ok, falta o rosto). Curto de propósito.
+    mfa_token_exp_min: int = Field(default=5, alias="MFA_TOKEN_EXP_MIN")
     # Access token curto (minutos): se vazar, a janela de uso é pequena.
     access_token_exp_min: int = Field(default=15, alias="ACCESS_TOKEN_EXP_MIN")
     # Refresh token longo (dias): rotacionado a cada uso (ver auth_service).
@@ -66,6 +72,10 @@ class Settings(BaseSettings):
     # db/models.py:ContaSistema). Em produção ADMIN_SENHA é obrigatória.
     admin_email: str = Field(default="admin@payflow.com.br", alias="ADMIN_EMAIL")
     admin_senha: str | None = Field(default=None, alias="ADMIN_SENHA")
+    # O admin de operação não tem biometria (não é cliente). Para compensar, em
+    # produção ele só entra a partir destes IPs (rede interna/VPN/bastion). Vazio
+    # em produção = login de admin DESLIGADO.
+    admin_ips_permitidos: str = Field(default="", alias="ADMIN_IPS_PERMITIDOS")
 
     # ---------- Limites de Pix (Res. BCB 142/2021 e IN BCB 491/2024) ----------
     # Período noturno: das HORA_INICIO às HORA_FIM (horário de Brasília).
@@ -93,12 +103,54 @@ class Settings(BaseSettings):
     consulta_chave_max_hora: int = Field(default=60, alias="CONSULTA_CHAVE_MAX_HORA")
 
     # ---------- Biometria ----------
-    # Quantas análises faciais (DeepFace) rodam ao mesmo tempo. O resto espera até
+    # Quantas análises faciais rodam ao mesmo tempo. O resto espera até
     # BIOMETRIA_ESPERA_SEG e recebe 503 -- não deixa a biometria ocupar todas as
     # threads da API.
     biometria_concorrencia: int = Field(default=2, alias="BIOMETRIA_CONCORRENCIA")
     biometria_espera_seg: float = Field(default=10.0, alias="BIOMETRIA_ESPERA_SEG")
     desafio_validade_seg: int = Field(default=120, alias="DESAFIO_VALIDADE_SEG")
+    # Motor de reconhecimento: "opencv" (YuNet + SFace + anti-spoof MiniFAS, leve,
+    # sem TensorFlow -- padrão) | "deepface" (legado, pesado). BIOMETRIA_STUB=1
+    # continua desligando tudo nos testes.
+    biometria_motor: str = Field(default="opencv", alias="BIOMETRIA_MOTOR")
+    # Pasta dos modelos (.onnx/.task). Em produção vêm embutidos na imagem Docker
+    # (MODELOS_DOWNLOAD=0); em dev são baixados uma vez e conferidos por SHA-256.
+    modelos_dir: str | None = Field(default=None, alias="MODELOS_DIR")
+    modelos_download: bool = Field(default=True, alias="MODELOS_DOWNLOAD")
+    # Similaridade de cosseno do SFace para "mesma pessoa". O OpenCV publica 0.363
+    # no LFW; num banco preferimos errar para o lado de recusar (falso aceite custa
+    # mais caro que pedir de novo), então o padrão é mais rígido.
+    face_limiar_cosseno: float = Field(default=0.42, alias="FACE_LIMIAR_COSSENO")
+    # Foto de documento é antiga/impressa: o limiar do rosto do documento x selfie é
+    # mais baixo (próximo do CALFW/CPLFW) e o caso vai para análise se ficar na faixa.
+    face_doc_limiar_cosseno: float = Field(default=0.30, alias="FACE_DOC_LIMIAR_COSSENO")
+    # Anti-spoof passivo (MiniFAS): probabilidade mínima de "real". Sem o modelo,
+    # produção recusa subir; dev só avisa.
+    antispoof_limiar: float = Field(default=0.5, alias="ANTISPOOF_LIMIAR")
+
+    # ---------- KYC / documentos ----------
+    # "auto" = Tesseract se o binário existir, senão "sem_ocr" (o documento é
+    # validado e comparado com o rosto, mas o texto vai para análise humana) |
+    # "tesseract" | "stub" (testes: lê o que foi declarado). stub é recusado em produção.
+    documento_provedor: str = Field(default="auto", alias="DOCUMENTO_PROVEDOR")
+    kyc_documento_obrigatorio: bool = Field(default=True, alias="KYC_DOCUMENTO_OBRIGATORIO")
+    documento_max_bytes: int = Field(default=6 * 1024 * 1024, alias="DOCUMENTO_MAX_BYTES")
+    empresa_documento_max_bytes: int = Field(default=10 * 1024 * 1024, alias="EMPRESA_DOCUMENTO_MAX_BYTES")
+
+    # ---------- PJ ----------
+    # Grande empresa: acima deste valor a operação precisa de DUAS aprovações de
+    # pessoas diferentes (além de quem lançou).
+    limite_duas_aprovacoes_reais: float = Field(default=250000.0, alias="LIMITE_DUAS_APROVACOES_REAIS")
+    # MEI pode ter 1 empregado (LC 123/2006, art. 18-C). O PLP 186/2026 propõe 2 --
+    # quando virar lei, basta trocar aqui.
+    mei_max_funcionarios: int = Field(default=1, alias="MEI_MAX_FUNCIONARIOS")
+
+    # ---------- Senha ----------
+    senha_min: int = Field(default=10, alias="SENHA_MIN")
+
+    # ---------- HTTP ----------
+    # /docs e /openapi.json: None = automático (desligado em produção).
+    docs_habilitados: bool | None = Field(default=None, alias="DOCS_HABILITADOS")
 
     # ---------- Consulta de CNPJ ----------
     # "stub" (dev/testes: aceita qualquer CNPJ válido) | "brasilapi" (consulta
@@ -151,8 +203,18 @@ class Settings(BaseSettings):
         return {p.strip() for p in self.proxies_confiaveis.split(",") if p.strip()}
 
     @property
+    def admin_ips_lista(self) -> set[str]:
+        return {p.strip() for p in self.admin_ips_permitidos.split(",") if p.strip()}
+
+    @property
     def em_producao(self) -> bool:
         return self.ambiente.lower() in {"producao", "production", "prod"}
+
+    @property
+    def docs_ligados(self) -> bool:
+        """Swagger/OpenAPI: desligado em produção, a não ser que DOCS_HABILITADOS=1.
+        Não é controle de segurança (as rotas existem igual) -- só reduz exposição."""
+        return self.docs_habilitados if self.docs_habilitados is not None else not self.em_producao
 
 
 @lru_cache
@@ -167,4 +229,10 @@ def get_settings() -> Settings:
         raise RuntimeError("DEPOSITO_DEMO não pode ser usado em produção (cria dinheiro do nada).")
     if s.cnpj_provedor == "stub" and s.em_producao:
         raise RuntimeError("CNPJ_PROVEDOR=stub não pode ser usado em produção (aceita qualquer CNPJ).")
+    if s.documento_provedor == "stub" and s.em_producao:
+        raise RuntimeError("DOCUMENTO_PROVEDOR=stub não pode ser usado em produção (aceita o que foi declarado).")
+    if not s.kyc_documento_obrigatorio and s.em_producao:
+        raise RuntimeError("KYC_DOCUMENTO_OBRIGATORIO=0 não pode ser usado em produção.")
+    if s.biometria_motor not in ("opencv", "deepface"):
+        raise RuntimeError(f"BIOMETRIA_MOTOR desconhecido: {s.biometria_motor!r} (use opencv ou deepface).")
     return s

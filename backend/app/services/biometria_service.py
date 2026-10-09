@@ -1,32 +1,27 @@
 """
 Biometria facial com prova de vida decidida pelo SERVIDOR.
 
-Fluxo (v8 -- prova de vida por landmarks):
-1. O app pede um desafio: POST /biometria/desafios -> {desafio_id, acao, ...}.
-   `acao` é sorteada aqui (piscar | abrir_boca | sorrir | virar_esquerda |
-   virar_direita) e o desafio vale uma vez só, por DESAFIO_VALIDADE_SEG.
-2. O app filma o rosto e manda de 4 a 16 quadros cobrindo a ação (`ProvaBiometrica`).
-3. O servidor confere o desafio (existe, não expirou, não foi usado, é deste
-   usuário); extrai os landmarks de CADA quadro (olhos/boca/giro, via MediaPipe
-   em landmarks_service); decide de forma TEMPORAL se a ação aconteceu
-   (liveness_logic -- ex.: piscar é a transição aberto->fechado->aberto do EAR,
-   não um limiar solto); roda anti-spoofing e compara o rosto com o cadastro.
+Fluxo (v9):
+1. O app pede um desafio: POST /biometria/desafios {modo} -> {desafio_id, passos}.
+   modo "cadastro" = piscar 3x + sorrir + virar p/ os dois lados; "login" = piscar
+   3x. O desafio vale uma vez só, por DESAFIO_VALIDADE_SEG, e fica preso a quem
+   pediu (ou ao login informado).
+2. O app filma e manda de 6 a 40 quadros cobrindo a sequência (`ProvaBiometrica`).
+3. O servidor, com o desafio conferido:
+   a. extrai os landmarks de CADA quadro (MediaPipe) e confere a sequência de
+      forma temporal (liveness_logic) -- rosto em todos os quadros, 3 piscadas
+      reais, giro forte e sustentado...;
+   b. confere que é a MESMA pessoa do começo ao fim (amostra quadros do início,
+      meio e fim) -- trocar de rosto no meio da gravação não passa;
+   c. anti-spoofing passivo (MiniFASNet) nos quadros usados;
+   d. extrai o template (SFace) e, na verificação, compara com o cadastrado.
 
-Por que mudou (a v7 só olhava o giro): virar a cabeça rápido passava e uma foto
-parada também; às vezes aprovava sem rosto claro. Agora exigimos ROSTO EM TODOS
-os quadros e a transição correta do movimento. A checagem no app continua só
-como guia -- quem decide é o servidor, então chamar a API direto não pula nada.
+Por que o servidor e não o app? O app também confere (para guiar a pessoa), mas
+quem chamar a API direto não pula nada. Motores em face_engine (OpenCV leve,
+padrão) -- sem TensorFlow. Concorrência limitada por semáforo; sem vaga em
+BIOMETRIA_ESPERA_SEG, 503.
 
-Motores: MediaPipe Face Landmarker (olhos/boca/giro -> liveness) + DeepFace
-(anti-spoofing MiniFASNet + reconhecimento Facenet). Ambos importados de forma
-preguiçosa: a API e os testes sobem sem eles (modo BIOMETRIA_STUB). A análise
-roda dentro de um semáforo (BIOMETRIA_CONCORRENCIA); sem vaga em
-BIOMETRIA_ESPERA_SEG, 503. O app deve mandar os quadros SEM espelhamento (o
-sinal do yaw depende disso) -- calibre os limiares de liveness_logic num aparelho
-real antes de produção.
-
-Embedding: este módulo devolve o vetor em texto puro; quem cifra/decifra para o
-banco é core/security.py, chamado pelos services.
+O template sai daqui em texto puro; quem cifra/decifra é core/security.py.
 """
 
 import base64
@@ -41,23 +36,19 @@ from fastapi import HTTPException
 
 from app.core import tempo
 from app.core.config import get_settings
-from app.services import landmarks_service, liveness_logic
+from app.services import face_engine, landmarks_service, liveness_logic
 
 logger = logging.getLogger("payflow.biometria")
 
-MODEL_NAME = "Facenet"
-DETECTOR_BACKEND = "opencv"
-DISTANCE_METRIC = "cosine"
-# Os modos (cadastro = sequência completa; login = piscar 3x) e seus passos/
-# limiares moram em liveness_logic -- aqui só orquestramos câmera + IA.
 MODOS = liveness_logic.MODOS
 
-_DATA_URI_RE = re.compile(r"^data:image/\w+;base64,")
+_DATA_URI_RE = re.compile(r"^data:image/[\w.+-]+;base64,")
 _semaforo: threading.BoundedSemaphore | None = None
 _semaforo_lock = threading.Lock()
 
-# Embedding fixo do modo de teste (BIOMETRIA_STUB) -- 128 dims, como o Facenet.
+# Template fixo do modo de teste (BIOMETRIA_STUB).
 _EMBEDDING_STUB = [0.0] * 128
+MODELO_STUB = "stub"
 
 
 # =============================================================================
@@ -71,8 +62,7 @@ def criar_desafio(repo, *, usuario_id: int | None, modo: str = "login") -> dict:
     s = get_settings()
     publico_id = secrets.token_urlsafe(24)
     expira = tempo.agora() + timedelta(seconds=s.desafio_validade_seg)
-    # O MODO vai na coluna `acao` do desafio: o conjunto de passos é fixo por modo
-    # (cadastro = piscar 3x + sorrir + virar p/ os dois lados; login = piscar 3x).
+    # O MODO vai na coluna `acao` do desafio: o conjunto de passos é fixo por modo.
     repo.criar_desafio(publico_id=publico_id, acao=modo, usuario_id=usuario_id, expira_em=expira)
     return {"desafio_id": publico_id, "modo": modo, "passos": liveness_logic.passos_do_modo(modo),
             "expira_em": expira, "quadros_min": liveness_logic.MIN_QUADROS, "quadros_max": 40}
@@ -85,27 +75,15 @@ def _consumir_desafio(repo, desafio_id: str, usuario_id: int | None) -> str:
     if d["expira_em"] < tempo.agora():
         raise HTTPException(status_code=401, detail="Desafio de biometria expirado. Peça um novo.")
     # Cadastro usa desafio anônimo (None == None); verificação exige desafio
-    # pedido pela MESMA pessoa logada -- um desafio anônimo não serve para MFA.
+    # pedido pela MESMA pessoa -- um desafio anônimo não serve para MFA.
     if d["usuario_id"] != usuario_id:
         raise HTTPException(status_code=401, detail="Este desafio de biometria pertence a outra sessão.")
     return d["acao"]
 
 
 # =============================================================================
-# Análise das imagens (DeepFace)
+# Imagem
 # =============================================================================
-
-
-def _carregar_cv2():
-    import cv2
-    import numpy as np
-    return cv2, np
-
-
-def _carregar_deepface():
-    from deepface import DeepFace
-    from deepface.modules import verification
-    return DeepFace, verification
 
 
 def _sem():
@@ -114,79 +92,6 @@ def _sem():
         if _semaforo is None:
             _semaforo = threading.BoundedSemaphore(max(1, get_settings().biometria_concorrencia))
         return _semaforo
-
-
-def _decodificar_imagem(imagem_base64: str):
-    if not imagem_base64 or not imagem_base64.strip():
-        raise HTTPException(status_code=400, detail="Quadro de vídeo vazio.")
-    conteudo = _DATA_URI_RE.sub("", imagem_base64.strip())
-    try:
-        bruto = base64.b64decode(conteudo, validate=True)
-    except (binascii.Error, ValueError):
-        raise HTTPException(status_code=400, detail="Imagem inválida: base64 corrompido.")
-    limite = get_settings().foto_max_bytes
-    if len(bruto) > limite:
-        raise HTTPException(status_code=413, detail=f"Imagem muito grande (máximo {limite // (1024 * 1024)}MB).")
-    cv2, np = _carregar_cv2()
-    imagem = cv2.imdecode(np.frombuffer(bruto, dtype=np.uint8), cv2.IMREAD_COLOR)
-    if imagem is None:
-        raise HTTPException(status_code=400, detail="Imagem inválida: não foi possível decodificar.")
-    return imagem
-
-
-def _rosto_unico_real(imagem) -> dict:
-    DeepFace, _ = _carregar_deepface()
-    try:
-        rostos = DeepFace.extract_faces(img_path=imagem, anti_spoofing=True, detector_backend=DETECTOR_BACKEND)
-    except ValueError as erro:
-        raise HTTPException(status_code=400, detail=f"Não foi possível encontrar o rosto: {erro}")
-    if len(rostos) != 1:
-        raise HTTPException(status_code=400, detail=f"Cada quadro deve ter exatamente 1 rosto (encontrados: {len(rostos)}).")
-    if not rostos[0].get("is_real", False):
-        raise HTTPException(status_code=401, detail="Falha na prova de vida: a imagem parece ser de uma foto ou tela.")
-    return rostos[0]["facial_area"]
-
-
-def _embedding(imagem) -> list[float]:
-    DeepFace, _ = _carregar_deepface()
-    try:
-        reps = DeepFace.represent(img_path=imagem, model_name=MODEL_NAME, detector_backend=DETECTOR_BACKEND)
-    except ValueError as erro:
-        raise HTTPException(status_code=400, detail=f"Não foi possível processar o rosto: {erro}")
-    if len(reps) != 1:
-        raise HTTPException(status_code=400, detail="Cada quadro deve ter exatamente 1 rosto.")
-    return reps[0]["embedding"]
-
-
-def _analisar_sequencia(quadros: list[str], modo: str) -> list[list[float]]:
-    """Prova de vida por LANDMARKS + anti-spoofing + extração do embedding.
-
-    1. extrai os sinais de cada quadro (olhos/boca/giro) com o MediaPipe;
-    2. confere, de forma temporal, se a SEQUÊNCIA do modo aconteceu
-       (liveness_logic) -- exige rosto em todos os quadros, as 3 piscadas, etc.;
-    3. roda anti-spoofing (DeepFace) nos quadros frontais escolhidos (foto/tela
-       reprova) e devolve o(s) embedding(s) para comparação.
-    """
-    cv2, _ = _carregar_cv2()
-    imagens_bgr = [_decodificar_imagem(q) for q in quadros]
-    sinais = [landmarks_service.extrair(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)) for img in imagens_bgr]
-
-    ok, motivo = liveness_logic.verificar_sequencia(sinais, modo)
-    if not ok:
-        raise HTTPException(status_code=401, detail=motivo)
-
-    idxs = liveness_logic.melhores_frontais(sinais, n=2)
-    if not idxs:
-        raise HTTPException(status_code=400, detail="Não foi possível isolar um quadro nítido do rosto. Tente com mais luz.")
-    for i in idxs:
-        _rosto_unico_real(imagens_bgr[i])  # anti-spoofing: reprova foto/tela
-    return [_embedding(imagens_bgr[i]) for i in idxs]
-
-
-def _distancia(a: list[float], b: list[float]) -> tuple[float, float]:
-    _, verification = _carregar_deepface()
-    limite = float(verification.find_threshold(model_name=MODEL_NAME, distance_metric=DISTANCE_METRIC))
-    return float(verification.find_distance(a, b, DISTANCE_METRIC)), limite
 
 
 def _executar(fn, *args):
@@ -200,6 +105,75 @@ def _executar(fn, *args):
         sem.release()
 
 
+def decodificar_imagem(imagem_base64: str, *, limite_bytes: int | None = None):
+    """base64/data URI -> imagem BGR (numpy). Confere tamanho e se decodifica de
+    verdade (não confia no rótulo do data URI)."""
+    if not imagem_base64 or not imagem_base64.strip():
+        raise HTTPException(status_code=400, detail="Imagem vazia.")
+    conteudo = _DATA_URI_RE.sub("", imagem_base64.strip())
+    try:
+        bruto = base64.b64decode(conteudo, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Imagem inválida: base64 corrompido.")
+    limite = limite_bytes or get_settings().foto_max_bytes
+    if len(bruto) > limite:
+        raise HTTPException(status_code=413, detail=f"Imagem muito grande (máximo {limite // (1024 * 1024)}MB).")
+    import cv2
+    import numpy as np
+
+    imagem = cv2.imdecode(np.frombuffer(bruto, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if imagem is None:
+        raise HTTPException(status_code=400, detail="Imagem inválida: não foi possível decodificar.")
+    h, w = imagem.shape[:2]
+    if min(h, w) < 120 or max(h, w) > 6000:
+        raise HTTPException(status_code=400, detail="Resolução de imagem fora do aceito.")
+    return imagem
+
+
+# =============================================================================
+# Análise
+# =============================================================================
+
+
+def _amostras(n: int, frontais: list[int]) -> list[int]:
+    """Quadros usados na checagem de identidade: os frontais + início, meio e fim."""
+    return sorted(set(frontais + [0, n // 2, n - 1]))
+
+
+def _analisar_sequencia(quadros: list[str], modo: str) -> dict:
+    import cv2
+
+    imagens = [decodificar_imagem(q) for q in quadros]
+    sinais = [landmarks_service.extrair(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)) for img in imagens]
+
+    ok, motivo = liveness_logic.verificar_sequencia(sinais, modo)
+    if not ok:
+        raise HTTPException(status_code=401, detail=motivo)
+
+    frontais = liveness_logic.melhores_frontais(sinais, n=2)
+    if not frontais:
+        raise HTTPException(status_code=400, detail="Não foi possível isolar um quadro nítido do rosto. Tente com mais luz.")
+
+    m = face_engine.motor()
+    referencia: list[float] | None = None
+    templates: list[list[float]] = []
+    prob_real_min = 1.0
+    for i in _amostras(len(imagens), frontais):
+        rosto = m.rosto_unico(imagens[i], score_minimo=0.75)
+        real, prob = m.anti_spoof(imagens[i], rosto)
+        prob_real_min = min(prob_real_min, prob)
+        if not real:
+            raise HTTPException(status_code=401, detail="Falha na prova de vida: a imagem parece ser foto, tela ou máscara.")
+        t = m.embedding(imagens[i], rosto)
+        if referencia is None:
+            referencia = t
+        elif m.similaridade(referencia, t) < m.limiar:
+            raise HTTPException(status_code=401, detail="O rosto mudou durante a verificação. Faça tudo sem sair da câmera.")
+        if i in frontais:
+            templates.append(t)
+    return {"templates": templates, "modelo": m.nome, "prob_real_min": round(prob_real_min, 4)}
+
+
 # =============================================================================
 # API do módulo
 # =============================================================================
@@ -210,42 +184,61 @@ def _validar_quadros(quadros: list[str]) -> None:
         raise HTTPException(status_code=400, detail="Envie de 2 a 40 quadros cobrindo a sequência pedida.")
 
 
-def cadastrar(repo, prova, *, usuario_id: int | None = None) -> list[float]:
-    """Cadastro: confere o desafio (que precisa ser de CADASTRO -- a sequência
-    completa), faz a prova de vida e devolve o embedding."""
+def stub_ligado() -> bool:
+    return get_settings().biometria_stub
+
+
+def cadastrar(repo, prova, *, usuario_id: int | None = None) -> dict:
+    """Cadastro: confere o desafio (que precisa ser de CADASTRO), faz a prova de
+    vida e devolve {"vetor", "modelo"}."""
     modo = _consumir_desafio(repo, prova.desafio_id, usuario_id)
     _validar_quadros(prova.quadros)
-    if get_settings().biometria_stub:
+    if stub_ligado():
         logger.warning("BIOMETRIA_STUB ligado -- cadastro NÃO confere o rosto (modo de teste).")
-        return list(_EMBEDDING_STUB)
+        return {"vetor": list(_EMBEDDING_STUB), "modelo": MODELO_STUB}
     if modo != "cadastro":
-        # Impede baixar o nível: usar um desafio curto (login) para abrir conta.
-        raise HTTPException(status_code=400, detail="Peça um desafio de cadastro (sequência completa) para abrir a conta.")
+        # Impede baixar o nível: usar um desafio curto (login) para cadastrar rosto.
+        raise HTTPException(status_code=400, detail="Peça um desafio de cadastro (sequência completa).")
 
-    def _fazer():
-        return _analisar_sequencia(prova.quadros, modo)[0]
-
-    return _executar(_fazer)
+    r = _executar(_analisar_sequencia, prova.quadros, modo)
+    return {"vetor": r["templates"][0], "modelo": r["modelo"], "prob_real_min": r["prob_real_min"]}
 
 
-def verificar(repo, prova, *, usuario_id: int, embedding_cadastrado: list[float]) -> dict:
-    """MFA: confere desafio + prova de vida e compara com o rosto cadastrado.
+def verificar(repo, prova, *, usuario_id: int, template: dict) -> dict:
+    """MFA: confere desafio + prova de vida e compara com o template cadastrado.
     401 genérico se não bater (o número fica só no log)."""
     modo = _consumir_desafio(repo, prova.desafio_id, usuario_id)
     _validar_quadros(prova.quadros)
-    if get_settings().biometria_stub:
+    if stub_ligado():
         logger.warning("BIOMETRIA_STUB ligado -- verificação aprovada SEM conferir o rosto (modo de teste).")
-        return {"verificado": True, "distancia": 0.0, "limite": 0.4, "modelo": "stub", "modo": modo}
+        return {"verificado": True, "similaridade": 1.0, "limiar": 0.0, "modelo": MODELO_STUB, "modo": modo}
 
-    def _fazer():
-        embeddings = _analisar_sequencia(prova.quadros, modo)
-        distancias = [_distancia(e, embedding_cadastrado) for e in embeddings]
-        pior = max(d for d, _ in distancias)
-        limite = distancias[0][1]
-        if pior > limite:
-            logger.info("MFA facial reprovado (pior=%.4f limite=%.4f)", pior, limite)
-            raise HTTPException(status_code=401, detail="Rosto não corresponde ao titular da conta.")
-        return {"verificado": True, "distancia": round(pior, 4), "limite": round(limite, 4),
-                "modelo": MODEL_NAME, "modo": modo}
+    m = face_engine.motor()
+    if template.get("modelo") != m.nome:
+        raise HTTPException(status_code=409, detail="Seu cadastro facial é de uma versão anterior. Refaça a biometria no app.")
 
-    return _executar(_fazer)
+    r = _executar(_analisar_sequencia, prova.quadros, modo)
+    pior = min(m.similaridade(t, template["vetor"]) for t in r["templates"])
+    if pior < m.limiar:
+        logger.info("MFA facial reprovado (similaridade=%.4f limiar=%.4f)", pior, m.limiar)
+        raise HTTPException(status_code=401, detail="Rosto não corresponde ao titular da conta.")
+    return {"verificado": True, "similaridade": round(pior, 4), "limiar": m.limiar, "modelo": m.nome,
+            "modo": modo, "prob_real_min": r["prob_real_min"]}
+
+
+def template_de_documento(imagem_bgr) -> list[float] | None:
+    """Template do rosto impresso num documento (foto 3x4 da CNH/RG/CIN). None se
+    não achar exatamente um rosto. Limiares de detecção mais baixos: a foto do
+    documento é pequena e impressa."""
+    if stub_ligado():
+        return None
+    m = face_engine.motor()
+    try:
+        rosto = m.rosto_unico(imagem_bgr, score_minimo=0.6, minimo_px=24)
+    except HTTPException:
+        return None
+    return m.embedding(imagem_bgr, rosto)
+
+
+def similaridade(a: list[float], b: list[float]) -> float:
+    return face_engine.motor().similaridade(a, b)
