@@ -1,7 +1,8 @@
 # HANDOFF v9 — Astro (segurança, login 2 fatores, KYC, PJ por porte)
 
 > Documento para continuar o trabalho em outra sessão do Claude Code.
-> Escrito em 09/10/2026, no meio da implementação. **Leia a seção "Estado" antes de tudo.**
+> Escrito em 09/10/2026, no meio da implementação; **atualizado no mesmo dia (2ª sessão)**.
+> **Leia a seção "Estado" antes de tudo.**
 
 ## 0. Regras do dono do projeto (Alef) — seguir sempre
 
@@ -22,13 +23,17 @@
 | Parte | Situação |
 |---|---|
 | Backend — código novo (abaixo) | **escrito**, importa e sobe |
-| Backend — testes | **QUEBRADOS** (≈ metade falha). Causa conhecida: os helpers de teste usam a senha `senha12345` (agora barrada pela política) e o login antigo de 1 etapa. Ver passo 1 da seção 5. |
-| Migração Alembic do esquema v9 | **NÃO escrita**. SQLite/dev funciona (create_all). **Postgres de produção quebra** até escrever. |
-| Frontend (`app/`) | **NÃO adaptado** ao backend novo. Em modo API o login do app QUEBRA (ele espera tokens em `/auth/login`). Modo demo (sem `VITE_API_URL`) segue funcionando. |
-| Branch `origin/fix/pj-login-facial` | **não mesclada** (o `git merge` foi bloqueado pelo classificador do Claude Code). Ela tira o certificado digital do login PJ — mesclar (pedir permissão) ou reaplicar na reescrita do `login.tsx`/`criar-conta.tsx`. |
-| Infra Azure / SECURITY.md / AZURE.md | **não feitos** (pesquisa feita, ver seção 4). |
+| Backend — testes | ✅ **149 passando** (eram ~60 falhas). Helpers com senha forte e login em 2 etapas; `tests/test_v9_seguranca.py` com 32 testes novos (2FA, sessões, bloqueio de aparelho, convite por CPF, MEI/GRANDE, 2 aprovações, folha, KYC, MRZ, senha, headers). |
+| Migração Alembic do esquema v9 | ✅ `f9a1b2c3d4e5` escrita e **testada em SQLite e Postgres 16** (banco vazio até o head, upgrade com dados, `alembic check` limpo, downgrade/upgrade). |
+| Migração v7 no Postgres | ✅ **corrigida**: num banco vazio, `alembic upgrade head` quebrava (`type "papel_usuario" does not exist`), ver seção 7. |
+| Frontend (`app/`) | 🟡 **login 2 fatores, cadastro com KYC, equipe/convites/aprovações** ligados ao v9 (e2e passou). **Faltam** telas de folha, segurança (aparelhos/sessões/atividade) e auditoria. |
+| Branch `origin/fix/pj-login-facial` | ✅ mesclada localmente (`c84a553`) e reescrita por cima no login/cadastro. |
+| Push para o GitHub | ⬜ **não feito**: os commits estão só no clone local (`Desktop/payment/astro`). Subir quando o Alef pedir. |
+| Infra Azure / SECURITY.md / AZURE.md | ⬜ **não feitos** (pesquisa feita, ver seção 4). |
 
-Commits anteriores desta frente: `6d225cf` (prova de vida multi-passo: piscar 3x/sorrir/virar + overlay de debug no app).
+Commits desta frente: `6d225cf` (prova de vida multi-passo), `f7c573c` (WIP v9), e na 2ª sessão
+`2a3be2c` (testes), `08125ed` (migração + correção v7), `c84a553` (merge), `cf8fc8e` (login/cadastro),
+`2cc72a0` (equipe/convites/aprovações).
 
 ## 2. O que foi feito nesta rodada (backend)
 
@@ -114,23 +119,24 @@ Erros: application/problem+json {type,title,status,detail,request_id,(erros)}
 
 ## 5. Próximos passos (nesta ordem)
 
-1. **Consertar os testes** (`backend/tests`):
-   - `helpers.py`: trocar `senha12345` por uma senha forte (ex.: `Cofre-Astro#2026`) em todos os testes; `login()` em 2 etapas (`/auth/login` → `/auth/login/mfa` com `{desafio_id: r["desafio"]["desafio_id"], quadros: QUADROS}` e o MESMO `X-Dispositivo-Id`).
-   - `conftest.py`: `KYC_DOCUMENTO_OBRIGATORIO=0`, `DOCUMENTO_PROVEDOR=stub`.
-   - Reescrever testes que usam o token de um aparelho com header de outro (agora dá 401 — é o comportamento certo): `test_auth.py::test_desafio_de_outra_pessoa_nao_serve`, `test_pj.py::test_consulta_por_numero_de_conta_e_aparelho_atual`, `test_transferencias.py::test_aparelho_novo_limita_…` (fazer login no aparelho novo, ou marcar o aparelho como não confiável via repositório para testar o limite).
-   - Reescrever `test_beneficios.py::test_login_com_biometria` (endpoint removido) como teste do 2FA; `test_login_por_cpf` espera agora `mfa_requerido`.
-   - Testes novos: 2FA (sem rosto não loga; mfa_token de outro aparelho; mfa reuso), token preso ao aparelho, encerrar sessão derruba access, bloquear aparelho, convite por CPF + aceite + suspender/revogar + último admin, MEI só operador/consulta, GRANDE 4 olhos e 2 aprovações, folha só para funcionário com conta PF, KYC (stub aprova; CPF diferente reprova), `ler_mrz`/`encontrar_cpfs`/`nome_confere`, `arquivos.validar_arquivo` (PDF com /JavaScript recusado), política de senha, cabeçalhos de segurança e problem+json.
-2. **Migração Alembic** `backend/alembic/versions/<novo>_v9_seguranca_kyc_pj.py` com tudo da seção "Banco" (no SQLite usar `batch_alter_table`; `vinculos.usuario_id` vira nullable; nova unique `(empresa_id, cpf)`; preencher `status='ativo'`, `cpf/nome/email` dos vínculos existentes a partir de `usuarios`).
-3. **Frontend** (`app/`):
-   - `lib/api.ts` + `lib/types.ts`: login 2 etapas (`login()` devolve `mfa_requerido` → abrir `LivenessCheck modo="login"` → `/auth/login/mfa`), `registrar()` com nascimento/celular/documento, equipe nova (convite por CPF, PATCH, suspender/reativar/revogar), convites recebidos, funcionários/folha, sessões, aparelhos (bloquear), atividade/auditoria, KYC, política da empresa. Ler erro `detail` (continua igual).
-   - `routes/login.tsx`: senha → rosto (piscar 3x); remover "entrar com biometria" sozinho e o certificado digital (intenção da branch `fix/pj-login-facial`).
-   - `routes/criar-conta.tsx`: wizard PF (dados → documento com câmera traseira/upload → prova de vida de cadastro) e PJ (CNPJ/porte/regime → documentos da empresa; representante = pessoa logada com KYC).
-   - `routes/_app.equipe.tsx`: lista com status, CPF mascarado, detalhe (papel, alçada, último acesso), ações; banner da política do porte.
-   - Novas telas: convites recebidos, folha, segurança (aparelhos/sessões/atividade), auditoria da empresa; `_app.pendentes.tsx` mostrar aprovações x/y, tipo, quem criou.
-   - Modo demo: ou mock simples, ou mensagem "disponível com o servidor".
-   - Rodar `npx tsc --noEmit` e `npx eslint` (tsc é estrito).
-4. **Infra/Azure**: Dockerfile endurecido (python:3.12-slim, usuário não-root, `tesseract-ocr tesseract-ocr-por libgl1`, `python -m app.core.modelos baixar` no build, `MODELOS_DOWNLOAD=0`, uvicorn `--proxy-headers --no-server-header`), `infra/azure/main.bicep` (Container Apps + ACR + Key Vault RBAC + identidade gerenciada + Postgres Flexible com Entra/private access + Log Analytics; SPA no Static Web Apps), workflow GitHub Actions com OIDC (`azure/login`, sem segredo), `AZURE.md`, `SECURITY.md` (controles × OWASP API Top 10 / ASVS, roteiro de pentest).
-5. Docs: atualizar `.env.example` com as variáveis novas; `COMO-RODAR-REMOTO.md` (local, não versionado) com `opencv-contrib-python` + mediapipe.
+Feitos na 2ª sessão (09/10): ~~1. testes~~, ~~2. migração~~, e do item 3: login 2 etapas, cadastro com
+KYC (nascimento, celular, foto do documento, documento da empresa), equipe por CPF, convites recebidos
+(`/convites`) e aprovações com N aprovadores. Detalhes na seção 7.
+
+1. **Frontend — o que falta do item 3** (`app/`):
+   - `lib/api.ts`: funcionários/folha (`GET|POST|DELETE /empresas/atual/funcionarios`,
+     `POST /empresas/atual/folha/pagar` — só `funcionario_id`, o servidor resolve o destino), sessões
+     (`GET /auth/sessoes`, `DELETE /auth/sessoes/{sid}`, `POST /auth/sessoes/encerrar-outras`), aparelhos
+     (`GET /seguranca/dispositivos`, `POST …/{id}/bloquear`, `POST …/{id}/desbloquear` com rosto),
+     atividade (`GET /seguranca/atividade`), auditoria (`GET /empresas/atual/auditoria`), KYC
+     (`GET /identidade/kyc`, `POST /identidade/documentos` — para quem ficou `pendente`/`em_analise`).
+   - Telas novas: folha (PJ), segurança (aparelhos/sessões/atividade — fluxo "celular roubado"), auditoria
+     (PJ), e no perfil o status do KYC com botão para reenviar documento.
+   - Equipe: alterar papel/alçada de quem já está ativo (`PATCH /empresas/atual/vinculos/{id}`, com rosto
+     quando dá mais poder). Hoje dá para suspender/reativar/encerrar, não editar.
+   - Testar o login e o cadastro **num celular de verdade** (câmera traseira no documento, prova de vida).
+2. **Infra/Azure**: Dockerfile endurecido (python:3.12-slim, usuário não-root, `tesseract-ocr tesseract-ocr-por libgl1`, `python -m app.core.modelos baixar` no build, `MODELOS_DOWNLOAD=0`, uvicorn `--proxy-headers --no-server-header`), `infra/azure/main.bicep` (Container Apps + ACR + Key Vault RBAC + identidade gerenciada + Postgres Flexible com Entra/private access + Log Analytics; SPA no Static Web Apps), workflow GitHub Actions com OIDC (`azure/login`, sem segredo), `AZURE.md`, `SECURITY.md` (controles × OWASP API Top 10 / ASVS, roteiro de pentest).
+3. Docs: atualizar `.env.example` com as variáveis novas; `COMO-RODAR-REMOTO.md` (local, não versionado) com `opencv-contrib-python` + mediapipe.
 
 ## 6. Ambiente / como rodar
 
@@ -141,3 +147,31 @@ Erros: application/problem+json {type,title,status,detail,request_id,(erros)}
 - Biometria real local: `BIOMETRIA_STUB=0` (padrão do .env deve ser 0 fora dos testes).
 - Tesseract no Windows: instalar o binário (UB-Mannheim) + idioma `por`, ou definir `TESSERACT_CMD`. Sem ele, `DOCUMENTO_PROVEDOR=auto` cai para `sem_ocr` (documento vai para análise humana).
 - App: `cd app && npm run dev` (porta 8081). `VITE_API_URL=http://localhost:8000` para modo API.
+- e2e do app contra o backend (2 cenários: cadastro PF+PJ; convite por CPF → aceite → pendente → aprovação):
+  backend com `BIOMETRIA_STUB=1 CNPJ_PROVEDOR=stub KYC_DOCUMENTO_OBRIGATORIO=0 DOCUMENTO_PROVEDOR=stub DEPOSITO_DEMO=1`
+  em `--port 8765` e `VITE_API_URL=http://localhost:8765 npx vitest run src/lib/api.e2e.test.ts`.
+- **eslint no Windows**: com `core.autocrlf=true` o checkout vira CRLF e o prettier acusa `␍` em todo arquivo.
+  Não é erro de código: rode `npx eslint . --rule 'prettier/prettier: off'` (0 erros hoje) e formate só o
+  que mexer com `npx prettier --write --end-of-line lf <arquivos>`.
+
+## 7. O que a 2ª sessão descobriu (09/10)
+
+- **Bug no Postgres (v7)**: o Alembic guarda em `impl.memo["pg_enum"]`, durante TODO o `upgrade`, os ENUMs
+  que já criou. Num banco vazio, a v6 cria `papel_usuario`/`tipo_pessoa`/`auth_metodo`, a v7 apaga e o
+  `create_table` da v7 achava que eles ainda existiam. Corrigido na v7 (esquece os tipos apagados). Era o
+  que aconteceria no primeiro deploy num Postgres novo (Render/Azure).
+- **Bug no aceite de convite**: `aceitar_convite` fazia UPDATE em massa e relia o objeto antigo da sessão
+  (`expire_on_commit=False`), devolvendo `status: pendente`. Corrigido com `populate_existing`.
+- **Bug na conta GRANDE**: aprovar mudança de acesso dava `TypeError` (`_log(..., acao=...)` duplicado), então
+  os 4 olhos nunca concluíam. Corrigido.
+- **Bug no app**: o desafio de cadastro ia com o token de quem estava logado no navegador, e o `POST /usuarios`
+  recusava. Cadastro agora vai sem credenciais (`postAnonimo`).
+- **Relógio nos testes**: o JWT usa o relógio real (o PyJWT exige) e a validade da sessão no banco é conferida
+  com `tempo.agora()` (simulado nos testes). Teste que pula muitos dias precisa de `refresh_token_exp_dias`
+  maior (ver `test_pix_automatico`). Em produção os dois relógios são o mesmo.
+- **Comportamentos novos que os testes antigos não previam** (corretos): token preso ao aparelho (header de
+  outro aparelho = 401); o login com rosto já confia no aparelho, então o limite de "aparelho novo"
+  (R$ 200/R$ 1.000) só vale para aparelho que perdeu a confiança; `confiar` em aparelho já confiável não
+  confere o rosto (retorna direto).
+- Postgres local sem admin/Docker: `pip install pgserver` no venv dá um Postgres 16 embutido (usado para
+  testar as migrações; não está no `requirements.txt`).
