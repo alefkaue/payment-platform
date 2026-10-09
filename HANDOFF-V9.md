@@ -147,6 +147,13 @@ KYC (nascimento, celular, foto do documento, documento da empresa), equipe por C
 - Biometria real local: `BIOMETRIA_STUB=0` (padrão do .env deve ser 0 fora dos testes).
 - Tesseract no Windows: instalar o binário (UB-Mannheim) + idioma `por`, ou definir `TESSERACT_CMD`. Sem ele, `DOCUMENTO_PROVEDOR=auto` cai para `sem_ocr` (documento vai para análise humana).
 - App: `cd app && npm run dev` (porta 8081). `VITE_API_URL=http://localhost:8000` para modo API.
+- **Rodar para testar no PC com biometria de verdade** (como foi feito em 09/10):
+  `.venv/Scripts/python.exe -m app.core.modelos baixar` uma vez e, no `backend/`,
+  `DATABASE_URL=sqlite:///./astro-teste.db JWT_SECRET=<qualquer> EMBEDDING_KEY=<fernet> AMBIENTE=desenvolvimento
+  BIOMETRIA_STUB=0 BIOMETRIA_MOTOR=opencv CNPJ_PROVEDOR=stub KYC_DOCUMENTO_OBRIGATORIO=1 DOCUMENTO_PROVEDOR=auto
+  DEPOSITO_DEMO=1 uvicorn app.main:app --port 8000`; no `app/`, `VITE_API_URL=http://localhost:8000 npm run dev -- --port 8081`.
+  Sem Tesseract o documento fica "em análise" (não bloqueia). O overlay de debug da câmera está ligado
+  (`DEBUG_OVERLAY` em `liveness.tsx`). **Biometria real ainda não validada por uma pessoa** — primeiro teste foi este.
 - e2e do app contra o backend (2 cenários: cadastro PF+PJ; convite por CPF → aceite → pendente → aprovação):
   backend com `BIOMETRIA_STUB=1 CNPJ_PROVEDOR=stub KYC_DOCUMENTO_OBRIGATORIO=0 DOCUMENTO_PROVEDOR=stub DEPOSITO_DEMO=1`
   em `--port 8765` e `VITE_API_URL=http://localhost:8765 npx vitest run src/lib/api.e2e.test.ts`.

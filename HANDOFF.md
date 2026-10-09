@@ -2,8 +2,8 @@
 
 Documento de passagem de bastão: o que já foi feito, como rodar, as decisões
 tomadas e **o que falta**. Complementa o `PLANO.md` (plano de produto).
-Última atualização: 2026-10-07 (rebrand PayFlow → **Astro**: nome, logo, cores,
-ícones e fotos da tela inicial — ver §11; antes: sprint de front, ver §10).
+Última atualização: 2026-10-09 (**v9**: login em 2 fatores, KYC, PJ por porte — o estado
+atual e os próximos passos estão no **`HANDOFF-V9.md`**; resumo em §13).
 
 ---
 
@@ -482,3 +482,23 @@ Marina (roteiro da apresentação). Conta nova começa vazia (sem dados da Rodof
 Testes: backend 108 (novos `test_pix_chaves.py`, `test_deposito_demo.py`); app
 `src/lib/demo.test.ts` (cadastro, login, chaves, Pix entre contas, conta nova vazia).
 
+---
+
+## 13. v9 — segurança, login 2 fatores, KYC e PJ por porte (2026-10-09)
+
+**O documento de referência agora é o `HANDOFF-V9.md`** (estado, contrato da API, próximos passos).
+Resumo do que mudou desde a §12:
+
+- **Login = senha + rosto, sempre.** `POST /auth/login` devolve `mfa_token` + desafio; a sessão só nasce em
+  `POST /auth/login/mfa` com a prova de vida (piscar 3x). Token e refresh presos ao aparelho.
+- **Biometria sem TensorFlow** (OpenCV YuNet + SFace + anti-spoof MiniFASNet + MediaPipe), modelos com
+  SHA-256 fixado.
+- **KYC/KYB**: cadastro com nascimento, celular e foto do documento (OCR quando há Tesseract; senão vai para
+  análise humana); empresa com contrato social/CCMEI/cartão CNPJ.
+- **PJ por porte (MEI/PME/Grande)**: convite por CPF que a própria pessoa aceita com o rosto, alçadas,
+  4 olhos na gestão de acesso e 2 aprovações acima do limite na grande empresa; folha só para funcionário.
+- **2ª sessão (09/10)**: testes do backend consertados (149 passando), migração v9 escrita e testada em
+  SQLite e Postgres, **corrigido o `alembic upgrade head` que quebrava num Postgres vazio** (migração v7),
+  app ligado ao v9 (login, cadastro com KYC, equipe, convites, aprovações) e o merge de
+  `fix/pj-login-facial` (sem certificado digital no login PJ).
+- Falta: telas de folha, segurança (aparelhos/sessões) e auditoria; infra Azure; `SECURITY.md`.
