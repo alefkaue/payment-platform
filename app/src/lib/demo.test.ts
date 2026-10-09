@@ -10,6 +10,8 @@ import {
   listarFaturas,
   notificacoes,
   pendentes,
+  concluirCadastro,
+  concluirLogin,
   criarChave,
   depositar,
   login,
@@ -22,8 +24,18 @@ import {
 } from "./api";
 
 const bio = { desafio_id: "demo", quadros: [] };
-const cadastrar = (nome: string, email: string, cpf: string) =>
-  registrar({ nome, email, senha: "senha12345", cpf, biometria: bio });
+const dados = { data_nascimento: "1990-05-04", celular: "11987654321", documento: null };
+const SENHA = "Cofre-Astro#2026";
+
+/** Login em 2 etapas: senha -> rosto (na demonstração o rosto é simulado). */
+async function entrar(email: string, senha = SENHA) {
+  return concluirLogin(await login({ email, senha }), bio);
+}
+
+async function cadastrar(nome: string, email: string, cpf: string) {
+  const c = await registrar({ nome, email, senha: SENHA, cpf, biometria: bio, ...dados });
+  return (await concluirCadastro(c.etapa, bio)).resposta;
+}
 
 describe("modo demonstração", () => {
   beforeEach(() => localStorage.clear());
@@ -31,7 +43,7 @@ describe("modo demonstração", () => {
   it("o cadastro guarda o e-mail e o CPF de quem se cadastrou (não a Marina)", async () => {
     const r = await cadastrar("Ana Souza", "Ana@Exemplo.com", "111.444.777-35");
     expect(r.pessoa).toEqual({ nome: "Ana Souza", email: "ana@exemplo.com", cpf: "11144477735" });
-    const de_novo = await login({ email: "ana@exemplo.com", senha: "senha12345" });
+    const de_novo = await entrar("ana@exemplo.com");
     expect(de_novo.pessoa?.email).toBe("ana@exemplo.com");
     expect(de_novo.conta.nome).toBe("Ana Souza");
     await expect(login({ email: "ana@exemplo.com", senha: "errada123" })).rejects.toThrow(
@@ -72,7 +84,7 @@ describe("modo demonstração", () => {
     expect((await minhaConta()).saldo).toBe(60);
     expect(ana.conta.nome).toBe("Ana Souza");
 
-    await login({ email: "bia@exemplo.com", senha: "senha12345" });
+    await entrar("bia@exemplo.com");
     expect((await minhaConta()).saldo).toBe(40);
     const ts = await transacoes();
     expect(ts).toHaveLength(4);
@@ -90,26 +102,31 @@ describe("modo demonstração", () => {
   }, 20_000);
 
   it("e-mail desconhecido continua entrando na conta da demonstração (Marina)", async () => {
-    const r = await login({ email: "qualquer@exemplo.com", senha: "x" });
+    const etapa = await login({ email: "qualquer@exemplo.com", senha: "x" });
+    expect(etapa.desafio.passos.map((p) => p.id)).toEqual(["piscar3"]); // 2º fator: o rosto
+    const r = await concluirLogin(etapa, bio);
     expect(r.conta.nome).toBe("Marina Alves");
     expect(r.contas.map((c) => c.tipo)).toEqual(["PF", "PJ"]);
     expect((await consultarDestino("marina@email.com")).nome).toBe("Marina Alves");
   }, 20_000);
 
   it("empresa recém-criada começa vazia (não herda dados da Rodoforte)", async () => {
-    const r = await registrar({
+    const empresa = {
+      cnpj: "11222333000181",
+      nome_fantasia: "Dias Peças",
+      porte: "PME" as const,
+      regime_apuracao: "simples" as const,
+    };
+    const c = await registrar({
       nome: "Carla Dias",
       email: "carla@exemplo.com",
-      senha: "senha12345",
+      senha: SENHA,
       cpf: "39053344705",
       biometria: bio,
-      empresa: {
-        cnpj: "11222333000181",
-        nome_fantasia: "Dias Peças",
-        porte: "PME",
-        regime_apuracao: "simples",
-      },
+      ...dados,
+      empresa,
     });
+    const r = (await concluirCadastro(c.etapa, bio, empresa)).resposta;
     const pj = r.contas.find((c) => c.tipo === "PJ")!;
     expect(pj.cnpj).toBe("11.222.333/0001-81");
     const { selecionarConta } = await import("./api");

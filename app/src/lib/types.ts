@@ -166,21 +166,61 @@ export interface LoginResposta {
   conta: Conta;
   pessoa?: Pessoa;
 }
+/**
+ * Etapa 1 do login (senha conferida). Falta o 2º fator: o rosto, com o desafio
+ * que veio junto. Nenhum token de acesso existe até a etapa 2.
+ */
+export interface LoginEtapaMfa {
+  mfa_token: string;
+  desafio: Desafio;
+}
+
+/** Documento de identidade para o KYC (imagens em data URL/base64). */
+export type TipoDocumentoPessoa = "rg" | "cnh" | "cin" | "passaporte";
+export interface DocumentoIdentidade {
+  tipo: TipoDocumentoPessoa;
+  frente: string;
+  verso?: string;
+}
+/** Resultado da conferência do documento: em análise = vai para uma pessoa revisar. */
+export interface KycResultado {
+  status: "aprovado" | "em_analise" | "reprovado" | "pendente";
+  motivos: string[];
+}
+
+export type TipoDocumentoEmpresa =
+  "contrato_social" | "ccmei" | "cartao_cnpj" | "procuracao" | "outro";
+export interface DocumentoEmpresa {
+  tipo: TipoDocumentoEmpresa;
+  /** PDF ou imagem em data URL/base64. */
+  arquivo: string;
+}
+
 export interface EmpresaPayload {
   cnpj: string;
   nome_fantasia?: string;
   porte: PortePJ;
   regime_apuracao: RegimeApuracao;
   setor?: string;
+  documentos?: DocumentoEmpresa[];
 }
 export interface RegistrarPayload {
   nome: string;
   email: string;
   senha: string;
   cpf: string;
+  /** AAAA-MM-DD. */
+  data_nascimento: string;
+  celular: string;
+  documento: DocumentoIdentidade | null;
   biometria: ProvaBiometrica;
   /** Abrir também a conta da empresa (a pessoa vira admin dela). */
   empresa?: EmpresaPayload;
+}
+/** Cadastro feito: falta entrar (senha já conferida; o rosto do login vem a seguir). */
+export interface CadastroResposta {
+  etapa: LoginEtapaMfa;
+  kyc: KycResultado;
 }
 export interface TransferirPayload {
   destino: DestinoRef;

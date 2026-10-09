@@ -31,22 +31,42 @@ function cnpjValido(): string {
   return [...n, d1, d2].join("");
 }
 
-describe.runIf(Boolean(URL_API))("api.ts contra o backend v7", () => {
+// O backend precisa rodar também com KYC_DOCUMENTO_OBRIGATORIO=0 e
+// DOCUMENTO_PROVEDOR=stub (o teste não manda foto de documento).
+describe.runIf(Boolean(URL_API))("api.ts contra o backend v9", () => {
   it("cadastra pessoa + empresa, troca de conta, cria chave e transfere", async () => {
     const api = await import("./api");
     expect(api.MODO_API).toBe(true);
     const sufixo = Date.now();
-    const desafio = await api.pedirDesafio();
-    const r = await api.registrar({
+    const quadros = ["YQ==", "Yg=="];
+    const desafio = await api.pedirDesafio("cadastro");
+    const empresa = {
+      cnpj: cnpjValido(),
+      porte: "PME" as const,
+      regime_apuracao: "regular" as const,
+      nome_fantasia: "E2E Ltda",
+    };
+    const c = await api.registrar({
       nome: "Teste Ponta",
       email: `e2e${sufixo}@ex.com`,
-      senha: "senha12345",
+      senha: "Cofre-Astro#2026",
       cpf: cpfValido(),
-      biometria: { desafio_id: desafio.desafio_id, quadros: ["YQ==", "Yg=="] },
-      empresa: { cnpj: cnpjValido(), porte: "PME", regime_apuracao: "regular", nome_fantasia: "E2E Ltda" },
+      data_nascimento: "1990-05-04",
+      celular: "11987654321",
+      documento: null,
+      biometria: { desafio_id: desafio.desafio_id, quadros },
     });
-    expect(r.contas.map((c) => c.tipo).sort()).toEqual(["PF", "PJ"]);
-    expect(r.conta.saldo).toBe(0);
+    // Sem o rosto não há sessão: a etapa 1 só devolve o desafio do login.
+    expect(c.etapa.desafio.modo).toBe("login");
+    const { resposta: r, erroEmpresa } = await api.concluirCadastro(
+      c.etapa,
+      { desafio_id: c.etapa.desafio.desafio_id, quadros },
+      empresa,
+    );
+    expect(erroEmpresa).toBeUndefined();
+    expect(r.contas.map((x) => x.tipo).sort()).toEqual(["PF", "PJ"]);
+    api.selecionarConta(r.contas.find((x) => x.tipo === "PF")!);
+    expect((await api.minhaConta()).saldo).toBe(0);
 
     const chave = await api.criarChave("aleatoria");
     const destino = await api.consultarDestino(chave.valor);

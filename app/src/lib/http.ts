@@ -84,9 +84,10 @@ export const num = (v: string | number | null | undefined): number => (v == null
 
 async function renovar(): Promise<boolean> {
   if (!tokens?.refresh_token) return false;
+  // A sessão é presa ao aparelho: o refresh só vale com o mesmo X-Dispositivo-Id.
   const r = await fetch(`${API_URL}/auth/refresh`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-Dispositivo-Id": dispositivoId() },
     body: JSON.stringify({ refresh_token: tokens.refresh_token }),
   });
   if (!r.ok) {
@@ -103,7 +104,7 @@ export interface Resposta<T> {
 }
 
 export async function requisitar<T>(
-  metodo: "GET" | "POST" | "PUT" | "DELETE",
+  metodo: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   caminho: string,
   corpo?: unknown,
   tentouRenovar = false,
@@ -154,4 +155,12 @@ export async function get<T>(caminho: string): Promise<T> {
 
 export async function post<T>(caminho: string, corpo?: unknown): Promise<T> {
   return (await requisitar<T>("POST", caminho, corpo ?? {})).dados;
+}
+
+export async function patch<T>(caminho: string, corpo: unknown): Promise<T> {
+  return (await requisitar<T>("PATCH", caminho, corpo)).dados;
+}
+
+export async function del<T>(caminho: string): Promise<T> {
+  return (await requisitar<T>("DELETE", caminho)).dados;
 }

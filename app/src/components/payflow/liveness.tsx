@@ -14,8 +14,8 @@ import type {
  * em VÁRIOS PASSOS.
  *
  * - modo "cadastro": piscar 3x -> sorrir -> virar p/ esquerda -> virar p/ direita.
- * - modo "login": só piscar 3x (mais rápido; no celular normalmente usa a
- *   biometria do aparelho, mas pela câmera o faceless continua).
+ * - modo "login": só piscar 3x (mais rápido). É o 2º fator do login: o desafio
+ *   vem pronto da etapa da senha (POST /auth/login) e é passado em `desafio`.
  *
  * Para cada passo guiamos a pessoa, detectamos o movimento com o FaceLandmarker
  * (MediaPipe) + blendshapes e guardamos os quadros DAQUELE passo (sem
@@ -152,13 +152,13 @@ function capturar(v: HTMLVideoElement): string {
 export function LivenessCheck({
   onSuccess,
   onClose,
-  login,
+  desafio: desafioPronto,
   modo = "login",
 }: {
   onSuccess: (prova: ProvaBiometrica) => void;
   onClose: () => void;
-  /** Para ENTRAR com biometria: o desafio fica preso a este e-mail/CPF. */
-  login?: string;
+  /** Desafio já emitido pelo servidor (o do login vem junto com o mfa_token). */
+  desafio?: Desafio;
   /** "cadastro" = sequência completa; "login" = só piscar 3x. */
   modo?: ModoBiometria;
 }) {
@@ -225,7 +225,7 @@ export function LivenessCheck({
 
     async function iniciar() {
       try {
-        const d = await pedirDesafio(login, modo);
+        const d = desafioPronto ?? (await pedirDesafio(modo));
         if (parar) return;
         desafioLocal = d;
         passos = d.passos;
@@ -354,7 +354,9 @@ export function LivenessCheck({
       stream?.getTracks().forEach((t) => t.stop());
       landmarker?.close();
     };
-  }, [login, modo]);
+    // Recomeça só quando muda o desafio (nova tentativa) ou o modo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desafioPronto?.desafio_id, modo]);
 
   const passoAtual = desafio?.passos[Math.min(passoIdx, desafio.passos.length - 1)];
   const instrucao = passoAtual?.instrucao ?? "Preparando…";

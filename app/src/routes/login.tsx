@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Fingerprint, ScanFace } from "lucide-react";
-import { aparelhoAtual, confiarAparelho, login, loginBiometria, MODO_API } from "@/lib/api";
+import { ScanFace } from "lucide-react";
+import { concluirLogin, login, MODO_API, novoDesafioLogin } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { LoginResposta } from "@/lib/types";
+import type { LoginEtapaMfa } from "@/lib/types";
 import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
 
@@ -19,81 +19,53 @@ export const Route = createFileRoute("/login")({
   component: Login,
 });
 
+/**
+ * Login em dois fatores, sempre: a senha (algo que você sabe) e o rosto com prova
+ * de vida (algo que você é). Na conta empresa é igual: cada pessoa entra com o
+ * próprio login; o papel e a alçada definem o que ela pode fazer.
+ */
 function Login() {
   const nav = useNavigate();
   const { entrar } = useAuth();
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState<string | null>(null);
-  const [loading, setLoading] = useState<null | "senha" | "bio">(null);
-  // "entrar" = biometria para entrar; "aparelho" = confirmar aparelho novo depois do login.
-  const [liveness, setLiveness] = useState<null | "entrar" | "aparelho">(null);
-  const [pendente, setPendente] = useState<LoginResposta | null>(null);
+  const [loading, setLoading] = useState(false);
+  // Senha conferida: falta o rosto.
+  const [etapa, setEtapa] = useState<LoginEtapaMfa | null>(null);
+  const [camera, setCamera] = useState(false);
 
-  function seguir(r: LoginResposta) {
-    entrar(r);
-    nav({ to: "/inicio" });
-  }
-
-  async function concluir(r: LoginResposta) {
-    // Aparelho novo: oferece confirmar com o rosto (senão vale o teto do BC de
-    // R$ 200 por Pix e R$ 1.000 por dia neste aparelho).
-    if (MODO_API && !(await aparelhoAtual()).confiavel) setPendente(r);
-    else seguir(r);
-  }
-
-  async function entrarCom(credenciais: { email: string; senha: string }, modo: "senha" | "bio") {
+  async function enviarSenha(e: React.FormEvent) {
+    e.preventDefault();
+    if (!email || !senha) return setErro("Informe sua conta e a senha.");
     setErro(null);
-    setLoading(modo);
+    setLoading(true);
     try {
-      await concluir(await login(credenciais));
+      setEtapa(await login({ email, senha }));
+      setCamera(true);
     } catch (err) {
       setErro((err as Error).message);
     } finally {
-      setLoading(null);
+      setLoading(false);
     }
   }
 
-  if (pendente)
-    return (
-      <div className="flex min-h-[100dvh] justify-center bg-black">
-        <main className="flex min-h-[100dvh] w-full max-w-[460px] flex-col bg-page px-5 pb-8 pt-10 shadow-2xl">
-          <div className="enter surface mx-auto w-full max-w-md p-6 md:p-9">
-            <Wordmark size="lg" />
-            <h1 className="mt-6 text-2xl text-ink">Confirme este aparelho</h1>
-            <p className="mt-2 text-sm text-muted-foreground">
-              É a primeira vez que você entra por aqui. Até confirmar com uma verificação facial,
-              Pix e pagamentos ficam limitados a R$ 200 por vez e R$ 1.000 por dia neste aparelho.
-            </p>
-            {erro && (
-              <div className="mt-4">
-                <ErrorBox>{erro}</ErrorBox>
-              </div>
-            )}
-            <button
-              className="btn btn-ink mt-6 w-full gap-2"
-              onClick={() => setLiveness("aparelho")}
-            >
-              <ScanFace size={20} /> Confirmar com o rosto
-            </button>
-            <button className="btn btn-ghost mt-3 w-full" onClick={() => seguir(pendente)}>
-              Agora não
-            </button>
-          </div>
-          {liveness === "aparelho" && (
-            <LivenessCheck
-              onClose={() => setLiveness(null)}
-              onSuccess={(prova) => {
-                setLiveness(null);
-                confiarAparelho(prova)
-                  .then(() => seguir(pendente))
-                  .catch((err: Error) => setErro(err.message));
-              }}
-            />
-          )}
-        </main>
-      </div>
-    );
+  async function tentarDeNovo() {
+    if (!etapa) return;
+    setErro(null);
+    setLoading(true);
+    try {
+      setEtapa(await novoDesafioLogin(etapa));
+      setCamera(true);
+    } catch (err) {
+      // mfa_token vencido (5 min) ou tentativas demais: volta para a senha.
+      setEtapa(null);
+      setSenha("");
+      setErro((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="flex min-h-[100dvh] justify-center bg-black">
@@ -101,72 +73,80 @@ function Login() {
         <div className="enter mx-auto flex w-full max-w-md flex-1 flex-col md:flex-none">
           <div className="surface flex flex-1 flex-col p-6 md:flex-none md:p-9">
             <Wordmark size="lg" />
-            <h1 className="mt-6 text-2xl text-ink">Entre na sua conta</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Pessoa física ou empresa — tudo no mesmo lugar.
-            </p>
+            {etapa ? (
+              <>
+                <h1 className="mt-6 text-2xl text-ink">Agora, o seu rosto</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Senha conferida. Para entrar, confirme que é você: olhe para a câmera e pisque
+                  devagar 3 vezes.
+                </p>
+                {erro && (
+                  <div className="mt-4">
+                    <ErrorBox>{erro}</ErrorBox>
+                  </div>
+                )}
+                <button
+                  className="btn btn-ink mt-6 w-full gap-2"
+                  disabled={loading}
+                  onClick={() => (erro ? void tentarDeNovo() : setCamera(true))}
+                >
+                  <ScanFace size={20} /> {loading ? "Entrando…" : "Verificar meu rosto"}
+                </button>
+                <button
+                  className="btn btn-ghost mt-3 w-full"
+                  disabled={loading}
+                  onClick={() => {
+                    setEtapa(null);
+                    setErro(null);
+                    setSenha("");
+                  }}
+                >
+                  Voltar
+                </button>
+              </>
+            ) : (
+              <>
+                <h1 className="mt-6 text-2xl text-ink">Entre na sua conta</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Pessoa física ou empresa — tudo no mesmo lugar.
+                </p>
 
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!email || !senha) return setErro("Informe sua conta e a senha.");
-                void entrarCom({ email, senha }, "senha");
-              }}
-              className="mt-7 space-y-4"
-            >
-              <Field
-                label="Conta"
-                id="email"
-                hint="E-mail ou CPF. Contas de empresa entram pelo login de quem as opera."
-              >
-                <input
-                  id="email"
-                  autoComplete="username"
-                  className="field"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="voce@email.com"
-                />
-              </Field>
-              <Field label="Senha" id="senha">
-                <input
-                  id="senha"
-                  type="password"
-                  autoComplete="current-password"
-                  className="field"
-                  value={senha}
-                  onChange={(e) => setSenha(e.target.value)}
-                  placeholder="••••••••"
-                />
-              </Field>
-              {erro && <ErrorBox>{erro}</ErrorBox>}
-              <button className="btn btn-ink w-full" disabled={loading !== null}>
-                {loading === "senha" ? "Entrando…" : "Entrar"}
-              </button>
-            </form>
-
-            <div className="my-5 flex items-center gap-3 text-xs text-mut3">
-              <span className="h-px flex-1 bg-line2" /> ou <span className="h-px flex-1 bg-line2" />
-            </div>
-
-            <button
-              type="button"
-              disabled={loading !== null}
-              onClick={() => {
-                setErro(null);
-                if (MODO_API && !email)
-                  return setErro("Digite seu e-mail ou CPF para entrar com biometria.");
-                setLiveness("entrar");
-              }}
-              className="btn btn-ghost w-full gap-2"
-            >
-              <Fingerprint size={20} />
-              {loading === "bio" ? "Autenticando…" : "Entrar com biometria"}
-            </button>
-            <p className="mt-2 text-center text-xs text-mut3">
-              Reconhecimento facial da pessoa. Na conta empresa, cada usuário entra com o próprio
-              rosto; o papel e a alçada definem o que ele pode fazer.
-            </p>
+                <form onSubmit={enviarSenha} className="mt-7 space-y-4">
+                  <Field
+                    label="Conta"
+                    id="email"
+                    hint="E-mail ou CPF. Contas de empresa entram pelo login de quem as opera."
+                  >
+                    <input
+                      id="email"
+                      autoComplete="username"
+                      className="field"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="voce@email.com"
+                    />
+                  </Field>
+                  <Field label="Senha" id="senha">
+                    <input
+                      id="senha"
+                      type="password"
+                      autoComplete="current-password"
+                      className="field"
+                      value={senha}
+                      onChange={(e) => setSenha(e.target.value)}
+                      placeholder="••••••••••"
+                    />
+                  </Field>
+                  {erro && <ErrorBox>{erro}</ErrorBox>}
+                  <button className="btn btn-ink w-full" disabled={loading}>
+                    {loading ? "Conferindo…" : "Continuar"}
+                  </button>
+                </form>
+                <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-xs text-mut3">
+                  <ScanFace size={14} /> Depois da senha, confirmamos o seu rosto.
+                </p>
+              </>
+            )}
 
             <p className="mt-auto pt-7 text-center text-sm text-muted-foreground md:mt-7">
               Novo por aqui?{" "}
@@ -179,25 +159,28 @@ function Login() {
             </p>
           </div>
 
-          {!MODO_API && (
+          {!MODO_API && !etapa && (
             <p className="mt-4 text-center text-xs text-mut3">
-              Demonstração: quem criou conta aqui entra com o próprio e-mail e senha; outro
-              e-mail entra na conta de exemplo (pessoal e empresa, troca pelo seletor no topo).
+              Demonstração: quem criou conta aqui entra com o próprio e-mail e senha; outro e-mail
+              entra na conta de exemplo (pessoal e empresa, troca pelo seletor no topo).
             </p>
           )}
         </div>
 
-        {liveness === "entrar" && (
+        {etapa && camera && (
           <LivenessCheck
-            {...(MODO_API ? { login: email } : {})}
-            onClose={() => setLiveness(null)}
+            desafio={etapa.desafio}
+            onClose={() => setCamera(false)}
             onSuccess={(prova) => {
-              setLiveness(null);
-              setLoading("bio");
-              loginBiometria(email || "voce@email.com", prova)
-                .then(concluir)
+              setCamera(false);
+              setLoading(true);
+              concluirLogin(etapa, prova)
+                .then((r) => {
+                  entrar(r);
+                  nav({ to: "/inicio" });
+                })
                 .catch((err: Error) => setErro(err.message))
-                .finally(() => setLoading(null));
+                .finally(() => setLoading(false));
             }}
           />
         )}

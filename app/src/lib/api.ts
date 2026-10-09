@@ -29,14 +29,18 @@ import type {
   Cobranca,
   CobrancaPayload,
   ComprarPassagemPayload,
+  CadastroResposta,
   ComprarProdutoPayload,
   Conta,
   CvvDinamico,
   DepositarPayload,
   Desafio,
   DestinoRef,
+  EmpresaPayload,
   Fatura,
+  KycResultado,
   Limites,
+  LoginEtapaMfa,
   LoginPayload,
   LoginResposta,
   MembroEquipe,
@@ -281,14 +285,45 @@ async function contasDaPessoa(): Promise<{ pessoa: Pessoa; contas: Conta[] }> {
   };
 }
 
-export async function login({ email, senha }: LoginPayload): Promise<LoginResposta> {
+/**
+ * Login em DUAS etapas (senha + rosto), como o backend v9 exige.
+ * Etapa 1: a senha confere -> volta um `mfa_token` (preso a este aparelho) e o
+ * desafio de prova de vida. Nenhum token de acesso existe ainda.
+ */
+export async function login({ email, senha }: LoginPayload): Promise<LoginEtapaMfa> {
   await delay();
   if (!email || !senha) throw new ApiError("Informe e-mail (ou CPF) e senha.", 401);
   if (MODO_API) {
     definirConta(null);
-    const tk = await post<{ access_token: string; refresh_token: string }>("/auth/login", {
-      email,
-      senha,
+    salvarTokens(null);
+    const r = await post<{
+      mfa_requerido: boolean;
+      mfa_token: string | null;
+      desafio: Desafio | null;
+    }>("/auth/login", { email, senha });
+    if (!r.mfa_requerido || !r.mfa_token || !r.desafio)
+      throw new ApiError("Este login não é de uma pessoa: use o acesso administrativo.", 403);
+    return { mfa_token: r.mfa_token, desafio: r.desafio };
+  }
+  await sincronizar();
+  // Demonstração: quem se cadastrou entra na própria conta (senha conferida);
+  // e-mail desconhecido cai na Marina, a pessoa do roteiro da apresentação.
+  const achada = pessoaPorLogin(email);
+  if (achada && !(await senhaConfere(achada, senha)))
+    throw new ApiError("E-mail/CPF ou senha incorretos.", 401);
+  return { mfa_token: `demo:${achada?.email ?? MARINA.email}`, desafio: desafioDemo("login") };
+}
+
+/** Etapa 2: o rosto (prova de vida) confere -> sessão criada, contas carregadas. */
+export async function concluirLogin(
+  etapa: LoginEtapaMfa,
+  prova: ProvaBiometrica,
+): Promise<LoginResposta> {
+  await delay();
+  if (MODO_API) {
+    const tk = await post<{ access_token: string; refresh_token: string }>("/auth/login/mfa", {
+      mfa_token: etapa.mfa_token,
+      biometria: prova,
     });
     salvarTokens(tk);
     const { pessoa, contas } = await contasDaPessoa();
@@ -298,12 +333,9 @@ export async function login({ email, senha }: LoginPayload): Promise<LoginRespos
     return { contas, conta, pessoa };
   }
   await sincronizar();
-  // Demonstração: quem se cadastrou entra na própria conta (senha conferida);
-  // e-mail desconhecido cai na Marina, a pessoa do roteiro da apresentação.
-  const achada = pessoaPorLogin(email);
-  if (achada && senha !== "biometria" && !(await senhaConfere(achada, senha)))
-    throw new ApiError("E-mail/CPF ou senha incorretos.", 401);
-  const p = achada ?? banco().pessoas.find((x) => x.email === MARINA.email) ?? MARINA;
+  const email = etapa.mfa_token.replace(/^demo:/, "");
+  const p =
+    pessoaPorLogin(email) ?? banco().pessoas.find((x) => x.email === MARINA.email) ?? MARINA;
   const contas = contasDa(p);
   if (!contas.length) contas.push({ ...contasDemo.PF }, { ...contasDemo.PJ });
   const conta = contas.find((c) => c.tipo === "PF") ?? contas[0]!;
@@ -311,47 +343,37 @@ export async function login({ email, senha }: LoginPayload): Promise<LoginRespos
   return { contas, conta, pessoa: { nome: p.nome, email: p.email, cpf: p.cpf } };
 }
 
-/** Entrar com o rosto: o desafio é pedido para este login e conferido no servidor. */
-export async function loginBiometria(
-  identificador: string,
-  prova: ProvaBiometrica,
-): Promise<LoginResposta> {
-  await delay();
-  if (MODO_API) {
-    definirConta(null);
-    const tk = await post<{ access_token: string; refresh_token: string }>(
-      "/auth/login/biometria",
-      {
-        email: identificador,
-        biometria: prova,
-      },
-    );
-    salvarTokens(tk);
-    const { pessoa, contas } = await contasDaPessoa();
-    const conta = contas.find((c) => c.tipo === "PF") ?? contas[0];
-    if (!conta) throw new ApiError("Esta pessoa não tem nenhuma conta para operar.", 404);
-    selecionarConta(conta);
-    return { contas, conta, pessoa };
-  }
-  return login({ email: identificador, senha: "biometria" });
+/** O desafio é de uso único: outra tentativa do rosto pede um desafio novo. */
+export async function novoDesafioLogin(etapa: LoginEtapaMfa): Promise<LoginEtapaMfa> {
+  if (MODO_API)
+    return {
+      ...etapa,
+      desafio: await post<Desafio>("/auth/login/mfa/desafio", { mfa_token: etapa.mfa_token }),
+    };
+  return { ...etapa, desafio: desafioDemo("login") };
 }
 
-export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
+/**
+ * Abre a conta da pessoa (com KYC: documento + prova de vida de cadastro) e já
+ * faz a etapa 1 do login. A empresa (PJ) só é aberta em `concluirCadastro`,
+ * depois do rosto do login: no backend, quem abre empresa é a pessoa logada.
+ */
+export async function registrar(p: RegistrarPayload): Promise<CadastroResposta> {
   await delay(700);
-  if (p.senha.length < 8) throw new ApiError("A senha precisa ter ao menos 8 caracteres.");
+  if (p.senha.length < 10) throw new ApiError("A senha precisa ter ao menos 10 caracteres.");
   if (MODO_API) {
-    await post("/usuarios", {
+    const conta = await post<{ kyc?: KycResultado }>("/usuarios", {
       nome: p.nome,
       email: p.email,
       senha: p.senha,
       cpf: p.cpf,
+      data_nascimento: p.data_nascimento,
+      celular: p.celular,
       biometria: p.biometria,
+      ...(p.documento ? { documento: p.documento } : {}),
     });
-    const r = await login({ email: p.email, senha: p.senha });
-    if (!p.empresa) return r;
-    const pj = mapConta(await post<ContaApi>("/empresas", p.empresa));
-    if (p.empresa.setor) pj.setor = p.empresa.setor;
-    return { contas: [...r.contas, pj], conta: r.conta };
+    const etapa = await login({ email: p.email, senha: p.senha });
+    return { etapa, kyc: conta.kyc ?? { status: "pendente", motivos: [] } };
   }
   await sincronizar();
   const email = p.email.trim().toLowerCase();
@@ -406,9 +428,33 @@ export async function registrar(p: RegistrarPayload): Promise<LoginResposta> {
     },
     contas,
   );
-  selecionarConta(pf);
   await aguardarEnvio();
-  return { contas, conta: pf, pessoa: { nome: p.nome, email, cpf } };
+  return {
+    etapa: { mfa_token: `demo:${email}`, desafio: desafioDemo("login") },
+    kyc: { status: p.documento ? "aprovado" : "pendente", motivos: [] },
+  };
+}
+
+/**
+ * Etapa 2 do primeiro login e, se for o caso, a abertura da empresa. Se só a
+ * empresa falhar (ex.: CNPJ recusado), a pessoa continua logada na conta
+ * pessoal e recebe o motivo em `erroEmpresa`.
+ */
+export async function concluirCadastro(
+  etapa: LoginEtapaMfa,
+  prova: ProvaBiometrica,
+  empresa?: EmpresaPayload,
+): Promise<{ resposta: LoginResposta; erroEmpresa?: string }> {
+  const r = await concluirLogin(etapa, prova);
+  // No modo demonstração a PJ já nasceu junto com a pessoa.
+  if (!MODO_API || !empresa) return { resposta: r };
+  try {
+    const pj = mapConta(await post<ContaApi>("/empresas", empresa));
+    if (empresa.setor) pj.setor = empresa.setor;
+    return { resposta: { ...r, contas: [...r.contas, pj], conta: pj } };
+  } catch (e) {
+    return { resposta: r, erroEmpresa: (e as Error).message };
+  }
 }
 
 export async function sair(refresh = true): Promise<void> {
@@ -439,12 +485,15 @@ const PASSOS_DEMO: Record<import("./types").ModoBiometria, import("./types").Pas
   login: [{ id: "piscar3", instrucao: "Pisque os olhos devagar, 3 vezes" }],
 };
 
+function desafioDemo(modo: import("./types").ModoBiometria): Desafio {
+  return { desafio_id: `demo-${Date.now()}`, modo, passos: PASSOS_DEMO[modo] };
+}
+
 export async function pedirDesafio(
-  login?: string,
   modo: import("./types").ModoBiometria = "login",
 ): Promise<Desafio> {
-  if (MODO_API) return post<Desafio>("/biometria/desafios", login ? { login, modo } : { modo });
-  return { desafio_id: `demo-${Date.now()}`, modo, passos: PASSOS_DEMO[modo] };
+  if (MODO_API) return post<Desafio>("/biometria/desafios", { modo });
+  return desafioDemo(modo);
 }
 
 // =============================================================================
