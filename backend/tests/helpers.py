@@ -3,6 +3,8 @@
 import random
 
 ADMIN = {"email": "admin@payflow.com.br", "senha": "admin-teste-123"}
+# Senha que passa na política (NIST 800-63B: tamanho, sem lista comum, sem sequência).
+SENHA = "Cofre-Astro#2026"
 QUADROS = ["data:image/png;base64,Zm9v", "data:image/png;base64,YmFy"]
 
 
@@ -34,15 +36,21 @@ def gerar_chave_nfe(cnpj: str) -> str:
     return base + str(0 if r < 2 else 11 - r)
 
 
-def desafio(cliente, token=None) -> str:
+def desafio(cliente, token=None, modo: str = "login", dispositivo: str | None = None) -> str:
     h = {"Authorization": f"Bearer {token}"} if token else {}
-    r = cliente.post("/biometria/desafios", headers=h)
+    if dispositivo:
+        h["X-Dispositivo-Id"] = dispositivo
+    r = cliente.post("/biometria/desafios", json={"modo": modo}, headers=h)
     assert r.status_code == 201, r.text
     return r.json()["desafio_id"]
 
 
-def prova(cliente, token=None) -> dict:
-    return {"desafio_id": desafio(cliente, token), "quadros": QUADROS}
+def prova(cliente, token=None, modo: str = "login", dispositivo: str | None = None) -> dict:
+    return {"desafio_id": desafio(cliente, token, modo, dispositivo), "quadros": QUADROS}
+
+
+def prova_cadastro(cliente) -> dict:
+    return prova(cliente, modo="cadastro")
 
 
 class Pessoa:
@@ -53,14 +61,14 @@ class Pessoa:
         self.dispositivo = f"aparelho-{email}"
         r = cliente.post(
             "/usuarios",
-            json={"nome": nome or email.split("@")[0].title() + " Silva", "email": email, "senha": "senha12345",
-                  "cpf": self.cpf, "biometria": prova(cliente)},
+            json={"nome": nome or email.split("@")[0].title() + " Silva", "email": email, "senha": SENHA,
+                  "cpf": self.cpf, "biometria": prova_cadastro(cliente)},
             headers={"X-Dispositivo-Id": self.dispositivo},
         )
         assert r.status_code == 201, r.text
         self.conta = r.json()
         self.numero = self.conta["numero"]
-        self.token = login(cliente, email, "senha12345", self.dispositivo)
+        self.token = login(cliente, email, SENHA, self.dispositivo)
 
     def h(self, conta: str | None = None, dispositivo: str | None = None) -> dict:
         h = {"Authorization": f"Bearer {self.token}", "X-Dispositivo-Id": dispositivo or self.dispositivo}
@@ -69,7 +77,7 @@ class Pessoa:
         return h
 
     def prova(self) -> dict:
-        return prova(self.cliente, self.token)
+        return prova(self.cliente, self.token, dispositivo=self.dispositivo)
 
     def saldo(self, conta: str | None = None) -> str:
         return self.cliente.get("/contas/atual", headers=self.h(conta)).json()["saldo"]
@@ -85,11 +93,24 @@ class Pessoa:
         return r.json()
 
 
-def login(cliente, email, senha, dispositivo=None) -> str:
+def login_completo(cliente, email, senha, dispositivo=None) -> dict:
+    """Login em 2 etapas: senha -> mfa_token + desafio; rosto (mesmo aparelho) -> tokens.
+    O admin de operação não tem biometria e recebe os tokens já na 1ª etapa."""
     h = {"X-Dispositivo-Id": dispositivo} if dispositivo else {}
     r = cliente.post("/auth/login", json={"email": email, "senha": senha}, headers=h)
     assert r.status_code == 200, r.text
-    return r.json()["access_token"]
+    corpo = r.json()
+    if not corpo["mfa_requerido"]:
+        return corpo
+    r = cliente.post("/auth/login/mfa", headers=h, json={
+        "mfa_token": corpo["mfa_token"],
+        "biometria": {"desafio_id": corpo["desafio"]["desafio_id"], "quadros": QUADROS}})
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+def login(cliente, email, senha, dispositivo=None) -> str:
+    return login_completo(cliente, email, senha, dispositivo)["access_token"]
 
 
 def admin_h(cliente) -> dict:
@@ -100,6 +121,19 @@ def depositar(cliente, numero: str, valor) -> dict:
     r = cliente.post("/admin/depositar", json={"destino": {"numero": numero}, "valor": str(valor)}, headers=admin_h(cliente))
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def desconfiar_aparelho(dispositivo: str) -> None:
+    """Tira a confiança de um aparelho direto no banco. O login com rosto já
+    confia no aparelho; isto simula um aparelho que perdeu a confiança."""
+    from app.db.base import SessionLocal
+    from app.db.models import Dispositivo
+    from app.deps import hash_dispositivo
+
+    with SessionLocal() as s:
+        d = s.query(Dispositivo).filter_by(id_hash=hash_dispositivo(dispositivo)).one()
+        d.confiavel, d.confiavel_em = False, None
+        s.commit()
 
 
 def conta_ref(numero: str) -> dict:

@@ -130,7 +130,12 @@ def test_credito_declarado_entra_na_restituicao_prevista(cliente):
     assert t["restituicao_prevista"] == "30.00" and t["modo_split"] == "inteligente"
 
 
-def test_pix_automatico(cliente, relogio):
+def test_pix_automatico(cliente, relogio, monkeypatch):
+    from app.core.config import get_settings
+
+    # O JWT usa o relógio real e a sessão é conferida no relógio simulado; o
+    # teste pula 36 dias, então a sessão do admin precisa durar mais que isso.
+    monkeypatch.setattr(get_settings(), "refresh_token_exp_dias", 90)
     dono, n, _ = _empresa(cliente)
     assinante = Pessoa(cliente, "assinante@ex.com")
     depositar(cliente, assinante.numero, 200)

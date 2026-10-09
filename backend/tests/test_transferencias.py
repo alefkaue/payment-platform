@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
-from tests.helpers import Pessoa, admin_h, conta_ref, depositar
+from tests.helpers import SENHA, Pessoa, admin_h, conta_ref, depositar, desconfiar_aparelho, login
+
 
 
 def test_transferencia_para_pj_nao_retem_imposto(cliente):
@@ -37,9 +38,10 @@ def test_saldo_insuficiente(cliente):
 def test_exige_identificador_do_aparelho(cliente):
     a, b = Pessoa(cliente, "a@ex.com"), Pessoa(cliente, "b@ex.com")
     depositar(cliente, a.numero, 50)
+    # Sem o header, o token (preso ao aparelho do login) não vale.
     r = cliente.post("/pagamentos/transferir", json={"destino": conta_ref(b.numero), "valor": "10"},
                      headers={"Authorization": f"Bearer {a.token}"})
-    assert r.status_code == 400 and "X-Dispositivo-Id" in r.json()["detail"]
+    assert r.status_code == 401 and "aparelho" in r.json()["detail"]
 
 
 def test_idempotencia_por_conta(cliente):
@@ -66,7 +68,11 @@ def test_acima_do_limite_facial_exige_biometria(cliente):
 def test_aparelho_novo_limita_200_por_transacao_e_1000_por_dia(cliente):
     a, b = Pessoa(cliente, "a@ex.com"), Pessoa(cliente, "b@ex.com")
     depositar(cliente, a.numero, 5000)
-    cliente.post("/auth/login", json={"email": "a@ex.com", "senha": "senha12345"}, headers={"X-Dispositivo-Id": "celular-novo"})
+    # O login com rosto já confia no aparelho; o limite vale para um aparelho
+    # que perdeu a confiança (ex.: desbloqueado depois de roubo). Simula direto no banco.
+    a.dispositivo = "celular-novo"
+    a.token = login(cliente, "a@ex.com", SENHA, a.dispositivo)
+    desconfiar_aparelho(a.dispositivo)
     r = a.transferir(conta_ref(b.numero), 250, dispositivo="celular-novo")
     assert r.status_code == 403 and "aparelho novo" in r.json()["detail"]
     for _ in range(5):

@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from tests.helpers import QUADROS, Pessoa, desafio, gerar_cpf, login, prova
+from tests.helpers import QUADROS, SENHA, Pessoa, desafio, desconfiar_aparelho, gerar_cpf, login, login_completo, prova
 
 
 def test_cadastro_cria_conta_pf_com_saldo_zero(cliente):
@@ -11,21 +11,21 @@ def test_cadastro_cria_conta_pf_com_saldo_zero(cliente):
 
 
 def test_cadastro_exige_cpf_valido(cliente):
-    r = cliente.post("/usuarios", json={"nome": "X", "email": "x@ex.com", "senha": "senha12345", "cpf": "12345678900",
+    r = cliente.post("/usuarios", json={"nome": "Xavier Lima", "email": "x@ex.com", "senha": SENHA, "cpf": "12345678900",
                                         "biometria": prova(cliente)})
     assert r.status_code == 400
 
 
 def test_cpf_duplicado(cliente):
     p = Pessoa(cliente, "a@ex.com")
-    r = cliente.post("/usuarios", json={"nome": "B", "email": "b@ex.com", "senha": "senha12345", "cpf": p.cpf,
+    r = cliente.post("/usuarios", json={"nome": "Bruna Lima", "email": "b@ex.com", "senha": SENHA, "cpf": p.cpf,
                                         "biometria": prova(cliente)})
     assert r.status_code == 409
 
 
 def test_desafio_de_biometria_vale_uma_vez(cliente):
     d = desafio(cliente)
-    corpo = {"nome": "A", "email": "a@ex.com", "senha": "senha12345", "cpf": gerar_cpf(),
+    corpo = {"nome": "Ana Lima", "email": "a@ex.com", "senha": SENHA, "cpf": gerar_cpf(),
              "biometria": {"desafio_id": d, "quadros": QUADROS}}
     assert cliente.post("/usuarios", json=corpo).status_code == 201
     corpo.update(email="b@ex.com", cpf=gerar_cpf())
@@ -37,7 +37,7 @@ def test_desafio_expirado(cliente, relogio):
 
     d = desafio(cliente)
     relogio.definir(tempo.agora() + timedelta(minutes=10))
-    r = cliente.post("/usuarios", json={"nome": "A", "email": "a@ex.com", "senha": "senha12345", "cpf": gerar_cpf(),
+    r = cliente.post("/usuarios", json={"nome": "Ana Lima", "email": "a@ex.com", "senha": SENHA, "cpf": gerar_cpf(),
                                         "biometria": {"desafio_id": d, "quadros": QUADROS}})
     assert r.status_code == 401 and "expirado" in r.json()["detail"]
 
@@ -45,21 +45,27 @@ def test_desafio_expirado(cliente, relogio):
 def test_desafio_de_outra_pessoa_nao_serve(cliente):
     a = Pessoa(cliente, "a@ex.com")
     b = Pessoa(cliente, "b@ex.com")
+    desconfiar_aparelho(b.dispositivo)
     # b confirma o aparelho com um desafio pedido pela sessão de a
-    r = cliente.post("/seguranca/dispositivos/atual/confiar", json=a.prova(), headers=b.h(dispositivo="novo-b"))
+    r = cliente.post("/seguranca/dispositivos/atual/confiar", json=a.prova(), headers=b.h())
     assert r.status_code == 401
     # e um desafio anônimo (de cadastro) também não serve para MFA
-    r = cliente.post("/seguranca/dispositivos/atual/confiar", json=prova(cliente), headers=b.h(dispositivo="novo-b"))
+    r = cliente.post("/seguranca/dispositivos/atual/confiar", json=prova(cliente), headers=b.h())
     assert r.status_code == 401
 
 
 def test_login_refresh_e_reuso(cliente):
-    Pessoa(cliente, "alef@ex.com")
-    tk = cliente.post("/auth/login", json={"email": "alef@ex.com", "senha": "senha12345"}).json()
-    r1 = cliente.post("/auth/refresh", json={"refresh_token": tk["refresh_token"]})
+    p = Pessoa(cliente, "alef@ex.com")
+    h = {"X-Dispositivo-Id": p.dispositivo}
+    tk = login_completo(cliente, "alef@ex.com", SENHA, p.dispositivo)
+    # refresh preso ao aparelho da sessão
+    assert cliente.post("/auth/refresh", json={"refresh_token": tk["refresh_token"]},
+                        headers={"X-Dispositivo-Id": "outro"}).status_code == 401
+    r1 = cliente.post("/auth/refresh", json={"refresh_token": tk["refresh_token"]}, headers=h)
     assert r1.status_code == 200
-    assert cliente.post("/auth/refresh", json={"refresh_token": tk["refresh_token"]}).status_code == 401
-    assert cliente.post("/auth/refresh", json={"refresh_token": r1.json()["refresh_token"]}).status_code == 401
+    # reuso do refresh antigo revoga a família inteira
+    assert cliente.post("/auth/refresh", json={"refresh_token": tk["refresh_token"]}, headers=h).status_code == 401
+    assert cliente.post("/auth/refresh", json={"refresh_token": r1.json()["refresh_token"]}, headers=h).status_code == 401
 
 
 def test_login_bloqueia_por_ip(cliente, monkeypatch):
@@ -100,4 +106,4 @@ def test_endpoint_protegido_sem_token(cliente):
 def test_login_usa_senha_certa(cliente):
     Pessoa(cliente, "alef@ex.com")
     assert cliente.post("/auth/login", json={"email": "alef@ex.com", "senha": "errada"}).status_code == 401
-    assert login(cliente, "alef@ex.com", "senha12345")
+    assert login(cliente, "alef@ex.com", SENHA)

@@ -1,4 +1,4 @@
-from tests.helpers import QUADROS, Pessoa, depositar
+from tests.helpers import QUADROS, SENHA, Pessoa, depositar
 
 
 def test_catalogo_da_loja_e_dos_voos(cliente):
@@ -61,16 +61,13 @@ def test_pj_nao_compra_na_loja(cliente):
 def test_login_por_cpf(cliente):
     p = Pessoa(cliente, "p@ex.com")
     cpf_formatado = f"{p.cpf[:3]}.{p.cpf[3:6]}.{p.cpf[6:9]}-{p.cpf[9:]}"
-    r = cliente.post("/auth/login", json={"email": cpf_formatado, "senha": "senha12345"})
-    assert r.status_code == 200
+    r = cliente.post("/auth/login", json={"email": cpf_formatado, "senha": SENHA})
+    assert r.status_code == 200 and r.json()["mfa_requerido"] is True
 
 
-def test_login_com_biometria(cliente):
+def test_login_so_com_biometria_nao_existe_mais(cliente):
+    # O rosto é o 2º fator: entrar só com ele foi removido na v9.
     Pessoa(cliente, "p@ex.com")
     d = cliente.post("/biometria/desafios", json={"login": "p@ex.com"}).json()["desafio_id"]
     r = cliente.post("/auth/login/biometria", json={"email": "p@ex.com", "biometria": {"desafio_id": d, "quadros": QUADROS}})
-    assert r.status_code == 200 and r.json()["access_token"]
-    # desafio anônimo (sem login) não serve para entrar
-    d2 = cliente.post("/biometria/desafios").json()["desafio_id"]
-    r = cliente.post("/auth/login/biometria", json={"email": "p@ex.com", "biometria": {"desafio_id": d2, "quadros": QUADROS}})
-    assert r.status_code == 401
+    assert r.status_code in (404, 405)

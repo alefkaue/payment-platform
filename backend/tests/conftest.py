@@ -20,6 +20,9 @@ os.environ["BIOMETRIA_STUB"] = "1"
 os.environ["WEBHOOK_ENTREGA_IMEDIATA"] = "0"
 os.environ["CNPJ_PROVEDOR"] = "stub"
 os.environ["SPLIT_VIGENCIA"] = "2026"
+# KYC: os testes de fluxo não mandam documento; os de KYC ligam por monkeypatch.
+os.environ["KYC_DOCUMENTO_OBRIGATORIO"] = "0"
+os.environ["DOCUMENTO_PROVEDOR"] = "stub"
 
 
 @pytest.fixture()

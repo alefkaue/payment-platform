@@ -347,7 +347,8 @@ class RepositorioExtras:
             s.commit()
             if n != 1:
                 return None
-            return self._vinculo_dict(s.get(Vinculo, vinculo_id))
+            # O UPDATE em massa não mexe no `alvo` já carregado (expire_on_commit=False): recarrega.
+            return self._vinculo_dict(s.get(Vinculo, vinculo_id, populate_existing=True))
 
     def contar_vagas_ocupadas(self, empresa_id: int) -> int:
         with self._sf() as s:

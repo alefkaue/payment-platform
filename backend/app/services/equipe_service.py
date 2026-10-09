@@ -222,7 +222,7 @@ def aplicar_aprovacao_acesso(repo: Repositorio, *, conta: dict, aprovador: dict,
     else:
         r = repo.atualizar_vinculo(v["id"], papel=PapelVinculo(m["papel"]),
                                    alcada=None if m.get("alcada") is None else Decimal(m["alcada"]))
-    _log(repo, aprovador, conta, "acesso_aprovado", ip, vinculo_id=v["id"], acao=payload["acao"])
+    _log(repo, aprovador, conta, "acesso_aprovado", ip, vinculo_id=v["id"], mudanca=payload["acao"])
     return r
 
 

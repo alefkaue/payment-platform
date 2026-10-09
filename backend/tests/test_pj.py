@@ -1,12 +1,18 @@
 from tests.helpers import Pessoa, conta_ref, depositar
 
 
-def _vincular(cliente, admin: Pessoa, numero_pj: str, email: str, papel: str, alcada=None):
-    corpo = {"email": email, "papel": papel}
+def _vincular(cliente, admin: Pessoa, numero_pj: str, pessoa: Pessoa, papel: str, alcada=None):
+    """Admin convida pelo CPF (com o próprio rosto, exigido em papéis/alçadas
+    sensíveis) e a pessoa aceita com o rosto dela."""
+    corpo = {"cpf": pessoa.cpf, "nome": "Pessoa Convidada", "papel": papel, "biometria": admin.prova()}
     if alcada is not None:
         corpo["alcada"] = str(alcada)
     r = cliente.post("/empresas/atual/vinculos", json=corpo, headers=admin.h(numero_pj))
     assert r.status_code == 201, r.text
+    assert r.json()["status"] == "pendente"
+    r = cliente.post(f"/convites/{r.json()['id']}/aceitar", json={"biometria": pessoa.prova()}, headers=pessoa.h())
+    assert r.status_code == 200, r.text
+    assert r.json()["status"] == "ativo"
     return r.json()
 
 
@@ -61,8 +67,8 @@ def test_alcada_e_dupla_aprovacao(cliente):
     pj = dono.abrir_empresa()
     n = pj["numero"]
     depositar(cliente, n, 10000)
-    _vincular(cliente, dono, n, op.email, "operador", alcada=1000)
-    _vincular(cliente, dono, n, aprov.email, "aprovador", alcada=5000)
+    _vincular(cliente, dono, n, op, "operador", alcada=1000)
+    _vincular(cliente, dono, n, aprov, "aprovador", alcada=5000)
 
     # dentro da alçada: executa direto
     assert op.transferir(conta_ref(forn.numero), 800, conta=n, biometria=op.prova()).status_code == 200
@@ -88,8 +94,8 @@ def test_aprovador_nao_aprova_acima_da_propria_alcada(cliente):
     pj = dono.abrir_empresa()
     n = pj["numero"]
     depositar(cliente, n, 50000)
-    _vincular(cliente, dono, n, op.email, "operador", alcada=100)
-    _vincular(cliente, dono, n, aprov.email, "aprovador", alcada=1000)
+    _vincular(cliente, dono, n, op, "operador", alcada=100)
+    _vincular(cliente, dono, n, aprov, "aprovador", alcada=1000)
     oid = op.transferir(conta_ref(forn.numero), 2000, conta=n).json()["operacao_id"]
     r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"aprovar": True, "biometria": aprov.prova()}, headers=aprov.h(n))
     assert r.status_code == 403
@@ -101,7 +107,7 @@ def test_papel_consulta_nao_movimenta(cliente):
     dono, leitor, forn = (Pessoa(cliente, f"{x}@ex.com") for x in ("dono", "leitor", "forn"))
     pj = dono.abrir_empresa()
     depositar(cliente, pj["numero"], 1000)
-    _vincular(cliente, dono, pj["numero"], leitor.email, "consulta")
+    _vincular(cliente, dono, pj["numero"], leitor, "consulta")
     assert leitor.saldo(pj["numero"]) == "1000.00"
     assert leitor.transferir(conta_ref(forn.numero), 10, conta=pj["numero"]).status_code == 403
 
@@ -141,4 +147,5 @@ def test_consulta_por_numero_de_conta_e_aparelho_atual(cliente):
     r = cliente.get(f"/pix/consultar/{a.numero}", headers=b.h()).json()
     assert r["nome"] == "Ana P*** R***"
     assert cliente.get("/seguranca/dispositivos/atual", headers=b.h()).json()["confiavel"] is True
-    assert cliente.get("/seguranca/dispositivos/atual", headers=b.h(dispositivo="outro")).json()["confiavel"] is False
+    # o token está preso ao aparelho em que o login foi feito
+    assert cliente.get("/seguranca/dispositivos/atual", headers=b.h(dispositivo="outro")).status_code == 401
