@@ -54,7 +54,7 @@ function Config() {
 
       <CartaoSection />
       <LimitesSection podeEditar={!ehPJ || sessao?.papel === "admin"} />
-      <AparelhoSection metodoCert={ehPJ && perfil.metodo === "certificado"} />
+      <AparelhoSection />
 
       {ehPJ && (
         <section className="surface p-5">
@@ -201,7 +201,7 @@ function LimitesSection({ podeEditar }: { podeEditar: boolean }) {
 
 /* --- Aparelho confiável --------------------------------------------------- */
 
-function AparelhoSection({ metodoCert }: { metodoCert: boolean }) {
+function AparelhoSection() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["aparelho"], queryFn: aparelhoAtual });
   const [liveness, setLiveness] = useState(false);
@@ -212,16 +212,13 @@ function AparelhoSection({ metodoCert }: { metodoCert: boolean }) {
       <h2 className="text-lg text-ink">Segurança e acesso</h2>
       <div className="mt-4 flex items-center gap-3">
         <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-tint text-ink">
-          {metodoCert ? <ShieldCheck size={20} /> : <Fingerprint size={20} />}
+          <Fingerprint size={20} />
         </span>
         <div className="min-w-0">
-          <p className="font-medium text-ink">
-            {metodoCert ? "Certificado digital e-CNPJ" : "Biometria do titular"}
-          </p>
+          <p className="font-medium text-ink">Biometria da pessoa</p>
           <p className="text-xs text-mut3">
-            {metodoCert
-              ? "Acesso por ICP-Brasil (A1/A3) — o mesmo que assina a NF-e."
-              : "Reconhecimento facial para entrar e aprovar pagamentos."}
+            Reconhecimento facial para entrar e aprovar pagamentos. Na empresa, cada usuário entra
+            com o próprio rosto; o papel e a alçada definem o que pode fazer.
           </p>
         </div>
       </div>

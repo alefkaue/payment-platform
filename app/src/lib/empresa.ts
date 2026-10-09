@@ -1,14 +1,16 @@
 import type { PapelVinculo, PortePJ, RegimeApuracao } from "./types";
 
 /**
- * Como cada porte de empresa se autentica no banco — a regra de verificação é
- * "mutável" por porte, refletindo a realidade do mercado:
- *  - MEI: titular único → biometria/selfie, como na conta pessoal.
- *  - PME (ME/EPP): certificado digital e-CNPJ do representante legal + token.
- *  - Grande: certificado e-CNPJ A3 em token, múltiplos assinantes e dupla
- *    autorização (maker-checker / alçadas).
+ * No banco, quem acessa a conta da empresa é sempre uma PESSOA, com
+ * reconhecimento facial (prova de vida) — igual à conta pessoal. O que muda por
+ * pessoa são o PAPEL e a ALÇADA do vínculo (consultar, operar, aprovar ou
+ * administrar). É assim que funciona nos bancos digitais PJ (Nubank, Inter, C6):
+ * cada usuário tem a própria credencial e permissões por função.
+ *
+ * O certificado digital e-CNPJ (ICP-Brasil) NÃO é o login do app: ele serve para
+ * assinar documentos/NF-e e integrações, não para entrar na conta.
  */
-export type MetodoAuthPJ = "biometria" | "certificado";
+export type MetodoAuthPJ = "biometria";
 
 export interface PortePerfil {
   label: string;
@@ -32,25 +34,27 @@ export const PORTES: Record<PortePJ, PortePerfil> = {
   PME: {
     label: "Pequena ou média (ME · EPP)",
     faturamento: "até R$ 4,8 mi/ano",
-    metodo: "certificado",
+    metodo: "biometria",
     duplaAssinatura: false,
-    authTitulo: "Entrar com certificado digital",
-    authDescricao: "e-CNPJ (ICP-Brasil) do representante legal, com token de acesso.",
+    authTitulo: "Entrar com biometria",
+    authDescricao:
+      "Reconhecimento facial de cada pessoa autorizada; o acesso e o que ela pode fazer vêm do papel e da alçada.",
   },
   GRANDE: {
     label: "Grande empresa",
     faturamento: "acima de R$ 4,8 mi/ano",
-    metodo: "certificado",
+    metodo: "biometria",
     duplaAssinatura: true,
-    authTitulo: "Entrar com certificado digital",
-    authDescricao: "e-CNPJ A3 em token, com múltiplos assinantes e dupla autorização (alçadas).",
+    authTitulo: "Entrar com biometria",
+    authDescricao:
+      "Reconhecimento facial por pessoa, vários usuários com papéis e alçadas e dupla autorização (maker-checker) acima da alçada.",
   },
 };
 
 /**
- * Descobre o método de entrada a partir do que foi digitado no campo "Conta".
- * Sem backend ainda: um e-mail/documento de empresa cai em certificado digital
- * (a menos que seja MEI, que usa biometria); pessoa física usa biometria.
+ * Descobre, pelo que foi digitado no campo "Conta", se é empresa (PJ) ou pessoa
+ * (PF). Em ambos os casos o login é por biometria da pessoa; na PJ, o que ela
+ * pode fazer vem do vínculo (papel e alçada).
  */
 export function authPorConta(conta: string): {
   ehPJ: boolean;

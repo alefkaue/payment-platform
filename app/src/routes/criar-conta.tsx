@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Check, ScanFace, ShieldCheck } from "lucide-react";
+import { Check, ScanFace } from "lucide-react";
 import { MODO_API, registrar } from "@/lib/api";
 import { PORTES, REGIMES_APURACAO } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
@@ -48,15 +48,14 @@ function CriarConta() {
   const [regime, setRegime] = useState<RegimeApuracao>("regular");
   const [prova, setProva] = useState<{ p: ProvaBiometrica; em: number } | null>(null);
   const [liveness, setLiveness] = useState(false);
-  const [certOk, setCertOk] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // MEI e pessoa física usam biometria; demais portes usam certificado digital.
-  // No banco de verdade, quem opera a empresa é uma pessoa: a biometria do
-  // representante é sempre exigida; o certificado fica para assinar lotes.
-  const usaBiometria = tipo === "PF" || porte === "MEI" || MODO_API;
-  const usaCertificado = tipo === "PJ" && porte !== "MEI";
+  // Todo mundo entra por biometria facial: a pessoa (PF) ou o representante que
+  // vai operar a conta da empresa (PJ). Os demais usuários da PJ são cadastrados
+  // depois em "Equipe & alçadas", cada um com o próprio rosto e permissões. O
+  // certificado digital e-CNPJ não é mais o login da conta.
+  const usaBiometria = true;
   const facialOk = prova !== null && Date.now() - prova.em < VALIDADE_PROVA_MS;
 
   async function submit(e: React.FormEvent) {
@@ -75,8 +74,6 @@ function CriarConta() {
           ? "A verificação facial expirou. Faça de novo."
           : "Conclua a verificação facial (prova de vida).",
       );
-    if (usaCertificado && !MODO_API && !certOk)
-      return setErro("Conecte o certificado digital e-CNPJ da empresa.");
     setLoading(true);
     try {
       const pessoaCpf = tipo === "PF" ? digits : cpf.replace(/\D/g, "");
@@ -201,10 +198,7 @@ function CriarConta() {
                       id="porte"
                       className="field"
                       value={porte}
-                      onChange={(e) => {
-                        setPorte(e.target.value as PortePJ);
-                        setCertOk(false);
-                      }}
+                      onChange={(e) => setPorte(e.target.value as PortePJ)}
                     >
                       {(Object.keys(PORTES) as PortePJ[]).map((p) => (
                         <option key={p} value={p}>
@@ -257,14 +251,6 @@ function CriarConta() {
               )}
 
               {usaBiometria && <FacialStep ok={facialOk} onStart={() => setLiveness(true)} />}
-              {usaCertificado && (
-                <CertificadoDigital
-                  ok={certOk}
-                  onConnect={() => setCertOk(true)}
-                  dupla={PORTES[porte].duplaAssinatura}
-                  opcional={MODO_API}
-                />
-              )}
               {erro && <ErrorBox>{erro}</ErrorBox>}
               <button className="btn btn-ink w-full" disabled={loading}>
                 {loading ? "Criando…" : "Criar conta"}
@@ -325,62 +311,6 @@ function FacialStep({ ok, onStart }: { ok: boolean; onStart: () => void }) {
             >
               Iniciar verificação
             </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Verificação por certificado digital e-CNPJ (PME e grandes empresas). */
-function CertificadoDigital({
-  ok,
-  onConnect,
-  dupla,
-  opcional,
-}: {
-  ok: boolean;
-  onConnect: () => void;
-  dupla: boolean;
-  opcional: boolean;
-}) {
-  return (
-    <div className="rounded-[18px] border border-dashed border-line2 bg-background p-4">
-      <div className="flex items-start gap-3">
-        <span
-          className={cn(
-            "grid h-11 w-11 shrink-0 place-items-center rounded-full",
-            ok
-              ? "bg-[color-mix(in_oklab,var(--pos)_16%,transparent)] text-pos"
-              : "bg-tint text-ink",
-          )}
-        >
-          {ok ? <Check size={22} strokeWidth={3} /> : <ShieldCheck size={22} />}
-        </span>
-        <div className="min-w-0">
-          <p className="font-medium text-ink">
-            {ok ? "Certificado e-CNPJ conectado" : "Certificado digital e-CNPJ"}
-            {opcional && !ok && <span className="font-normal text-mut3"> · conectar depois</span>}
-          </p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Autenticação por ICP-Brasil (A1 em arquivo ou A3 em token) — o mesmo que assina suas
-            notas fiscais.
-            {opcional &&
-              " A integração com o certificado está em andamento; você pode vincular depois."}
-          </p>
-          {!ok && !opcional && (
-            <button
-              type="button"
-              onClick={onConnect}
-              className="mt-2 text-sm font-semibold text-ink underline underline-offset-4"
-            >
-              Conectar certificado ou token
-            </button>
-          )}
-          {dupla && (
-            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-tax-bg px-2.5 py-1 text-[11px] font-medium text-tax2">
-              <ShieldCheck size={12} /> Dupla autorização e alçadas por assinante
-            </p>
           )}
         </div>
       </div>
