@@ -18,6 +18,7 @@ def novo_desafio(
     repo: Repositorio = Depends(get_repo),
     ip: str | None = Depends(ip_cliente),
     login: str | None = Body(default=None, embed=True, max_length=180),
+    modo: str = Body(default="login", embed=True, max_length=20),
 ):
     """Gera o desafio de prova de vida (ação + validade). Logado, o desafio fica
     preso à pessoa. Para ENTRAR com biometria, mande {"login": e-mail ou CPF}: o
@@ -29,4 +30,4 @@ def novo_desafio(
     if dono is None and login:
         dono = repo.obter_usuario_por_login(login)
     repo.registrar_sessao_mfa(tipo="desafio", sucesso=True, usuario_id=dono["id"] if dono else None, ip=ip)
-    return biometria_service.criar_desafio(repo, usuario_id=dono["id"] if dono else None)
+    return biometria_service.criar_desafio(repo, usuario_id=dono["id"] if dono else None, modo=modo)

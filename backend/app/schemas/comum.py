@@ -21,8 +21,8 @@ class ProvaBiometrica(BaseModel):
 
     desafio_id: str = Field(..., min_length=10, max_length=60)
     quadros: list[str] = Field(
-        ..., min_length=2, max_length=5,
-        description="Imagens em base64 (sem espelhamento): a 1ª de frente, as seguintes durante o movimento pedido.",
+        ..., min_length=2, max_length=40,
+        description="Imagens em base64 (sem espelhamento) cobrindo a sequência do desafio (cadastro: piscar 3x + sorrir + virar p/ os dois lados; login: piscar 3x). O servidor confere a sequência inteira.",
     )
 
 

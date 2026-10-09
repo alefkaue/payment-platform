@@ -31,6 +31,14 @@ tf-keras>=2.15.0
 opencv-python==4.10.0.84
 numpy>=1.24.0
 
+# Prova de vida por LANDMARKS (olhos/boca/giro) -- ver services/landmarks_service.py.
+# O Face Landmarker (468 pontos + blendshapes) é o que permite detectar piscada
+# (EAR), abrir a boca e sorrir de verdade, no SERVIDOR. Suporta Python 3.9-3.12
+# (use py -3.12 no venv; o 3.14 ainda não tem wheel). O modelo .task é baixado
+# uma vez em runtime (FACE_LANDMARKER_MODEL ou ~/.cache/payflow). Import
+# preguiçoso: a API/os testes sobem sem ele no modo BIOMETRIA_STUB.
+mediapipe>=0.10.14
+
 # Persistência - Postgres (ver app/db/ e app/repositories/postgres_repository.py)
 sqlalchemy>=2.0.30
 psycopg2-binary>=2.9.9

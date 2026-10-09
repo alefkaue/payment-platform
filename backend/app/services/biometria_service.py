@@ -1,31 +1,29 @@
 """
 Biometria facial com prova de vida decidida pelo SERVIDOR.
 
-Fluxo (v7):
-1. O app pede um desafio: POST /biometria/desafios -> {desafio_id, acao, expira_em}.
-   `acao` é sorteada aqui (virar_esquerda | virar_direita) e o desafio vale uma
-   vez só, por DESAFIO_VALIDADE_SEG.
-2. O app filma o rosto e manda de 2 a 5 quadros: o primeiro de frente, os
-   seguintes durante a ação pedida (`ProvaBiometrica`).
+Fluxo (v8 -- prova de vida por landmarks):
+1. O app pede um desafio: POST /biometria/desafios -> {desafio_id, acao, ...}.
+   `acao` é sorteada aqui (piscar | abrir_boca | sorrir | virar_esquerda |
+   virar_direita) e o desafio vale uma vez só, por DESAFIO_VALIDADE_SEG.
+2. O app filma o rosto e manda de 4 a 16 quadros cobrindo a ação (`ProvaBiometrica`).
 3. O servidor confere o desafio (existe, não expirou, não foi usado, é deste
-   usuário), roda anti-spoofing em todos os quadros, mede o giro da cabeça entre
-   o quadro frontal e o mais virado, e compara o rosto com o cadastro.
+   usuário); extrai os landmarks de CADA quadro (olhos/boca/giro, via MediaPipe
+   em landmarks_service); decide de forma TEMPORAL se a ação aconteceu
+   (liveness_logic -- ex.: piscar é a transição aberto->fechado->aberto do EAR,
+   não um limiar solto); roda anti-spoofing e compara o rosto com o cadastro.
 
-Antes (v6) a "liveness" com piscar/virar rodava só no navegador (MediaPipe em
-app/src/components/payflow/liveness.tsx) e o servidor recebia uma foto solta --
-quem chamasse a API direto pulava a checagem. A checagem do app continua útil
-como guia para o usuário, mas quem decide agora é o servidor.
+Por que mudou (a v7 só olhava o giro): virar a cabeça rápido passava e uma foto
+parada também; às vezes aprovava sem rosto claro. Agora exigimos ROSTO EM TODOS
+os quadros e a transição correta do movimento. A checagem no app continua só
+como guia -- quem decide é o servidor, então chamar a API direto não pula nada.
 
-Motor: DeepFace (reconhecimento Facenet + anti-spoofing MiniFASNet). Importado de
-forma preguiçosa: a API e os testes sobem sem TensorFlow. A análise roda dentro
-de um semáforo (BIOMETRIA_CONCORRENCIA) para não ocupar todas as threads da API;
-quem não consegue vaga em BIOMETRIA_ESPERA_SEG recebe 503.
-
-Giro da cabeça: usamos a posição do ponto médio entre os olhos em relação ao
-centro da caixa do rosto (fração da largura). De frente fica perto de 0; virando
-a cabeça ele se desloca. O SINAL depende de a câmera espelhar ou não a imagem --
-o app deve mandar os quadros SEM espelhamento. Calibre GIRO_MINIMO e o sinal num
-aparelho real antes de produção.
+Motores: MediaPipe Face Landmarker (olhos/boca/giro -> liveness) + DeepFace
+(anti-spoofing MiniFASNet + reconhecimento Facenet). Ambos importados de forma
+preguiçosa: a API e os testes sobem sem eles (modo BIOMETRIA_STUB). A análise
+roda dentro de um semáforo (BIOMETRIA_CONCORRENCIA); sem vaga em
+BIOMETRIA_ESPERA_SEG, 503. O app deve mandar os quadros SEM espelhamento (o
+sinal do yaw depende disso) -- calibre os limiares de liveness_logic num aparelho
+real antes de produção.
 
 Embedding: este módulo devolve o vetor em texto puro; quem cifra/decifra para o
 banco é core/security.py, chamado pelos services.
@@ -43,20 +41,16 @@ from fastapi import HTTPException
 
 from app.core import tempo
 from app.core.config import get_settings
+from app.services import landmarks_service, liveness_logic
 
 logger = logging.getLogger("payflow.biometria")
 
 MODEL_NAME = "Facenet"
 DETECTOR_BACKEND = "opencv"
 DISTANCE_METRIC = "cosine"
-ACOES = ("virar_esquerda", "virar_direita")
-# Deslocamento mínimo (fração da largura do rosto) entre o quadro frontal e o
-# mais virado. Frontal precisa estar abaixo de FRONTAL_MAXIMO.
-GIRO_MINIMO = 0.06
-FRONTAL_MAXIMO = 0.08
-# Com a imagem SEM espelhamento, virar para a esquerda da pessoa desloca o
-# ponto entre os olhos para a direita da imagem (deslocamento positivo).
-SINAL_ACAO = {"virar_esquerda": 1, "virar_direita": -1}
+# Os modos (cadastro = sequência completa; login = piscar 3x) e seus passos/
+# limiares moram em liveness_logic -- aqui só orquestramos câmera + IA.
+MODOS = liveness_logic.MODOS
 
 _DATA_URI_RE = re.compile(r"^data:image/\w+;base64,")
 _semaforo: threading.BoundedSemaphore | None = None
@@ -71,18 +65,17 @@ _EMBEDDING_STUB = [0.0] * 128
 # =============================================================================
 
 
-def criar_desafio(repo, *, usuario_id: int | None) -> dict:
+def criar_desafio(repo, *, usuario_id: int | None, modo: str = "login") -> dict:
+    if modo not in MODOS:
+        raise HTTPException(status_code=400, detail="Modo de biometria inválido.")
     s = get_settings()
     publico_id = secrets.token_urlsafe(24)
-    acao = ACOES[secrets.randbelow(len(ACOES))]
     expira = tempo.agora() + timedelta(seconds=s.desafio_validade_seg)
-    repo.criar_desafio(publico_id=publico_id, acao=acao, usuario_id=usuario_id, expira_em=expira)
-    instrucao = {
-        "virar_esquerda": "Olhe para a câmera e depois vire devagar o rosto para a sua esquerda.",
-        "virar_direita": "Olhe para a câmera e depois vire devagar o rosto para a sua direita.",
-    }[acao]
-    return {"desafio_id": publico_id, "acao": acao, "instrucao": instrucao, "expira_em": expira,
-            "quadros_min": 2, "quadros_max": 5}
+    # O MODO vai na coluna `acao` do desafio: o conjunto de passos é fixo por modo
+    # (cadastro = piscar 3x + sorrir + virar p/ os dois lados; login = piscar 3x).
+    repo.criar_desafio(publico_id=publico_id, acao=modo, usuario_id=usuario_id, expira_em=expira)
+    return {"desafio_id": publico_id, "modo": modo, "passos": liveness_logic.passos_do_modo(modo),
+            "expira_em": expira, "quadros_min": liveness_logic.MIN_QUADROS, "quadros_max": 40}
 
 
 def _consumir_desafio(repo, desafio_id: str, usuario_id: int | None) -> str:
@@ -154,15 +147,6 @@ def _rosto_unico_real(imagem) -> dict:
     return rostos[0]["facial_area"]
 
 
-def _deslocamento(area: dict) -> float:
-    olho_e, olho_d = area.get("left_eye"), area.get("right_eye")
-    if not olho_e or not olho_d or not area.get("w"):
-        raise HTTPException(status_code=400, detail="Não foi possível localizar os olhos. Tente com mais luz, sem óculos escuros.")
-    meio_x = (olho_e[0] + olho_d[0]) / 2
-    centro_x = area["x"] + area["w"] / 2
-    return (meio_x - centro_x) / area["w"]
-
-
 def _embedding(imagem) -> list[float]:
     DeepFace, _ = _carregar_deepface()
     try:
@@ -174,18 +158,29 @@ def _embedding(imagem) -> list[float]:
     return reps[0]["embedding"]
 
 
-def _analisar_quadros(quadros: list[str], acao: str) -> tuple[list[float], list[float]]:
-    """Prova de vida + extração. Devolve (embedding do quadro frontal, embedding
-    do quadro mais virado). Levanta HTTPException se algo falhar."""
-    imagens = [_decodificar_imagem(q) for q in quadros]
-    desloc = [_deslocamento(_rosto_unico_real(img)) for img in imagens]
-    if abs(desloc[0]) > FRONTAL_MAXIMO:
-        raise HTTPException(status_code=401, detail="O primeiro quadro precisa ser de frente para a câmera.")
-    sinal = SINAL_ACAO[acao]
-    idx = max(range(1, len(desloc)), key=lambda i: (desloc[i] - desloc[0]) * sinal)
-    if (desloc[idx] - desloc[0]) * sinal < GIRO_MINIMO:
-        raise HTTPException(status_code=401, detail="Não identificamos o movimento pedido. Tente de novo, virando o rosto devagar.")
-    return _embedding(imagens[0]), _embedding(imagens[idx])
+def _analisar_sequencia(quadros: list[str], modo: str) -> list[list[float]]:
+    """Prova de vida por LANDMARKS + anti-spoofing + extração do embedding.
+
+    1. extrai os sinais de cada quadro (olhos/boca/giro) com o MediaPipe;
+    2. confere, de forma temporal, se a SEQUÊNCIA do modo aconteceu
+       (liveness_logic) -- exige rosto em todos os quadros, as 3 piscadas, etc.;
+    3. roda anti-spoofing (DeepFace) nos quadros frontais escolhidos (foto/tela
+       reprova) e devolve o(s) embedding(s) para comparação.
+    """
+    cv2, _ = _carregar_cv2()
+    imagens_bgr = [_decodificar_imagem(q) for q in quadros]
+    sinais = [landmarks_service.extrair(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)) for img in imagens_bgr]
+
+    ok, motivo = liveness_logic.verificar_sequencia(sinais, modo)
+    if not ok:
+        raise HTTPException(status_code=401, detail=motivo)
+
+    idxs = liveness_logic.melhores_frontais(sinais, n=2)
+    if not idxs:
+        raise HTTPException(status_code=400, detail="Não foi possível isolar um quadro nítido do rosto. Tente com mais luz.")
+    for i in idxs:
+        _rosto_unico_real(imagens_bgr[i])  # anti-spoofing: reprova foto/tela
+    return [_embedding(imagens_bgr[i]) for i in idxs]
 
 
 def _distancia(a: list[float], b: list[float]) -> tuple[float, float]:
@@ -211,24 +206,24 @@ def _executar(fn, *args):
 
 
 def _validar_quadros(quadros: list[str]) -> None:
-    if not 2 <= len(quadros) <= 5:
-        raise HTTPException(status_code=400, detail="Envie de 2 a 5 quadros: o primeiro de frente e os seguintes durante o movimento.")
+    if not 2 <= len(quadros) <= 40:
+        raise HTTPException(status_code=400, detail="Envie de 2 a 40 quadros cobrindo a sequência pedida.")
 
 
 def cadastrar(repo, prova, *, usuario_id: int | None = None) -> list[float]:
-    """Cadastro: confere o desafio, faz a prova de vida e devolve o embedding."""
-    acao = _consumir_desafio(repo, prova.desafio_id, usuario_id)
+    """Cadastro: confere o desafio (que precisa ser de CADASTRO -- a sequência
+    completa), faz a prova de vida e devolve o embedding."""
+    modo = _consumir_desafio(repo, prova.desafio_id, usuario_id)
     _validar_quadros(prova.quadros)
     if get_settings().biometria_stub:
         logger.warning("BIOMETRIA_STUB ligado -- cadastro NÃO confere o rosto (modo de teste).")
         return list(_EMBEDDING_STUB)
+    if modo != "cadastro":
+        # Impede baixar o nível: usar um desafio curto (login) para abrir conta.
+        raise HTTPException(status_code=400, detail="Peça um desafio de cadastro (sequência completa) para abrir a conta.")
 
     def _fazer():
-        frontal, virado = _analisar_quadros(prova.quadros, acao)
-        dist, limite = _distancia(frontal, virado)
-        if dist > limite:
-            raise HTTPException(status_code=401, detail="Os quadros não parecem ser da mesma pessoa.")
-        return frontal
+        return _analisar_sequencia(prova.quadros, modo)[0]
 
     return _executar(_fazer)
 
@@ -236,20 +231,21 @@ def cadastrar(repo, prova, *, usuario_id: int | None = None) -> list[float]:
 def verificar(repo, prova, *, usuario_id: int, embedding_cadastrado: list[float]) -> dict:
     """MFA: confere desafio + prova de vida e compara com o rosto cadastrado.
     401 genérico se não bater (o número fica só no log)."""
-    acao = _consumir_desafio(repo, prova.desafio_id, usuario_id)
+    modo = _consumir_desafio(repo, prova.desafio_id, usuario_id)
     _validar_quadros(prova.quadros)
     if get_settings().biometria_stub:
         logger.warning("BIOMETRIA_STUB ligado -- verificação aprovada SEM conferir o rosto (modo de teste).")
-        return {"verificado": True, "distancia": 0.0, "limite": 0.4, "modelo": "stub", "acao": acao}
+        return {"verificado": True, "distancia": 0.0, "limite": 0.4, "modelo": "stub", "modo": modo}
 
     def _fazer():
-        frontal, virado = _analisar_quadros(prova.quadros, acao)
-        d1, limite = _distancia(frontal, embedding_cadastrado)
-        d2, _ = _distancia(virado, embedding_cadastrado)
-        if max(d1, d2) > limite:
-            logger.info("MFA facial reprovado (d1=%.4f d2=%.4f limite=%.4f)", d1, d2, limite)
+        embeddings = _analisar_sequencia(prova.quadros, modo)
+        distancias = [_distancia(e, embedding_cadastrado) for e in embeddings]
+        pior = max(d for d, _ in distancias)
+        limite = distancias[0][1]
+        if pior > limite:
+            logger.info("MFA facial reprovado (pior=%.4f limite=%.4f)", pior, limite)
             raise HTTPException(status_code=401, detail="Rosto não corresponde ao titular da conta.")
-        return {"verificado": True, "distancia": round(max(d1, d2), 4), "limite": round(limite, 4),
-                "modelo": MODEL_NAME, "acao": acao}
+        return {"verificado": True, "distancia": round(pior, 4), "limite": round(limite, 4),
+                "modelo": MODEL_NAME, "modo": modo}
 
     return _executar(_fazer)

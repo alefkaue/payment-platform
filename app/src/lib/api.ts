@@ -429,15 +429,22 @@ export async function sair(refresh = true): Promise<void> {
 // Biometria (prova de vida com desafio do servidor)
 // =============================================================================
 
-export async function pedirDesafio(login?: string): Promise<Desafio> {
-  if (MODO_API) return post<Desafio>("/biometria/desafios", login ? { login } : {});
-  const acao = Math.random() > 0.5 ? "virar_esquerda" : "virar_direita";
-  return {
-    desafio_id: `demo-${Date.now()}`,
-    acao,
-    instrucao:
-      acao === "virar_esquerda" ? "Vire o rosto para a esquerda" : "Vire o rosto para a direita",
-  };
+const PASSOS_DEMO: Record<import("./types").ModoBiometria, import("./types").PassoDesafio[]> = {
+  cadastro: [
+    { id: "piscar3", instrucao: "Pisque os olhos devagar, 3 vezes" },
+    { id: "sorrir", instrucao: "Agora dê um sorriso" },
+    { id: "virar_esquerda", instrucao: "Vire o rosto para a sua esquerda" },
+    { id: "virar_direita", instrucao: "Vire o rosto para a sua direita" },
+  ],
+  login: [{ id: "piscar3", instrucao: "Pisque os olhos devagar, 3 vezes" }],
+};
+
+export async function pedirDesafio(
+  login?: string,
+  modo: import("./types").ModoBiometria = "login",
+): Promise<Desafio> {
+  if (MODO_API) return post<Desafio>("/biometria/desafios", login ? { login, modo } : { modo });
+  return { desafio_id: `demo-${Date.now()}`, modo, passos: PASSOS_DEMO[modo] };
 }
 
 // =============================================================================

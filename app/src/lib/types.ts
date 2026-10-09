@@ -17,10 +17,20 @@ export interface ProvaBiometrica {
   quadros: string[];
 }
 
+/** Passos de prova de vida que o servidor pode pedir. */
+export type PassoBiometria = "piscar3" | "sorrir" | "virar_esquerda" | "virar_direita";
+/** cadastro = sequência completa; login = só piscar 3x (mais rápido). */
+export type ModoBiometria = "cadastro" | "login";
+
+export interface PassoDesafio {
+  id: PassoBiometria;
+  instrucao: string;
+}
+
 export interface Desafio {
   desafio_id: string;
-  acao: "virar_esquerda" | "virar_direita";
-  instrucao: string;
+  modo: ModoBiometria;
+  passos: PassoDesafio[];
 }
 
 /** Para quem vai o dinheiro: chave Pix ou número de conta. */

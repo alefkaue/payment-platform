@@ -281,6 +281,7 @@ function CriarConta() {
 
         {liveness && (
           <LivenessCheck
+            modo="cadastro"
             onClose={() => setLiveness(false)}
             onSuccess={(p) => {
               setLiveness(false);
