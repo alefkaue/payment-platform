@@ -31,7 +31,7 @@ from fastapi import HTTPException
 from app.core import tempo
 from app.core.config import get_settings
 from app.db.models import AuthMetodo, PapelVinculo
-from app.deps import exigir_papel, exigir_pj
+from app.deps import chave_do_cliente, exigir_papel, exigir_pj
 from app.repositories.exceptions import SaldoInsuficienteError
 from app.repositories.repository import Repositorio
 from app.services import pix_service, seguranca_service, webhook_service
@@ -236,7 +236,7 @@ def transferir_lote(repo: Repositorio, *, usuario: dict, conta: dict, dispositiv
             destino = pix_service.resolver_destino(repo, item.destino)
             r = transferir(
                 repo, usuario=usuario, conta=conta, dispositivo=dispositivo, destino=destino, valor=item.valor,
-                descricao=item.descricao, idempotency_key=item.idempotency_key or f"lote-{lote_id}-{indice}", ip=ip,
+                descricao=item.descricao, idempotency_key=chave_do_cliente(item.idempotency_key) or f"lote-{lote_id}-{indice}", ip=ip,
                 mfa_resolvido=True, verificacao_previa=verificacao,
             )
         except HTTPException as e:
@@ -257,6 +257,20 @@ def expirar_vencidas(repo: Repositorio, empresa_id: int) -> int:
 _INTERROMPIDA = "A execução foi interrompida antes de mover o dinheiro. Nada foi debitado: lance de novo."
 
 
+def _bate_com(p: dict, t: dict) -> bool:
+    """A transação achada pela chave é mesmo a execução desta pendência? (C2-02: defesa
+    em profundidade além do espaço de nomes das chaves.)"""
+    if p["tipo"] == "transferencia":
+        return (t["valor"] == p["valor"]
+                and t["destino_carteira_id"] == p["payload"].get("destino_carteira_id"))
+    if p["tipo"] == "pagamento_cobranca":
+        return t["valor"] == p["valor"]
+    if p["tipo"] == "folha":
+        destinos = {i["destino_carteira_id"]: Decimal(i["valor"]) for i in p["payload"].get("itens") or []}
+        return destinos.get(t["destino_carteira_id"]) == t["valor"]
+    return False
+
+
 def conciliar_executando(repo: Repositorio) -> dict:
     """Job: operação aprovada que ficou "executando" (o processo caiu entre a última
     aprovação e a gravação do resultado). NUNCA reexecuta: confere no banco, pela chave
@@ -271,7 +285,8 @@ def conciliar_executando(repo: Repositorio) -> dict:
             status, resultado = "falhou", {"erro": "A execução foi interrompida. Confira o acesso em Equipe e refaça se "
                                                    "precisar.", "conciliada": True}
         else:
-            ids = repo.transacoes_da_pendente(p["id"], p["empresa_id"])
+            achadas = [t for t in repo.transacoes_da_pendente(p["id"], p["empresa_id"]) if _bate_com(p, t)]
+            ids = [t["id"] for t in achadas]
             if not ids:
                 status, resultado = "falhou", {"erro": _INTERROMPIDA, "conciliada": True}
             elif p["tipo"] == "folha":

@@ -83,6 +83,9 @@ def _resolver_itens(repo: Repositorio, conta: dict, itens: list) -> list[dict]:
         if not f or f["empresa_id"] != conta["empresa_id"] or not f["ativo"]:
             raise HTTPException(status_code=404, detail=f"Funcionário {it.funcionario_id} não encontrado nesta empresa.")
         valor = Decimal(it.valor) if it.valor is not None else f["salario"]
+        if valor is not None:
+            # Forma canônica (300 == 3e2 == 300.0): a chave derivada da folha não muda (C2-01).
+            valor = valor.quantize(Decimal("0.01"))
         if valor is None or valor <= 0:
             raise HTTPException(status_code=400, detail=f"Informe o valor do pagamento de {f['nome']}.")
         if f["conta_salario"] is None:

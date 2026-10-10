@@ -198,11 +198,25 @@ def chave_idempotencia(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=1, max_length=80),
 ) -> str | None:
     """Header Idempotency-Key (o mesmo contrato do campo `idempotency_key` do corpo)."""
-    return idempotency_key.strip() or None if idempotency_key else None
+    if idempotency_key is None:
+        return None
+    if not idempotency_key.strip():
+        # Quem mandou o header acha que está protegido: em branco não vira "sem chave" (C2-03).
+        raise HTTPException(status_code=400, detail="Idempotency-Key em branco.")
+    return idempotency_key.strip()
 
 
 def escolher_chave(header: str | None, corpo: str | None) -> str | None:
     """Header e corpo valem igual; os dois diferentes é pedido ambíguo (C1-03)."""
-    if header and corpo and header != corpo:
+    if corpo is not None and not corpo.strip():
+        raise HTTPException(status_code=400, detail="idempotency_key em branco.")
+    if header and corpo and header != corpo.strip():
         raise HTTPException(status_code=400, detail="Idempotency-Key do header diferente da do corpo.")
-    return corpo or header
+    return chave_do_cliente((corpo or "").strip() or header)
+
+
+def chave_do_cliente(chave: str | None) -> str | None:
+    """Prefixo "u:" em toda chave que vem de fora: o cliente não consegue escolher uma
+    chave do sistema ("pendente-{id}", "folha-...", "lote-...", "recorrencia-...") e
+    fazer a conciliação tomar o Pix dele pela execução de uma pendência (C2-02)."""
+    return f"u:{chave}" if chave else None

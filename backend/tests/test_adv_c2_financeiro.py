@@ -12,7 +12,6 @@ from tests.helpers import admin_h
 
 
 @pytest.mark.parametrize("valor", ["300", "3e2", "300.0"])
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="ACHADO C2-01: representação decimal equivalente muda a chave derivada e duplica salário")
 def test_folha_valor_equivalente_nao_repete(cliente, folha, valor):
     dono, n, f, _, (fid, _) = folha
     for item in ({"funcionario_id": fid}, {"funcionario_id": fid, "valor": valor}):
@@ -43,7 +42,6 @@ def test_folha_alterar_espacos_rotulo_nao_repete(cliente, folha):
     assert f.saldo() == "300.00"
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="ACHADO C2-02: chave pública pendente-id permite conciliar movimento alheio como execução")
 def test_conciliar_chave_publica_nao_prova_execucao(cliente, pendente, relogio, monkeypatch):
     dono, n, _, _, oid = pendente
     outro = Pessoa(cliente, "c2.isca@ex.com")
@@ -75,7 +73,7 @@ def test_conciliar_nao_confunde_empresa(cliente, pendente, relogio):
     assert _status(cliente, dono, n, oid)["status"] == "falhou"
 
 
-@pytest.mark.parametrize("header", ["", pytest.param("   ", marks=pytest.mark.xfail(strict=True, raises=AssertionError, reason="ACHADO C2-03: header em branco é descartado e executa sem idempotência"))])
+@pytest.mark.parametrize("header", ["", "   "])  # C2-03 corrigido
 def test_header_vazio_nao_executa(cliente, header):
     a, b = Pessoa(cliente, "c2.header@ex.com"), Pessoa(cliente, "c2.destino@ex.com")
     depositar(cliente, a.numero, 100)

@@ -404,7 +404,7 @@ class RepositorioExtras:
             ).order_by(OperacaoPendente.id)).all()
             return [self._pendente_dict(p) for p in ps]
 
-    def transacoes_da_pendente(self, pendente_id: int, empresa_id: int) -> list[int]:
+    def transacoes_da_pendente(self, pendente_id: int, empresa_id: int) -> list[dict]:
         """Ids das transações que a execução da pendente gravou, achadas pela chave de
         idempotência "{carteira}:pendente-{id}" (folha: "...-{id}-{item}") em carteira da empresa."""
         with self._sf() as s:
@@ -415,7 +415,8 @@ class RepositorioExtras:
                 Transacao.idempotency_key.like(f"%:{chave}") | Transacao.idempotency_key.like(f"%:{chave}-%"),
             ).order_by(Transacao.id)).all()
             # O LIKE acha "pendente-1" dentro de "pendente-12": confere a chave exata.
-            return [t.id for t in ts if t.idempotency_key.split(":", 1)[1] == chave
+            return [{"id": t.id, "valor": t.valor_bruto, "destino_carteira_id": t.destino_carteira_id}
+                    for t in ts if t.idempotency_key.split(":", 1)[1] == chave
                     or t.idempotency_key.split(":", 1)[1].startswith(f"{chave}-")]
 
     def reconciliar_pendente(self, pendente_id: int, status: str, resultado: dict) -> bool:
