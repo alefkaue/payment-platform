@@ -66,10 +66,17 @@ const local = () => window.localStorage;
 
 let tokens: Tokens | null = typeof window !== "undefined" ? ler<Tokens>(sess, K_TOKENS) : null;
 let contaNumero: string | null = typeof window !== "undefined" ? ler<string>(sess, K_CONTA) : null;
+let versaoSessao = 0;
 
 export function salvarTokens(t: Tokens | null) {
+  versaoSessao++;
   tokens = t;
   gravar(sess, K_TOKENS, t);
+}
+
+/** Permite encerrar também a sessão mantida só em memória (storage indisponível). */
+export function refreshDaSessao(): string | undefined {
+  return tokens?.refresh_token;
 }
 
 export function definirConta(numero: string | null) {
@@ -134,8 +141,9 @@ type Renovacao = { ok: true } | { ok: false; recusada: boolean; motivo: string }
 let renovando: Promise<Renovacao> | null = null;
 
 async function renovarAgora(): Promise<Renovacao> {
-  if (!tokens?.refresh_token)
-    return { ok: false, recusada: true, motivo: "Sua sessão terminou. Entre de novo." };
+  const versao = versaoSessao;
+  const refresh = tokens?.refresh_token;
+  if (!refresh) return { ok: false, recusada: true, motivo: "Sua sessão terminou. Entre de novo." };
   // A sessão é presa ao aparelho: o refresh só vale com a mesma chave (DPoP).
   const url = `${API_URL}/auth/refresh`;
   let r: Response;
@@ -147,18 +155,22 @@ async function renovarAgora(): Promise<Renovacao> {
         "X-Dispositivo-Id": dispositivoId(),
         DPoP: await criarProva("POST", url),
       },
-      body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+      body: JSON.stringify({ refresh_token: refresh }),
     });
   } catch {
     return { ok: false, recusada: false, motivo: "Sem conexão com o servidor." };
   }
+  if (versao !== versaoSessao) return { ok: false, recusada: false, motivo: "A sessão mudou." };
   if (!r.ok) {
     const motivo =
       detalheDe(await r.json().catch(() => null)) ?? "Sua sessão terminou. Entre de novo.";
+    if (versao !== versaoSessao) return { ok: false, recusada: false, motivo: "A sessão mudou." };
     // 429/5xx: a sessão continua válida, só não deu para renovar agora.
     return { ok: false, recusada: r.status === 401 || r.status === 403, motivo };
   }
-  salvarTokens((await r.json()) as Tokens);
+  const novos = (await r.json()) as Tokens;
+  if (versao !== versaoSessao) return { ok: false, recusada: false, motivo: "A sessão mudou." };
+  salvarTokens(novos);
   return { ok: true };
 }
 
@@ -182,6 +194,7 @@ export async function requisitar<T>(
   anonimo = false,
 ): Promise<Resposta<T>> {
   if (!API_URL) throw new ApiError("Backend não configurado (VITE_API_URL).", 500);
+  const versao = versaoSessao;
   const headers: Record<string, string> = { "X-Dispositivo-Id": dispositivoId() };
   if (corpo !== undefined) headers["Content-Type"] = "application/json";
   if (!anonimo && tokens?.access_token) headers["Authorization"] = `Bearer ${tokens.access_token}`;
@@ -200,6 +213,8 @@ export async function requisitar<T>(
     throw new ApiError("Sem conexão com o servidor. Verifique a internet e tente de novo.", 0);
   }
 
+  if (versao !== versaoSessao) throw new ApiError("A sessão mudou. Tente de novo.", 409);
+
   // 401 de sessão (token vencido, sessão encerrada, outra chave...). 401 de
   // biometria ("rosto não confere") não traz WWW-Authenticate e não derruba nada.
   const sessaoRecusada =
@@ -215,7 +230,9 @@ export async function requisitar<T>(
       throw new ApiError("Não deu para confirmar sua sessão agora. Tente de novo.", 503);
     motivoQueda = rn.motivo;
   }
+  const versaoResposta = versaoSessao;
   const texto = await r.text();
+  if (versaoResposta !== versaoSessao) throw new ApiError("A sessão mudou. Tente de novo.", 409);
   const dados = texto ? (JSON.parse(texto) as unknown) : null;
   if (!r.ok) {
     const msg =

@@ -36,6 +36,75 @@ describe("queda de sessão", () => {
     vi.unstubAllEnvs();
   });
 
+  it("logout limpa tokens e conta antes de a rede responder", async () => {
+    const http = await carregar();
+    http.definirConta("empresa");
+    let concluir!: (r: Response) => void;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise((ok) => {
+          concluir = ok;
+        }),
+    );
+    const api = await import("./api");
+    const saida = api.sair();
+    expect(sessionStorage.getItem("payflow-tokens")).toBeNull();
+    expect(sessionStorage.getItem("payflow-conta-numero")).toBeNull();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    http.salvarTokens({ access_token: "nova", refresh_token: "novo" });
+    concluir(resposta(200, {}));
+    await saida;
+    expect(sessionStorage.getItem("payflow-tokens")).toContain("nova");
+  });
+
+  it("refresh atrasado não ressuscita sessão depois de logout", async () => {
+    const http = await carregar();
+    let concluir!: (r: Response) => void;
+    fetchMock.mockResolvedValueOnce(resposta(401, {}, true)).mockImplementationOnce(
+      () =>
+        new Promise((ok) => {
+          concluir = ok;
+        }),
+    );
+    const pedido = http.get("/contas");
+    const rejeicao = expect(pedido).rejects.toMatchObject({ status: 503 });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    http.salvarTokens(null);
+    concluir(resposta(200, { access_token: "antigo", refresh_token: "antigo" }));
+    await rejeicao;
+    expect(sessionStorage.getItem("payflow-tokens")).toBeNull();
+  });
+
+  it("logout revoga a sessão mesmo sem tokens no sessionStorage", async () => {
+    await carregar();
+    sessionStorage.removeItem("payflow-tokens");
+    fetchMock.mockResolvedValue(resposta(200, {}));
+    const api = await import("./api");
+    await api.sair();
+    expect(fetchMock.mock.calls[0]?.[1]?.body).toBe(JSON.stringify({ refresh_token: "rt" }));
+  });
+
+  it("401 atrasado da pessoa anterior não encerra o novo login", async () => {
+    const http = await carregar();
+    const aviso = vi.fn();
+    http.aoExpirarSessao(aviso);
+    let concluir!: (r: Response) => void;
+    fetchMock.mockImplementation(
+      () =>
+        new Promise((ok) => {
+          concluir = ok;
+        }),
+    );
+    const pedido = http.get("/contas");
+    const rejeicao = expect(pedido).rejects.toMatchObject({ status: 409 });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    http.salvarTokens({ access_token: "nova", refresh_token: "novo" });
+    concluir(resposta(401, {}, true));
+    await rejeicao;
+    expect(aviso).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem("payflow-tokens")).toContain("nova");
+  });
+
   it("refresh recusado: limpa a sessão e entrega o motivo do servidor ao login", async () => {
     const http = await carregar();
     const avisos: string[] = [];

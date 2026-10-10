@@ -63,6 +63,22 @@ beforeEach(() => {
   vi.mocked(estornarCobranca).mockResolvedValue({ ...tx, categoria: "estorno" });
 });
 afterEach(cleanup);
+it.each(["<img src=x onerror=alert(1)>", "<script>alert(1)</script>", "javascript:alert(1)"])(
+  "renderiza descrição e erro maliciosos como texto: %s",
+  async (payload) => {
+    vi.mocked(transacaoPorId).mockResolvedValue({ ...tx, descricao: payload });
+    vi.mocked(contestar).mockRejectedValue(new Error(payload));
+    abrir(Comprovante);
+    expect(await screen.findByText((texto) => texto.startsWith(payload))).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Contestar" }));
+    fireEvent.change(screen.getByLabelText("Motivo"), { target: { value: "Golpe" } });
+    fireEvent.click(screen.getByRole("button", { name: "Enviar contestação" }));
+    await waitFor(() =>
+      expect(screen.getAllByText((texto) => texto.startsWith(payload)).length).toBeGreaterThan(1),
+    );
+    expect(document.querySelector("script, img[onerror], a[href^='javascript:']")).toBeNull();
+  },
+);
 function abrir(rota: typeof Comprovante | typeof Contas) {
   const Component = rota.options.component!;
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
