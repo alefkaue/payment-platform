@@ -38,7 +38,8 @@ def _brl(v: Decimal) -> str:
     return f"R$ {v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def checador_de_limites(*, valor: Decimal, titular_tipo: str, dispositivo: dict | None):
+def checador_de_limites(*, valor: Decimal, titular_tipo: str, dispositivo: dict | None,
+                        regra_de_aparelho: bool = True):
     """Devolve o callback que o repositório chama com a carteira travada."""
     s = get_settings()
 
@@ -58,7 +59,7 @@ def checador_de_limites(*, valor: Decimal, titular_tipo: str, dispositivo: dict 
                     status_code=403,
                     detail=f"Limite {periodo} excedido: disponível {_brl(max(teto - usado, Decimal('0')))}.",
                 )
-        if titular_tipo == "PF" and (dispositivo is None or not dispositivo["confiavel"]):
+        if regra_de_aparelho and titular_tipo == "PF" and (dispositivo is None or not dispositivo["confiavel"]):
             teto_tx = Decimal(str(s.dispositivo_novo_por_transacao))
             teto_dia = Decimal(str(s.dispositivo_novo_diario))
             if valor > teto_tx:

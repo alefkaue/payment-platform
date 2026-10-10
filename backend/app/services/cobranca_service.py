@@ -124,7 +124,10 @@ def criar(repo: Repositorio, *, usuario: dict, conta: dict, dados, ip: str | Non
             "linha_digitavel": gerar_linha_digitavel(int(valores[i] * 100)), "grupo_parcelamento": grupo,
             "parcela_numero": i + 1, "parcelas_total": n, "criado_por_usuario_id": usuario["id"],
         })
-    cobrancas = repo.criar_cobrancas(linhas)
+    try:
+        cobrancas = repo.criar_cobrancas(linhas)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
     repo.registrar_log(ator=usuario["email"], acao="cobranca_criada", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"),
                        detalhe={"txids": [c["txid"] for c in cobrancas], "valor": str(valor), "nfe": bool(chave)})
     return cobrancas
@@ -173,8 +176,10 @@ def pagar(
         metodo = auth_metodo or AuthMetodo.SELFIE
 
     split = split_da_nota(valor, cob["cbs"], cob["ibs"]) if vai_reter(cob) else sem_split(valor)
-    checar = None if automatico else seguranca_service.checador_de_limites(
-        valor=valor, titular_tipo=conta["titular_tipo"], dispositivo=dispositivo)
+    # Débito automático também respeita os limites de valor do pagador (por transação,
+    # diurno/noturno -- R1-16). Só a regra de aparelho novo não se aplica: não há aparelho.
+    checar = seguranca_service.checador_de_limites(
+        valor=valor, titular_tipo=conta["titular_tipo"], dispositivo=dispositivo, regra_de_aparelho=not automatico)
     if not automatico and not pular_alcada:
         checar = _checar_alcada_diaria(conta, usuario, valor, checar)
     try:

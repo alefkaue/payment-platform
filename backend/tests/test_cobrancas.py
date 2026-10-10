@@ -221,3 +221,34 @@ def test_acoes_de_cobranca_aparecem_na_auditoria_da_empresa(cliente):
     assert cliente.post(f"/cobrancas/{c['txid']}/cancelar", json={}, headers=dono.h(n)).status_code in (200, 204)
     acoes = [a["acao"] for a in cliente.get("/empresas/atual/auditoria", headers=dono.h(n)).json()]
     assert "cobranca_criada" in acoes and "cobranca_cancelada" in acoes
+
+
+def test_mesma_nota_nao_vira_duas_cobrancas(cliente):
+    """R1-39: a mesma NF-e em outra cobrança reteria o imposto da nota de novo."""
+    dono, n, cnpj = _empresa(cliente)
+    nota = {"chave": gerar_chave_nfe(cnpj), "cbs": "0.90", "ibs": "0.10"}
+    assert len(_cobrar(cliente, dono, n, valor="100.00", nota_fiscal=nota, parcelas=2, vencimento="2026-11-10")) == 2
+    r = cliente.post("/cobrancas", json={"valor": "100.00", "nota_fiscal": nota}, headers=dono.h(n))
+    assert r.status_code == 409 and "nota fiscal" in r.json()["detail"]
+
+
+def test_debito_automatico_respeita_o_limite_do_pagador(cliente, relogio, monkeypatch):
+    """R1-16: o recebedor não passa do limite por transação que o pagador escolheu."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "refresh_token_exp_dias", 90)
+    dono, n, _ = _empresa(cliente)
+    pagador = Pessoa(cliente, "limitado@ex.com")
+    depositar(cliente, pagador.numero, 5000)
+    assert cliente.put("/seguranca/limites", json={"por_transacao": "100.00"}, headers=pagador.h()).status_code == 200
+    a = cliente.post("/pix-automatico/autorizacoes", headers=dono.h(n), json={
+        "pagador": {"numero": pagador.numero}, "descricao": "Plano", "valor_maximo": "1000.00",
+        "periodicidade": "mensal"}).json()
+    cliente.post(f"/pix-automatico/autorizacoes/{a['id']}/aceitar", headers=pagador.h())
+    r = cliente.post(f"/pix-automatico/autorizacoes/{a['id']}/cobrancas", headers=dono.h(n),
+                     json={"valor": "800.00", "vencimento": "2026-10-10"})
+    assert r.status_code == 201, r.text
+    relogio.definir(datetime(2026, 10, 10, 15, 0, tzinfo=timezone.utc))
+    r = cliente.post("/admin/jobs/recorrencias", headers=admin_h(cliente)).json()
+    assert r["pagas"] == 0
+    assert pagador.saldo() == "5000.00"

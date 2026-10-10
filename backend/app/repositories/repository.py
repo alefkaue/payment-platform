@@ -966,6 +966,16 @@ class Repositorio(RepositorioExtras):
     def criar_cobrancas(self, linhas: list[dict]) -> list[dict]:
         with self._sf() as s:
             objs = [Cobranca(**l) for l in linhas]
+            chaves = sorted({c.nfe_chave for c in objs if c.nfe_chave})
+            if chaves:
+                # Trava a carteira de quem cobra: duas emissões simultâneas com a mesma nota
+                # não passam juntas. Nota já usada em cobrança não cancelada = recusa (R1-39):
+                # senão o mesmo imposto da nota seria retido de novo.
+                s.scalar(select(Carteira).where(Carteira.id.in_({c.recebedor_carteira_id for c in objs}))
+                         .with_for_update())
+                if s.scalar(select(func.count(Cobranca.id)).where(
+                        Cobranca.nfe_chave.in_(chaves), Cobranca.status != "cancelada")):
+                    raise ValueError("Esta nota fiscal já está vinculada a outra cobrança.")
             ids_autorizacoes = sorted({c.autorizacao_id for c in objs if c.autorizacao_id is not None})
             for aid in ids_autorizacoes:
                 a = s.scalar(select(AutorizacaoRecorrente).where(AutorizacaoRecorrente.id == aid).with_for_update())
