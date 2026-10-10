@@ -15,7 +15,8 @@ pentest feito por outros grupos.
 | `ENDPOINTS.md` | Inventário das rotas e de quem pode chamar cada uma (gerado do código) |
 | `PENTEST.md` | Escopo, regras e modelo de relatório para quem vai testar |
 | `SEGURANCA.md` | Histórico dos controles (itens 1–10) e diário |
-| `AZURE.md` | Como o ambiente de nuvem é montado |
+| `COMO-RODAR-REMOTO.md` | Como o dono sobe o pentest local por dois túneis |
+| `AZURE.md` | Destino final de nuvem, ainda não publicado |
 
 ## 1. Como reportar uma vulnerabilidade
 
@@ -28,7 +29,14 @@ pentest feito por outros grupos.
 
 ## 2. Escopo e limites
 
-- No escopo: o app Android, o app web de testes e a API — ver a tabela do `PENTEST.md`.
+- No escopo: web por `<URL_WEB>` (entrada principal), APK debug local no emulador (extra)
+  e API por `<URL_API>`; backend SQLite no PC do dono, com dois túneis HTTPS.
+- Admin restrito por `ADMIN_IPS_PERMITIDOS=127.0.0.1`, fora do escopo remoto. Não está desligado.
+- Regras do grupo: rosto × documento informativo; KYC pendente movimenta em desenvolvimento;
+  CNPJ/quadro societário stub; depósito demo permitido até R$ 10.000 por chamada, sem idempotência.
+  Não são achados por si só. Documento, rosto e CPF continuam únicos.
+- Emulador sem atestação é permitido (`ATESTACAO_EXIGIDA=0`). Outra chave/outro app são recusados.
+  Pinning só no APK do CI com API fixa; APK local usa CAs do sistema e recusa CA de usuário.
 - Fora: a plataforma de nuvem em si, serviços de terceiros, engenharia social, ataque
   físico, negação de serviço.
 - Não use dados reais de terceiros (documento, rosto). Se cair em dado de outra pessoa,

@@ -11,14 +11,17 @@ pagamento, a CBS e o IBS destacados na nota são separados e enviados ao Fisco.
 
 | Pasta | O que é |
 |---|---|
-| `backend/` | API FastAPI v7 (Python): contas PF/PJ, cobrança com split, Pix, limites, biometria |
+| `backend/` | API FastAPI v9 (Python): contas PF/PJ, cobrança com split, Pix, limites, biometria |
 | `app/` | **App Android** (Capacitor; interface em Vite/TanStack/React). A mesma interface sai como app web para testes |
 | `download/` | Página de download do APK (publicada em `/baixar` junto com o app web) |
 | `site/` | Site institucional com simulador de split (Next.js) |
 
 ## Rodar rápido
 
-**Backend** (SQLite local, biometria em modo de teste):
+Para o pentest atual, abra o web em `<URL_WEB>`; o APK debug local é um alvo extra.
+O dono sobe API SQLite e web por dois túneis HTTPS conforme [COMO-RODAR-REMOTO.md](COMO-RODAR-REMOTO.md). Azure é o destino final, ainda não publicado.
+
+**Backend para demo local** (SQLite, biometria em modo de teste):
 
 ```bash
 cd backend
@@ -30,7 +33,8 @@ python -m pytest                                    # testes
 ```
 
 No PowerShell, defina a variável antes: `$env:BIOMETRIA_STUB="1"`.
-Admin de desenvolvimento: `admin@payflow.com.br` / `payflow-admin-dev`.
+STUB aprova qualquer rosto: use apenas para demo, nunca no pentest. No ambiente do pentest,
+o admin é restrito a `127.0.0.1` por `ADMIN_IPS_PERMITIDOS` e fica fora do escopo remoto.
 
 **App**:
 
@@ -67,8 +71,12 @@ administrador" no [HANDOFF.md](HANDOFF.md#node-sem-administrador).
 - Limites diurno/noturno, regra de **aparelho novo** do Banco Central, bloqueio
   cautelar e contestação (MED) rodam no servidor.
 - Dinheiro trafega como **string decimal** (`"1500.00"`).
-- **Idempotência** em tudo que move dinheiro (Pix, cobrança, folha, lote, devolução,
+- **Idempotência** nos fluxos de pagamento (Pix, cobrança, folha, lote, devolução,
   pendências): header `Idempotency-Key` ou campo `idempotency_key`; o app gera uma chave
-  por intenção de pagamento. Reenvio devolve o resultado original.
+  por intenção de pagamento. Reenvio devolve o resultado original. O depósito demo é uma exceção:
+  não tem idempotência nem teto cumulativo; no teste, gerar saldo próprio é permitido (até R$ 10.000 por chamada).
 - Segurança e auditoria: `SECURITY.md` (índice) e `relatorios/AUDITORIA-2-SEGURANCA.md`.
-- **App Android primeiro**: rodar no PC (emulador) em `RODAR-NO-PC.md`; regras do pentest em `PENTEST.md`.
+- **Pentest**: web por `<URL_WEB>` como entrada principal; APK no emulador em `RODAR-NO-PC.md`.
+  Pinning só no APK do CI com API fixa; o APK local do túnel aceita só CAs do sistema.
+- Regras de teste: KYC pendente movimenta em desenvolvimento (em produção não); rosto × documento
+  é informativo; CNPJ/quadro societário é stub. Documento, rosto e CPF continuam únicos. Veja `PENTEST.md`.

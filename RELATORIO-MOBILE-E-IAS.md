@@ -1,7 +1,7 @@
 # Astro — relatório da rodada "só celular" e do trabalho Claude + Codex (10/10/2026)
 
 > Arquivo de passagem de bastão. Escrito pelo Claude Code e atualizado ao longo do trabalho,
-> para o Alef ler ao voltar. **Estado: tudo concluído e no GitHub (seção 5).**
+> para o Alef ler ao voltar. **Histórico das rodadas; estado atual e pendências na seção 8.**
 
 ## 1. Como o trabalho foi organizado
 
@@ -113,3 +113,49 @@ bater com o rosto, que é permitida; segurança e facilidade de uso; e quem sobe
 - **App web de volta** na Azure (para testes), com a página de download em `/baixar`.
 - **Câmera que orienta** (com a Codex, cartão F1): preparo antes dos passos (distância,
   centro, luz, óculos), pausa se a captura piorar, mensagem clara quando o servidor recusa.
+
+## §8 Rodada 10/10 (tarde)
+
+Esta seção registra o estado atual e substitui, para a entrega do pentest, as
+orientações anteriores sobre só celular, Astro Lab, Azure já publicada e pausa
+da captura quando a qualidade piora.
+
+- **Facial em rajada**: luz, distância, centro e óculos são conferidos no preparo.
+  Depois, o passo termina pelo movimento efetivamente gravado ou pelo tempo;
+  ausência de rosto por 1,2 s reinicia o passo. O prazo total de preparo/captura
+  é 105 s. Desafio novo só é pedido com câmera/modelo prontos (um desafio já
+  fornecido pelo login pode ser reaproveitado). GPU tem volta para CPU e o vídeo
+  acompanha a proporção real da câmera. O servidor continua decidindo a aprovação.
+- **Óculos**: barra horizontal na ponte do nariz, limiar padrão 0,6. No cadastro,
+  o servidor recusa somente se todos os quadros escolhidos como frontais indicarem
+  armação; não são todos os quadros frontais da rajada.
+- **Atestação do emulador**: cadeia íntegra sem raiz da Google retorna sem nível,
+  aceito com `ATESTACAO_EXIGIDA=0` e recusado com `=1`. Outra chave DPoP ou outro app
+  continuam recusados; o emulador não recebe garantia de hardware.
+- **Admin**: regra do ambiente `ADMIN_IPS_PERMITIDOS=127.0.0.1`, fora do escopo pela
+  internet. Não está desligado; deve-se conferir a recusa remota com IP restaurado.
+- **Ambiente**: backend no PC do dono com SQLite, API e web por dois túneis
+  cloudflared HTTPS, sem expor o IP do dono. URLs mudam ao reiniciar; web é a
+  entrada principal, APK debug local com `VITE_API_URL=<URL_API>` é alvo extra.
+  Web deve aplicar os cabeçalhos de `_headers`. Pinning só no APK do CI com API fixa;
+  APK local aceita só CAs do sistema. Azure é o destino final, ainda não publicado.
+- **Auditoria do Codex**: leitura estática do código/diff e dos fluxos PF/PJ,
+  login, facial, DPoP, saldo, proxy e documentação, registrada em
+  `codex-auditoria.md` no scratchpad indicado pela equipe. Não comprova APK
+  instalado, modelos carregados nem túneis funcionando. As correções posteriores
+  da facial/atestação estão no diff atual; esta atualização não publica nem faz commit.
+
+### Itens 1–6 que dependem de decisão
+
+| Item | Estado / decisão |
+|---|---|
+| 1. KYC pendente em dev | Mantido como regra de teste; em produção movimentar exige aprovação |
+| 2. Rosto × documento informativo | Decisão do grupo para facilitar outros grupos; sem bloqueio |
+| 3. CNPJ/quadro societário stub | Mantido como simulação de teste |
+| 4. Depósito sem idempotência | Geração de saldo próprio permitida, até R$ 10.000 por chamada; idempotência/teto cumulativo pendentes de decisão |
+| 5. Recusas 400 da facial | Não entram no contador autenticado (só 401); limitar processamento separado depende de decisão |
+| 6. DPoP compara só caminho | Origem completa de `htu` não é conferida; URL pública canônica depende de decisão |
+
+Os itens 1–4 descrevem regras/limites do teste, não achados por si só. Documento,
+rosto e CPF únicos continuam valendo. MiniFASNet, IP real atrás do túnel, recusa do
+admin remoto e cabeçalhos web ainda exigem conferência no ambiente em execução.
