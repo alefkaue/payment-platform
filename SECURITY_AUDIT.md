@@ -43,6 +43,8 @@ dos itens 1–10).
 | A-13 | Info | `tsc` quebrado por falta de tipos de `scripts/pinos.mjs` (regressão do item 10) | Corrigido |
 | A-18 | Info | `backend/.venv` foi commitado em `96861fc` (ago/2026); não está mais versionado | Sem segredo encontrado; sem ação obrigatória |
 | A-19 | Info | Após atualizar o FastAPI, o teste "nada abre sem login" passava **vazio** (2 rotas) | Corrigido (`app/core/rotas.py`) |
+| A-20 | **Alta** | **Cadastro com documento quebrava no Postgres** (500): o hash "frente:verso" (129 caracteres) não cabia na coluna de 64. O SQLite dos testes não confere tamanho | Corrigido (migração `e5f6a7b8c9d0`, não destrutiva) |
+| A-21 | Média | **Idempotência sob concorrência**: pedidos simultâneos com a mesma chave davam 500 em vez de devolver a transação (o dinheiro ficava certo) | Corrigido (chave conferida de novo depois do lock) |
 
 ### A-01 — Assinatura conjunta furada na Grande (Alta)
 - **Evidência**: sonda — admin da Grande, `LIMITE_DUAS_APROVACOES_REAIS=5000`, Pix de R$ 6.000 → **200** (executado). A regra só disparava para quem tinha alçada.
@@ -93,6 +95,14 @@ Em produção o admin **não entra** sem `ADMIN_IPS_PERMITIDOS` (confere no logi
 ### A-16 — Sem troca/recuperação de senha (pendente)
 Não é falha explorável hoje, mas é lacuna de produto: quem esquece a senha não volta. Desenho recomendado: recuperação com **rosto + documento** (o KYC já existe), sem link mágico por e-mail/SMS como prova única; troca com senha atual + rosto, derrubando as outras sessões.
 
+### A-20 e A-21 — achados pelo CI com Postgres (Alta / Média)
+Os dois só aparecem no Postgres. Achados quando o CI `backend.yml` rodou pela 1ª vez e
+reproduzidos localmente com um Postgres embutido (`pgserver`). A-20: `documentos_identidade.sha256`
+passou a `VARCHAR(140)`. A-21: em `executar_movimento`, a chave é conferida de novo **com a
+carteira travada** e o `IntegrityError` do `flush` também devolve a transação existente.
+Testes: suíte inteira no Postgres (`test_kyc_*` e `test_mesma_chave_em_paralelo_gera_uma_transacao`).
+O CI agora roda a **suíte inteira** no Postgres e `alembic check` (schema das migrações = modelos).
+
 ## 3. O que foi verificado e está correto (com evidência)
 
 | Controle | Evidência |
@@ -119,8 +129,8 @@ Não é falha explorável hoje, mas é lacuna de produto: quem esquece a senha n
 | O quê | Resultado |
 |---|---|
 | Backend `pytest` | **250 passaram, 3 pulados** (antes: 203; inclui 3 da correção da facial) — os 3 pulados são os de Postgres |
-| `test_concorrencia_postgres.py` (saque paralelo, mesma chave em paralelo, alçada diária em paralelo) | **Não rodou aqui** (sem Postgres local). Roda no CI: `.github/workflows/backend.yml` |
-| Migração `d4e5f6a7b8c9` | Não rodada em Postgres aqui; o CI sobe/desce/sobe no Postgres |
+| Suíte inteira no **Postgres 16** (Postgres embutido local) | **253 passaram** — inclui os 3 de concorrência; antes da correção A-20/A-21, 4 falhavam |
+| Migrações no Postgres (sobe, desce, sobe) + `alembic check` | OK; schema igual aos modelos |
 | App `vitest` | 19 passaram, 2 pulados |
 | App `tsc --noEmit` | sem erros |
 | App `eslint src scripts` | só `Delete ␍` (CRLF do checkout no Windows, arquivos não alterados) e 8 avisos antigos de fast-refresh |

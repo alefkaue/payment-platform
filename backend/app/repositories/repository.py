@@ -394,6 +394,12 @@ class Repositorio(RepositorioExtras):
                 stmt = stmt.with_for_update()
             cs = {c.id: c for c in s.scalars(stmt).all()}
             origem, destino = cs[origem_id], cs[destino_id]
+            if idempotency_key:
+                # De novo, já com a carteira travada: quem chegou antes com a mesma chave
+                # já fez commit enquanto esperávamos o lock (pedidos repetidos em paralelo).
+                ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
+                if ja:
+                    return repetida(ja)
 
             if checar:
                 checar(s, origem)
@@ -431,7 +437,16 @@ class Repositorio(RepositorioExtras):
                 criado_em=agora,
             )
             s.add(t)
-            s.flush()
+            try:
+                s.flush()
+            except IntegrityError:
+                # Mesma chave gravada por outra conexão no meio do caminho.
+                s.rollback()
+                if idempotency_key:
+                    ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
+                    if ja:
+                        return repetida(ja)
+                raise
             if split.aplicou_split:
                 s.add(SplitLiquidacao(transacao_id=t.id, natureza="LIQUIDO", carteira_destino_id=destino.id, valor=split.liquido, criado_em=agora))
                 if tributos is not None:

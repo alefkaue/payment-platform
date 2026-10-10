@@ -101,17 +101,33 @@ Problema relatado: o app mostrava as piscadas, mas o servidor dizia "0 piscadas 
   em sorrir/virar, os quadros da ação); o servidor usa o mesmo sinal do app.
   As proteções continuam: passos na ordem, ação não pedida reprova, piscar demais reprova.
 
+## 5.1 O que o CI com Postgres pegou
+
+No primeiro push, o novo CI rodou os testes num Postgres de verdade e falhou. Investigado
+localmente com um Postgres embutido, apareceram dois bugs que o SQLite dos testes escondia:
+
+- **Cadastro com documento quebrava em produção** (erro 500): frente + verso geram um
+  código de 129 caracteres, e a coluna aceitava 64. Corrigido com uma migração que só
+  aumenta a coluna.
+- **Pix repetido ao mesmo tempo** (o app reenviando por rede ruim) dava erro 500 em vez de
+  devolver o Pix original. O saldo nunca ficou errado. Corrigido.
+
+O build do APK também falhava (já antes desta rodada): faltava o passo `cap sync`, que
+gera arquivos do Capacitor que não ficam no git. Corrigido no workflow.
+
+O CI agora roda **a suíte inteira no Postgres** e confere que as migrações batem com o código.
+
 ## 6. Números
 
 | | Antes | Depois |
 |---|---|---|
-| Testes do backend | 203 | **250** (+3 de Postgres que rodam no CI) |
+| Testes do backend | 203 | **250** no SQLite e **253** no Postgres (inclui concorrência) |
 | Testes do app | 19 | 19 |
 | Avisos de vulnerabilidade em dependências (`pip-audit`; o `npm audit` de produção já estava em 0) | 35 | **0** |
 
 ## 7. O que falta
 
-1. Rodar o CI `backend.yml` e confirmar os 3 testes de concorrência no Postgres.
+1. Conferir o resultado do CI depois do último push (backend e APK).
 2. Subir o ambiente na Azure (`AZURE.md`) e fazer as configurações manuais de
    `SECURITY_AUDIT.md` §6.
 3. Segundo fator para o admin da plataforma; troca e recuperação de senha.

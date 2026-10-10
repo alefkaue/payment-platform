@@ -602,7 +602,8 @@ class DocumentoIdentidade(Base):
     tipo: Mapped[str] = mapped_column(String(12), nullable=False)  # rg | cnh | cin | passaporte
     status: Mapped[str] = mapped_column(String(12), nullable=False)
     provedor: Mapped[str] = mapped_column(String(20), nullable=False)
-    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    # SHA-256 da frente, ou "frente:verso" (129 caracteres) -- frente e verso obrigatórios.
+    sha256: Mapped[str] = mapped_column(String(140), nullable=False)
     campos: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
     verificacoes: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -58,15 +58,15 @@ jobs:
         working-directory: app
         run: node scripts/assemble-www.mjs
 
-      - name: Copiar web para o Android (sem Capacitor CLI)
+      # O sync copia www/ para o Android, grava capacitor.config.json (com o WebView sem
+      # depuração, ver capacitor.config.ts) e GERA capacitor-cordova-android-plugins/, que
+      # fica fora do git. Sem ele o Gradle falha ("cordova.variables.gradle does not exist").
+      - name: Capacitor sync (web + projeto Android)
         working-directory: app
         run: |
-          rm -rf android/app/src/main/assets/public
-          mkdir -p android/app/src/main/assets/public
-          cp -r www/. android/app/src/main/assets/public/
-          # webContentsDebuggingEnabled: false — nem o APK de debug abre o WebView no chrome://inspect
-          # (quem controla o JavaScript do app pede assinaturas à chave do Keystore).
-          printf '%s' '{"appId":"com.payflow.app","appName":"Astro","webDir":"www","backgroundColor":"#0A0A0A","android":{"webContentsDebuggingEnabled":false}}' > android/app/src/main/assets/capacitor.config.json
+          npx cap sync android
+          test -f android/capacitor-cordova-android-plugins/cordova.variables.gradle
+          grep -q '"webContentsDebuggingEnabled": *false' android/app/src/main/assets/capacitor.config.json
           echo "conteúdo de assets/public:" && ls android/app/src/main/assets/public | head
 
       # Pins das CAs da API (falha se a API estiver configurada e não responder).

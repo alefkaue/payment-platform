@@ -49,10 +49,12 @@ jobs:
       - name: Testes (SQLite)
         run: python -m pytest -q
 
-      - name: Concorrência no Postgres
+      # A suíte inteira de novo no Postgres: o SQLite não confere tamanho de coluna nem
+      # concorrência (o cadastro com frente+verso só quebrava no Postgres).
+      - name: Testes no Postgres (inclui concorrência)
         env:
           TEST_DATABASE_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
-        run: python -m pytest -q -rs tests/test_concorrencia_postgres.py
+        run: python -m pytest -q -rs
 
       - name: Migrações sobem e descem no Postgres
         env:
@@ -64,6 +66,7 @@ jobs:
           alembic upgrade head
           alembic downgrade -1
           alembic upgrade head
+          alembic check   # schema das migrações == modelos
 
       - name: Vulnerabilidades conhecidas (pip-audit)
         run: pip-audit -r requirements.txt
