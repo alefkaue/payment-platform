@@ -90,3 +90,26 @@ Você pediu para tirar a web e deixar só celular, e deixou as decisões comigo:
   3. `git tag apk-v1.1 && git push origin apk-v1.1` → sai o Release ligado à API de verdade.
   Os links `releases/latest/download/...` do `RODAR-NO-PC.md` passam a apontar para ele sozinhos.
 - Preencher período e contato no `PENTEST.md`.
+
+## 7. Rodada seguinte (10/10, noite) — pedido do Alef
+
+Pedido: puxar o commit do parceiro e aplicar o nosso trabalho em cima; manter app **e** web
+para testar; **remover o Astro Lab** (o desafio é atacar um app seguro); melhorar a facial
+(óculos, iluminação, "pegar direito"); uma conta por rosto/documento — exceto a foto do RG não
+bater com o rosto, que é permitida; segurança e facilidade de uso; e quem sobe para o GitHub
+é a Codex.
+
+- **Commit do parceiro** (`125fab2`, Yuri): já estava em cima da nossa `main` (fast-forward),
+  com: rosto único entre contas (comparação de templates com lock), CPF/CNPJ/celular
+  canônicos com restrição no banco, primeira sessão aproveitando a prova de vida do cadastro.
+  Testes depois do merge: backend 479, app 185.
+- **Facial no servidor** (`backend/app/services/qualidade_rosto.py`): recusa com orientação
+  quando está escuro, com luz estourada ou contraluz e, no cadastro, com óculos (armação na
+  ponte do nariz, pelos landmarks). Limiares em `ROSTO_*` no `.env` (calibrar em aparelhos).
+- **Uma conta por documento**: as mesmas imagens de RG/CNH não abrem outra conta; o OCR já
+  confere o CPF do documento e o rosto já é único. **Rosto do RG x selfie não reprova mais**
+  (só fica registrado), como pedido.
+- **Astro Lab removido**: um só `Astro.apk`, com todas as proteções.
+- **App web de volta** na Azure (para testes), com a página de download em `/baixar`.
+- **Câmera que orienta** (com a Codex, cartão F1): preparo antes dos passos (distância,
+  centro, luz, óculos), pausa se a captura piorar, mensagem clara quando o servidor recusa.
