@@ -6,6 +6,8 @@ import {
   pagarFolha,
   pendentes,
   removerFuncionario,
+  transacaoPorId,
+  transacoes,
 } from "./api";
 import { centavosFolha, totalFolha } from "./folha";
 import { contasDemo, sessao } from "@/mocks/data";
@@ -26,7 +28,7 @@ beforeEach(() => {
 async function cadastrar(salario = "100.00") {
   return cadastrarFuncionario({
     nome: "Ana Fictícia",
-    cpf: "11144477735",
+    cpf: "52998224725",
     cargo: "Atendimento",
     salario,
   });
@@ -35,7 +37,7 @@ describe("folha em demonstração", () => {
   it("cadastra com dinheiro decimal e CPF mascarado; remove com isolamento por empresa", async () => {
     expect(await funcionarios()).toEqual([]);
     const f = await cadastrar();
-    expect(f).toMatchObject({ nome: "Ana Fictícia", cpf: "***.444.777-**", salario: "100.00" });
+    expect(f).toMatchObject({ nome: "Ana Fictícia", cpf: "***.982.247-**", salario: "100.00" });
     const lista = await funcionarios();
     lista[0]!.nome = "Alterado";
     expect((await funcionarios())[0]?.nome).toBe("Ana Fictícia");
@@ -47,16 +49,33 @@ describe("folha em demonstração", () => {
     await removerFuncionario(f.id);
     expect(await funcionarios()).toEqual([]);
   });
-  it("paga o salário cadastrado e altera somente o saldo PJ", async () => {
+  it("paga o salário, credita a PF e grava transação consultável no extrato e comprovante", async () => {
     const pf = contaPorId(contasDemo.PF.carteira_id)?.saldo;
     const f = await cadastrar("100.10");
     const pontos = sessao.conta.pontos;
-    expect(await pagarFolha([{ funcionario_id: f.id }])).toMatchObject({
+    const resultado = await pagarFolha([{ funcionario_id: f.id }]);
+    expect(resultado).toMatchObject({
       resultados: [{ situacao: "pago", funcionario_id: f.id }],
     });
     expect(sessao.conta.saldo).toBe(9899.9);
     expect(sessao.conta.pontos).toBe(pontos);
-    expect(contaPorId(contasDemo.PF.carteira_id)?.saldo).toBe(pf);
+    expect(contaPorId(contasDemo.PF.carteira_id)?.saldo).toBeCloseTo(pf! + 100.1);
+    if (!("resultados" in resultado)) throw new Error("Esperava pagamento.");
+    const id = resultado.resultados[0]!.transacao_id!;
+    expect(await transacaoPorId(id)).toMatchObject({
+      id,
+      valor_bruto: 100.1,
+      aplicou_split: false,
+      status: "concluida",
+    });
+    expect((await transacoes()).some((t) => t.id === id)).toBe(true);
+    const empresa = sessao.conta;
+    sessao.conta = contaPorId(contasDemo.PF.carteira_id)!;
+    expect((await transacoes()).some((t) => t.id === id)).toBe(true);
+    expect(await transacaoPorId(id)).toMatchObject({
+      destino_carteira_id: sessao.conta.carteira_id,
+    });
+    sessao.conta = empresa;
     await pagarFolha([{ funcionario_id: f.id, valor: "0.20" }]);
     expect(sessao.conta.saldo).toBe(9899.7);
   });
@@ -120,7 +139,7 @@ describe("folha em demonstração", () => {
     sessao.conta.porte = "MEI";
     await cadastrar();
     await expect(
-      cadastrarFuncionario({ nome: "Bruno Fictício", cpf: "52998224725" }),
+      cadastrarFuncionario({ nome: "Bruno Fictício", cpf: "11144477735" }),
     ).rejects.toThrow(/MEI/);
   });
   it("a prévia soma decimais sem arredondamento binário", () => {
@@ -132,7 +151,7 @@ describe("folha em demonstração", () => {
     await expect(
       cadastrarFuncionario({ nome: "Ana Fictícia", cpf: "11111111111" }),
     ).rejects.toThrow(/CPF/);
-    const f = await cadastrarFuncionario({ nome: "Ana Fictícia", cpf: "11144477735" });
+    const f = await cadastrarFuncionario({ nome: "Ana Fictícia", cpf: "52998224725" });
     expect(f.salario).toBeNull();
     await expect(cadastrar()).rejects.toThrow(/já cadastrado/);
     await expect(pagarFolha([{ funcionario_id: f.id }])).rejects.toThrow(/Informe o valor/);
@@ -151,5 +170,24 @@ describe("folha em demonstração", () => {
       mensagem: "Folha cancelada.",
     });
     expect(sessao.conta.saldo).toBe(10000);
+  });
+  it("funcionário sem conta Astro retorna erro sem débito ou transação; lote misto paga só quem tem conta", async () => {
+    const semConta = await cadastrarFuncionario({
+      nome: "Sem Conta",
+      cpf: "11144477735",
+      salario: "200.00",
+    });
+    expect(await pagarFolha([{ funcionario_id: semConta.id }])).toEqual({
+      resultados: [{ funcionario_id: semConta.id, situacao: "erro", erro: "sem conta Astro" }],
+    });
+    expect(sessao.conta.saldo).toBe(10000);
+    expect(await transacoes()).toEqual([]);
+    const comConta = await cadastrar();
+    expect(
+      await pagarFolha([{ funcionario_id: semConta.id }, { funcionario_id: comConta.id }]),
+    ).toMatchObject({ resultados: [{ situacao: "erro" }, { situacao: "pago" }] });
+    expect(sessao.conta.saldo).toBe(9900);
+    expect(await transacoes()).toHaveLength(1);
+    expect(contaPorId(sessao.conta.carteira_id)?.saldo).toBe(9900);
   });
 });

@@ -118,6 +118,35 @@ const BANNERS_PF: Banner[] = [
   },
 ];
 
+export function SaldoBloqueado({
+  valor,
+  minha,
+  visivel,
+}: {
+  valor: number;
+  minha: number;
+  visivel: boolean;
+}) {
+  const q = useQuery({ queryKey: ["transacoes", minha], queryFn: transacoes, enabled: valor > 0 });
+  if (!(valor > 0)) return null;
+  const retidas = (q.data ?? []).filter(
+    (t) => t.destino_carteira_id === minha && t.status === "retida",
+  );
+  const completo =
+    retidas.length > 0 &&
+    retidas.every((t) => t.bloqueio_ate && Number.isFinite(Date.parse(t.bloqueio_ate))) &&
+    retidas.reduce((s, t) => s + t.liquido, 0).toFixed(2) === valor.toFixed(2);
+  const ate = completo
+    ? new Date(Math.max(...retidas.map((t) => Date.parse(t.bloqueio_ate!)))).toISOString()
+    : undefined;
+  return (
+    <Link to="/extrato" className="mt-3 block text-sm text-ink-foreground/70 underline">
+      {visivel ? fmtBRL(valor) : "R$ ••••••"} bloqueado por segurança
+      {ate ? ` · libera até ${fmtData(ate)}` : ""}
+    </Link>
+  );
+}
+
 function InicioPF() {
   const { conta: sessaoConta } = useAuth();
   const conta = useQuery({ queryKey: ["conta", sessaoConta?.numero], queryFn: minhaConta });
@@ -151,6 +180,11 @@ function InicioPF() {
             <span className="inline-block h-10 w-48 animate-pulse rounded-xl bg-ink-foreground/10" />
           )}
         </p>
+        <SaldoBloqueado
+          valor={conta.data?.saldo_bloqueado ?? 0}
+          minha={conta.data?.carteira_id ?? 0}
+          visivel={ver}
+        />
         {conta.data && (
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
             <span className="inline-flex items-center gap-1.5 text-pos">
@@ -244,7 +278,7 @@ function InicioPJ() {
         aria-label="Saldo"
       >
         <div className="flex items-center justify-between">
-          <p className="text-sm opacity-60">Saldo em conta</p>
+          <p className="text-sm opacity-60">Saldo disponível</p>
           <button
             onClick={() => setVer((v) => !v)}
             aria-label={ver ? "Ocultar saldo" : "Mostrar saldo"}
@@ -264,6 +298,11 @@ function InicioPJ() {
             <span className="inline-block h-9 w-48 animate-pulse rounded-xl bg-ink-foreground/10" />
           )}
         </p>
+        <SaldoBloqueado
+          valor={conta.data?.saldo_bloqueado ?? 0}
+          minha={conta.data?.carteira_id ?? 0}
+          visivel={ver}
+        />
         <div className="mt-6 flex justify-between">
           {sessaoConta?.papel !== "consulta" && (
             <QuickAction icon={ArrowUpRight} label="Pagar" to="/transferir" />
@@ -461,9 +500,12 @@ function ContasPreview() {
         </div>
       ) : (
         <ul className="divide-y divide-border">
-          {q.data?.slice(0, 3).map((f) => (
-            <FaturaRow key={f.id} f={f} />
-          ))}
+          {q.data
+            ?.filter((f) => f.status !== "liquidado")
+            .slice(0, 3)
+            .map((f) => (
+              <FaturaRow key={f.id} f={f} />
+            ))}
         </ul>
       )}
     </section>
@@ -487,7 +529,12 @@ export function FaturaRow({ f }: { f: Fatura }) {
         <div className="min-w-0">
           <p className="truncate font-medium text-ink">{f.contraparte}</p>
           <p className="truncate text-xs text-mut3">
-            {f.nf} · vence {fmtData(f.vencimento).split(",")[0]}
+            {f.nf} ·{" "}
+            {f.status === "liquidado"
+              ? "Recebida"
+              : f.vencimento
+                ? `vence ${fmtData(f.vencimento).split(",")[0]}`
+                : "Sem vencimento"}
           </p>
         </div>
       </div>

@@ -2,10 +2,10 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Copy, FileText, Plus } from "lucide-react";
-import { criarCobranca, estornarCobranca, listarFaturas } from "@/lib/api";
+import { criarCobranca, estornarCobranca, listarFaturas, MODO_API } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, parseValor } from "@/lib/format";
-import type { Cobranca, DirecaoFatura, Fatura } from "@/lib/types";
+import type { Cobranca, Fatura } from "@/lib/types";
 import { Empty, ErrorBox, Field, MetricTile, PageTitle, TxSkeleton } from "@/components/payflow/ui";
 import { FaturaRow } from "./_app.inicio";
 import { cn } from "@/lib/utils";
@@ -22,7 +22,7 @@ function Contas() {
 
 function ContasEmpresa() {
   const { conta } = useAuth();
-  const [aba, setAba] = useState<DirecaoFatura>("receber");
+  const [aba, setAba] = useState<"receber" | "pagar" | "recebidas">("receber");
   const [nova, setNova] = useState(false);
   const qc = useQueryClient();
   const [pedido, setPedido] = useState<Fatura | null>(null);
@@ -43,12 +43,13 @@ function ContasEmpresa() {
   if (conta && conta.tipo !== "PJ") return <Navigate to="/inicio" replace />;
 
   const todas = q.data ?? [];
-  const aReceber = todas.filter((f) => f.direcao === "receber");
-  const aPagar = todas.filter((f) => f.direcao === "pagar");
+  const aReceber = todas.filter((f) => f.direcao === "receber" && f.status === "pendente");
+  const recebidas = todas.filter((f) => f.direcao === "receber" && f.status === "liquidado");
+  const aPagar = todas.filter((f) => f.direcao === "pagar" && f.status !== "liquidado");
   const totReceber = aReceber.reduce((a, f) => a + f.liquido, 0);
   const totPagar = aPagar.reduce((a, f) => a + f.valor_bruto, 0);
   const totCredito = aPagar.reduce((a, f) => a + f.credito_gerado, 0);
-  const lista = aba === "receber" ? aReceber : aPagar;
+  const lista = aba === "receber" ? aReceber : aba === "recebidas" ? recebidas : aPagar;
 
   return (
     <div className="enter">
@@ -58,10 +59,10 @@ function ContasEmpresa() {
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <MetricTile label="A receber (líquido)" value={fmtBRL(totReceber)} tone="pos" />
-        <MetricTile label="A pagar" value={fmtBRL(totPagar)} />
+        <MetricTile label="A pagar" value={MODO_API ? "Ainda indisponível" : fmtBRL(totPagar)} />
         <MetricTile
           label="Crédito a gerar"
-          value={fmtBRL(totCredito)}
+          value={MODO_API ? "—" : fmtBRL(totCredito)}
           tone="tax"
           hint="abate impostos na apuração"
         />
@@ -75,8 +76,8 @@ function ContasEmpresa() {
         </button>
       )}
 
-      <div role="tablist" className="mt-6 grid grid-cols-2 rounded-full bg-tint p-1">
-        {(["receber", "pagar"] as const).map((d) => (
+      <div role="tablist" className="mt-6 grid grid-cols-3 rounded-full bg-tint p-1">
+        {(["receber", "recebidas", "pagar"] as const).map((d) => (
           <button
             key={d}
             role="tab"
@@ -87,7 +88,7 @@ function ContasEmpresa() {
               aba === d ? "bg-card text-ink shadow-soft" : "text-mut2 hover:text-ink",
             )}
           >
-            {d === "receber" ? "A receber" : "A pagar"}
+            {d === "receber" ? "A receber" : d === "recebidas" ? "Recebidas" : "A pagar"}
           </button>
         ))}
       </div>
@@ -102,7 +103,7 @@ function ContasEmpresa() {
           <ErrorBox>{estorno.error.message}</ErrorBox>
         </div>
       )}
-      {pedido && admin && aba === "receber" && (
+      {pedido && admin && aba === "recebidas" && (
         <section className="surface mt-4 p-5" aria-live="polite">
           <p className="font-medium text-ink">Estornar cobrança?</p>
           <p className="mt-1 text-sm text-mut2">
@@ -140,7 +141,14 @@ function ContasEmpresa() {
             <ErrorBox>Não foi possível carregar as contas.</ErrorBox>
           </div>
         ) : !lista.length ? (
-          <Empty title="Nada por aqui" hint="As faturas aparecerão aqui." />
+          <Empty
+            title={aba === "pagar" ? "Ainda não há contas a pagar" : "Nada por aqui"}
+            hint={
+              aba === "pagar" && MODO_API
+                ? "O cadastro de contas a pagar ainda não está disponível."
+                : "As faturas aparecerão aqui."
+            }
+          />
         ) : (
           <ul className="divide-y divide-border">
             {lista.map((f) => (
@@ -170,7 +178,7 @@ function ContasEmpresa() {
       <div className="mt-4 flex items-start gap-3 rounded-[16px] bg-tax-bg px-4 py-3.5 text-sm text-tax2">
         <FileText size={18} className="mt-0.5 shrink-0" />
         <p>
-          {aba === "receber"
+          {aba !== "pagar"
             ? "Cada recebimento é conciliado com a NF-e e o IBS/CBS da nota é separado no ato — você recebe o líquido e a apuração já sai pronta para conferir."
             : "Toda compra de insumo com nota gera crédito de IBS/CBS, que abate o imposto das suas vendas na apuração."}
         </p>

@@ -145,8 +145,14 @@ export function TxItem({
                 : `Para ${fmtId(t.destino_carteira_id)}`)}
           </p>
           <p className="text-sm text-mut3">{fmtData(t.criado_em)}</p>
-          {t.status === "retida" && (
-            <p className="mt-1 text-sm text-tax">Em análise de segurança (bloqueio cautelar)</p>
+          {entrada && t.status === "retida" && (
+            <p className="mt-1 text-sm text-pending">
+              <span className="rounded-full bg-tint px-2 py-0.5 text-xs font-semibold">retido</span>{" "}
+              · Bloqueado por segurança
+              {t.bloqueio_ate
+                ? ` · libera até ${fmtData(t.bloqueio_ate)}`
+                : " · liberação sem data informada"}
+            </p>
           )}
           {t.aplicou_split && (
             <p className="mt-1 text-sm text-tax">
