@@ -48,7 +48,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 | 2 | **Prova de posse da chave (DPoP, RFC 9449)**: o app gera um par de chaves **não exportável** (WebCrypto; no APK, Keystore/Keychain), o login amarra os tokens à impressão da chave e **cada requisição vai assinada** (método, caminho, horário, id único, hash do token). Token roubado sem a chave não serve. | A2 | ✅ (falta Keystore no app nativo, item 10) |
 | 3 | **Sessão**: máximo absoluto (ex.: 12 h) e inatividade (ex.: 15 min) no servidor; aviso de login em aparelho novo | A3 | ✅ (aviso por e-mail/push: depois) |
 | 4 | **Força bruta e enumeração**: rate limit em cadastro/refresh/convites; atraso progressivo; tentativas por `mfa_token`; resposta neutra no cadastro | A4 | ✅ |
-| 5 | **Cadastro em etapas** (dados → documento → rosto, cada um numa página) e **documento frente e verso obrigatórios** (no app e no backend) | pedido do Alef | ⬜ |
+| 5 | **Cadastro em etapas** (dados → documento → rosto, cada um numa página) e **documento frente e verso obrigatórios** (no app e no backend) | pedido do Alef | ✅ |
 | 6 | **Arquivar Loja/Viagens/pontos**: telas para `app/src/_arquivado/`, fora da navegação; backend com `BENEFICIOS_HABILITADOS=0` por padrão | pedido do Alef, A8 | ⬜ |
 | 7 | **Front**: CSP e cabeçalhos no host (Static Web Apps), overlay de debug só em dev, build de produção recusa modo demonstração | A5 | ⬜ |
 | 8 | **Segredos e config**: tirar a derivação de segredos e o CORS `*.netlify.app`; Key Vault no Azure | A6 | ⬜ |
@@ -124,3 +124,11 @@ justamente ver se alguém burla.
   (com hash falso para igualar o tempo). Testes: `test_forca_bruta.py`. 174 testes.
   **Atenção**: numa rodada da suíte 1 teste falhou e não se repetiu em 5 rodadas seguidas. Se voltar a acontecer,
   rodar `pytest -rf` para ver qual é (suspeitos: testes que usam o relógio real em `test_sessao.py`).
+- 09/10 — **Item 5 feito.** `criar-conta.tsx` virou um passo a passo com uma tela por etapa e barra de progresso:
+  **dados** (com "repita a senha") → **documento** (frente **e verso obrigatórios** para RG/CNH/CIN; passaporte
+  só a página da foto; na PJ, o documento da empresa) → **rosto** (ao concluir a prova de vida a conta é criada
+  na hora, porque o desafio vence em 2 min) → **entrar** (rosto do 1º login e, na PJ, abertura da empresa).
+  Se o servidor recusar, a tela volta para a etapa que resolve (dados ou documento). Backend:
+  `documento_service` recusa RG/CNH/CIN sem verso (`TIPOS_COM_VERSO`) — vale também para quem chama a API direto.
+  Teste `test_documento_exige_frente_e_verso`. 175 testes. **Não testado visualmente no navegador** (o PC estava
+  sem memória para subir app + câmera); conferir as 4 telas no celular.

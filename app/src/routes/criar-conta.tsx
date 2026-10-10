@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { Check, ScanFace } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ArrowLeft, Check, ScanFace } from "lucide-react";
 import { concluirCadastro, MODO_API, novoDesafioLogin, registrar } from "@/lib/api";
 import { PORTES, REGIMES_APURACAO } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
@@ -30,16 +30,12 @@ export const Route = createFileRoute("/criar-conta")({
     meta: [
       { title: "Abrir conta — Astro" },
       { name: "description", content: "Abra sua conta Astro para pessoa física ou empresa." },
-      { property: "og:title", content: "Abrir conta — Astro" },
-      { property: "og:description", content: "Conta PF ou PJ com split automático de IBS/CBS." },
     ],
   }),
   component: CriarConta,
 });
 
 const SETORES = ["Indústria", "Autopeças", "Comércio", "Serviços", "Transporte", "Outro"];
-// O desafio de biometria vale 2 minutos no servidor; refazemos se passar disso.
-const VALIDADE_PROVA_MS = 100_000;
 
 const DOCS_PESSOA: Record<TipoDocumentoPessoa, string> = {
   rg: "RG",
@@ -55,68 +51,97 @@ const DOCS_EMPRESA: Record<TipoDocumentoEmpresa, string> = {
   outro: "Outro",
 };
 
+type Etapa = "dados" | "documento" | "rosto" | "entrar";
+const ETAPAS: { id: Etapa; rotulo: string }[] = [
+  { id: "dados", rotulo: "Seus dados" },
+  { id: "documento", rotulo: "Documento" },
+  { id: "rosto", rotulo: "Rosto" },
+  { id: "entrar", rotulo: "Entrar" },
+];
+
 /**
- * Abertura de conta com KYC: dados da pessoa + documento de identidade (foto) +
- * prova de vida de cadastro. Na PJ, quem abre é a pessoa que vai operar a
- * empresa (o banco confere que ela está no quadro de sócios) e entra também o
- * documento societário. Depois de criada, a conta pede o 2º fator do login (o
- * rosto) e só então a empresa é aberta, já com a pessoa logada.
+ * Abertura de conta em ETAPAS, uma tela para cada (SEGURANCA.md item 5):
+ *  1. dados da pessoa (e da empresa, na PJ);
+ *  2. documento com foto — FRENTE E VERSO obrigatórios (passaporte: só a página
+ *     com foto); na PJ também o documento da empresa;
+ *  3. rosto (prova de vida de cadastro, com passos sorteados pelo servidor). Ao
+ *     concluir, a conta é criada na hora (o desafio vale 2 minutos);
+ *  4. primeiro login: o rosto de novo (2º fator) e, na PJ, a abertura da empresa
+ *     já com a pessoa logada.
+ * O backend confere tudo de novo — a ordem das telas é só para guiar a pessoa.
  */
 function CriarConta() {
   const nav = useNavigate();
   const { entrar } = useAuth();
   const { tipo: tipoInicial } = Route.useSearch();
+  const [etapa, setEtapa] = useState<Etapa>("dados");
+
+  // 1. dados
   const [tipo, setTipo] = useState<"PF" | "PJ">(tipoInicial ?? "PF");
   const [nome, setNome] = useState("");
   const [representante, setRepresentante] = useState("");
   const [cpf, setCpf] = useState("");
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
+  const [senha2, setSenha2] = useState("");
   const [doc, setDoc] = useState("");
   const [nascimento, setNascimento] = useState("");
   const [celular, setCelular] = useState("");
-  const [tipoDoc, setTipoDoc] = useState<TipoDocumentoPessoa>("cnh");
-  const [frente, setFrente] = useState<string | null>(null);
-  const [verso, setVerso] = useState<string | null>(null);
   const [setor, setSetor] = useState(SETORES[0] ?? "Indústria");
   const [porte, setPorte] = useState<PortePJ>("PME");
   const [regime, setRegime] = useState<RegimeApuracao>("regular");
+  // 2. documento
+  const [tipoDoc, setTipoDoc] = useState<TipoDocumentoPessoa>("cnh");
+  const [frente, setFrente] = useState<string | null>(null);
+  const [verso, setVerso] = useState<string | null>(null);
   const [tipoDocEmpresa, setTipoDocEmpresa] = useState<TipoDocumentoEmpresa>("contrato_social");
   const [docEmpresa, setDocEmpresa] = useState<string | null>(null);
-  const [prova, setProva] = useState<{ p: ProvaBiometrica; em: number } | null>(null);
-  const [liveness, setLiveness] = useState<null | "cadastro" | "login">(null);
-  const [erro, setErro] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  // Conta criada: falta o rosto do primeiro login.
+  // 3-4. rosto e entrada
+  const [camera, setCamera] = useState<null | "cadastro" | "login">(null);
   const [criado, setCriado] = useState<CadastroResposta | null>(null);
   const [empresa, setEmpresa] = useState<EmpresaPayload | undefined>(undefined);
   const [erroEmpresa, setErroEmpresa] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
 
-  const facialOk = prova !== null && Date.now() - prova.em < VALIDADE_PROVA_MS;
+  const digits = doc.replace(/\D/g, "");
+  const precisaVerso = tipoDoc !== "passaporte";
   // No servidor o documento é obrigatório; na demonstração dá para pular.
   const docObrigatorio = MODO_API;
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  function irPara(e: Etapa) {
     setErro(null);
-    const digits = doc.replace(/\D/g, "");
-    if (!nome || !email) return setErro("Preencha nome e e-mail.");
+    setEtapa(e);
+  }
+
+  function validarDados(e: React.FormEvent) {
+    e.preventDefault();
+    if (!nome.trim() || !email.trim()) return setErro("Preencha nome e e-mail.");
     if (senha.length < 10) return setErro("A senha precisa ter ao menos 10 caracteres.");
+    if (senha !== senha2) return setErro("As senhas não conferem.");
     if (digits.length !== (tipo === "PF" ? 11 : 14))
       return setErro(`${tipo === "PF" ? "CPF" : "CNPJ"} incompleto.`);
-    if (tipo === "PJ" && (!representante || cpf.replace(/\D/g, "").length !== 11))
-      return setErro("Informe o nome e o CPF de quem vai operar a conta da empresa.");
+    if (tipo === "PJ" && (!representante.trim() || cpf.replace(/\D/g, "").length !== 11))
+      return setErro("Informe o seu nome e o seu CPF (de quem vai operar a conta da empresa).");
     if (!nascimento) return setErro("Informe a data de nascimento.");
     if (celular.replace(/\D/g, "").length < 10) return setErro("Informe um celular com DDD.");
-    if (docObrigatorio && !frente) return setErro("Envie a foto do documento de identidade.");
+    irPara("documento");
+  }
+
+  function validarDocumento(e: React.FormEvent) {
+    e.preventDefault();
+    if (docObrigatorio && !frente) return setErro("Envie a foto da frente do documento.");
+    if (docObrigatorio && precisaVerso && !verso)
+      return setErro("Envie a foto do verso do documento.");
+    if (frente && precisaVerso && !verso) return setErro("Envie também o verso do documento.");
     if (tipo === "PJ" && docObrigatorio && !docEmpresa)
       return setErro("Envie o documento da empresa (contrato social, CCMEI ou cartão CNPJ).");
-    if (!prova || !facialOk)
-      return setErro(
-        prova
-          ? "A verificação facial expirou. Faça de novo."
-          : "Conclua a verificação facial (prova de vida).",
-      );
+    irPara("rosto");
+  }
+
+  /** Rosto de cadastro concluído: cria a conta na hora (o desafio vence em 2 min). */
+  async function criarConta(prova: ProvaBiometrica) {
+    setErro(null);
     setLoading(true);
     try {
       const pj: EmpresaPayload | undefined =
@@ -139,16 +164,22 @@ function CriarConta() {
         cpf: tipo === "PF" ? digits : cpf.replace(/\D/g, ""),
         data_nascimento: nascimento,
         celular: celular.replace(/\D/g, ""),
-        documento: frente ? { tipo: tipoDoc, frente, ...(verso ? { verso } : {}) } : null,
-        biometria: prova.p,
+        documento: frente
+          ? { tipo: tipoDoc, frente, ...(precisaVerso && verso ? { verso } : {}) }
+          : null,
+        biometria: prova,
         ...(pj ? { empresa: pj } : {}),
       });
       setEmpresa(pj);
       setCriado(r);
-      setLiveness("login");
+      irPara("entrar");
     } catch (err) {
-      setErro((err as Error).message);
-      setProva(null); // o desafio foi consumido: uma nova tentativa precisa de outra verificação
+      // Erro de dados (senha fraca, CPF já usado…): volta para a etapa que resolve.
+      const msg = (err as Error).message;
+      setErro(msg);
+      if (/senha|e-mail|CPF|conta com estes dados|nome|celular|nascimento/i.test(msg))
+        setEtapa("dados");
+      else if (/documento|verso|imagem|arquivo|identidade/i.test(msg)) setEtapa("documento");
     } finally {
       setLoading(false);
     }
@@ -167,70 +198,12 @@ function CriarConta() {
       setErro((err as Error).message);
       // o desafio é de uso único: prepara outro para a próxima tentativa
       novoDesafioLogin(criado.etapa)
-        .then((etapa) => setCriado({ ...criado, etapa }))
+        .then((e) => setCriado({ ...criado, etapa: e }))
         .catch(() => nav({ to: "/login" }));
     } finally {
       setLoading(false);
     }
   }
-
-  if (criado)
-    return (
-      <div className="flex min-h-[100dvh] justify-center bg-black">
-        <main className="min-h-[100dvh] w-full max-w-[460px] bg-page px-4 py-10 shadow-2xl">
-          <div className="enter surface mx-auto w-full max-w-lg p-6 md:p-10">
-            <Wordmark />
-            <span className="mt-6 grid h-12 w-12 place-items-center rounded-full bg-[color-mix(in_oklab,var(--pos)_16%,transparent)] text-pos">
-              <Check size={26} strokeWidth={3} />
-            </span>
-            <h1 className="mt-4 text-2xl text-ink">Conta criada</h1>
-            <KycAviso status={criado.kyc.status} motivos={criado.kyc.motivos} />
-            {erroEmpresa ? (
-              <>
-                <div className="mt-4">
-                  <ErrorBox>
-                    Sua conta pessoal está pronta, mas a empresa não foi aberta: {erroEmpresa}
-                  </ErrorBox>
-                </div>
-                <button className="btn btn-ink mt-6 w-full" onClick={() => nav({ to: "/inicio" })}>
-                  Ir para a conta pessoal
-                </button>
-              </>
-            ) : (
-              <>
-                <p className="mt-3 text-sm text-muted-foreground">
-                  Agora entre pela primeira vez: confirme seu rosto (siga os passos que a tela
-                  pedir).
-                  {empresa && " Em seguida abrimos a conta da empresa."}
-                </p>
-                {erro && (
-                  <div className="mt-4">
-                    <ErrorBox>{erro}</ErrorBox>
-                  </div>
-                )}
-                <button
-                  className="btn btn-ink mt-6 w-full gap-2"
-                  disabled={loading}
-                  onClick={() => setLiveness("login")}
-                >
-                  <ScanFace size={20} /> {loading ? "Entrando…" : "Entrar com o rosto"}
-                </button>
-              </>
-            )}
-          </div>
-          {liveness === "login" && !erroEmpresa && (
-            <LivenessCheck
-              desafio={criado.etapa.desafio}
-              onClose={() => setLiveness(null)}
-              onSuccess={(p) => {
-                setLiveness(null);
-                void entrarComRosto(p);
-              }}
-            />
-          )}
-        </main>
-      </div>
-    );
 
   return (
     <div className="flex min-h-[100dvh] justify-center bg-black">
@@ -238,156 +211,102 @@ function CriarConta() {
         <div className="enter mx-auto w-full max-w-lg">
           <div className="surface p-6 md:p-10">
             <Wordmark />
-            <h1 className="mt-6 text-3xl text-ink">Abrir conta</h1>
-            <form onSubmit={submit} className="mt-6 space-y-4">
-              <div
-                role="radiogroup"
-                aria-label="Tipo de conta"
-                className="grid grid-cols-2 rounded-full bg-tint p-1"
-              >
-                {(["PF", "PJ"] as const).map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    role="radio"
-                    aria-checked={tipo === t}
-                    onClick={() => {
-                      setTipo(t);
-                      setDoc("");
-                    }}
-                    className={cn(
-                      "h-10 rounded-full text-sm font-semibold transition-colors duration-200",
-                      tipo === t
-                        ? "bg-ink text-ink-foreground shadow-soft"
-                        : "text-mut2 hover:text-ink",
-                    )}
-                  >
-                    {t === "PF" ? "Pessoa física" : "Empresa (PJ)"}
-                  </button>
-                ))}
-              </div>
-              <Field label={tipo === "PF" ? "Nome completo" : "Razão social"} id="nome">
-                <input
-                  id="nome"
-                  className="field"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                />
-              </Field>
-              <Field label="E-mail" id="email">
-                <input
-                  id="email"
-                  type="email"
-                  autoComplete="email"
-                  className="field"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </Field>
-              <Field
-                label="Senha"
-                id="senha"
-                hint="Mínimo de 10 caracteres. Uma frase curta é ótima; evite senhas comuns, seu nome ou CPF."
-              >
-                <input
-                  id="senha"
-                  type="password"
-                  autoComplete="new-password"
-                  className="field"
-                  value={senha}
-                  onChange={(e) => setSenha(e.target.value)}
-                />
-              </Field>
-              <Field label={tipo === "PF" ? "CPF" : "CNPJ"} id="doc">
-                <input
-                  id="doc"
-                  inputMode="numeric"
-                  className="field tabular"
-                  value={doc}
-                  onChange={(e) => setDoc(maskDoc(e.target.value, tipo))}
-                  placeholder={tipo === "PF" ? "000.000.000-00" : "00.000.000/0000-00"}
-                />
-              </Field>
-              {tipo === "PJ" && (
-                <>
-                  <Field label="Setor de atuação" id="setor">
-                    <select
-                      id="setor"
-                      className="field"
-                      value={setor}
-                      onChange={(e) => setSetor(e.target.value)}
-                    >
-                      {SETORES.map((s) => (
-                        <option key={s}>{s}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field
-                    label="Porte da empresa"
-                    id="porte"
-                    hint="Define as regras de acesso da equipe e de aprovação."
-                  >
-                    <select
-                      id="porte"
-                      className="field"
-                      value={porte}
-                      onChange={(e) => {
-                        const p = e.target.value as PortePJ;
-                        setPorte(p);
-                        setTipoDocEmpresa(p === "MEI" ? "ccmei" : "contrato_social");
+            <Progresso atual={etapa} />
+
+            {etapa === "dados" && (
+              <form onSubmit={validarDados} className="mt-6 space-y-4">
+                <h1 className="text-2xl text-ink">Seus dados</h1>
+                <div
+                  role="radiogroup"
+                  aria-label="Tipo de conta"
+                  className="grid grid-cols-2 rounded-full bg-tint p-1"
+                >
+                  {(["PF", "PJ"] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      role="radio"
+                      aria-checked={tipo === t}
+                      onClick={() => {
+                        setTipo(t);
+                        setDoc("");
                       }}
+                      className={cn(
+                        "h-10 rounded-full text-sm font-semibold",
+                        tipo === t ? "bg-ink text-ink-foreground" : "text-mut2",
+                      )}
                     >
-                      {(Object.keys(PORTES) as PortePJ[]).map((p) => (
-                        <option key={p} value={p}>
-                          {PORTES[p].label} — {PORTES[p].faturamento}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  {porte !== "MEI" && (
-                    <Field
-                      label="Regime de apuração"
-                      id="regime"
-                      hint={REGIMES_APURACAO[regime].dica}
-                    >
+                      {t === "PF" ? "Pessoa física" : "Empresa (PJ)"}
+                    </button>
+                  ))}
+                </div>
+                <Field label={tipo === "PF" ? "Nome completo" : "Razão social"} id="nome">
+                  <input
+                    id="nome"
+                    className="field"
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                  />
+                </Field>
+                <Field label={tipo === "PF" ? "CPF" : "CNPJ"} id="doc">
+                  <input
+                    id="doc"
+                    inputMode="numeric"
+                    className="field tabular"
+                    value={doc}
+                    onChange={(e) => setDoc(maskDoc(e.target.value, tipo))}
+                    placeholder={tipo === "PF" ? "000.000.000-00" : "00.000.000/0000-00"}
+                  />
+                </Field>
+                {tipo === "PJ" && (
+                  <>
+                    <Field label="Setor de atuação" id="setor">
                       <select
-                        id="regime"
+                        id="setor"
                         className="field"
-                        value={regime}
-                        onChange={(e) => setRegime(e.target.value as RegimeApuracao)}
+                        value={setor}
+                        onChange={(e) => setSetor(e.target.value)}
                       >
-                        {(["regular", "simples"] as const).map((r) => (
-                          <option key={r} value={r}>
-                            {REGIMES_APURACAO[r].label}
+                        {SETORES.map((s) => (
+                          <option key={s}>{s}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Porte da empresa" id="porte">
+                      <select
+                        id="porte"
+                        className="field"
+                        value={porte}
+                        onChange={(e) => {
+                          const p = e.target.value as PortePJ;
+                          setPorte(p);
+                          setTipoDocEmpresa(p === "MEI" ? "ccmei" : "contrato_social");
+                        }}
+                      >
+                        {(Object.keys(PORTES) as PortePJ[]).map((p) => (
+                          <option key={p} value={p}>
+                            {PORTES[p].label} — {PORTES[p].faturamento}
                           </option>
                         ))}
                       </select>
                     </Field>
-                  )}
-                  <Field label="Documento da empresa" id="tipo-doc-empresa">
-                    <select
-                      id="tipo-doc-empresa"
-                      className="field"
-                      value={tipoDocEmpresa}
-                      onChange={(e) => setTipoDocEmpresa(e.target.value as TipoDocumentoEmpresa)}
-                    >
-                      {(["contrato_social", "ccmei", "cartao_cnpj"] as const).map((t) => (
-                        <option key={t} value={t}>
-                          {DOCS_EMPRESA[t]}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <CampoDocumento
-                    rotulo={DOCS_EMPRESA[tipoDocEmpresa]}
-                    dica="PDF ou foto legível, até 10 MB. Conferimos o CNPJ no documento."
-                    valor={docEmpresa}
-                    onChange={setDocEmpresa}
-                    aceitaPdf
-                    maxMb={10}
-                  />
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <Field label="Seu nome (sócio)" id="rep">
+                    {porte !== "MEI" && (
+                      <Field label="Regime de apuração" id="regime">
+                        <select
+                          id="regime"
+                          className="field"
+                          value={regime}
+                          onChange={(e) => setRegime(e.target.value as RegimeApuracao)}
+                        >
+                          {(["regular", "simples"] as const).map((r) => (
+                            <option key={r} value={r}>
+                              {REGIMES_APURACAO[r].label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+                    )}
+                    <Field label="Seu nome (sócio que vai operar a conta)" id="rep">
                       <input
                         id="rep"
                         className="field"
@@ -405,97 +324,268 @@ function CriarConta() {
                         placeholder="000.000.000-00"
                       />
                     </Field>
-                  </div>
-                  <p className="-mt-1 text-xs text-mut3">
-                    Você vai operar a conta com o seu próprio login. Outras pessoas (sócios,
-                    financeiro, contador) entram depois em Equipe, cada uma com o próprio acesso.
-                  </p>
-                </>
-              )}
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Data de nascimento" id="nasc">
+                  </>
+                )}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field label="Data de nascimento" id="nasc">
+                    <input
+                      id="nasc"
+                      type="date"
+                      className="field"
+                      value={nascimento}
+                      onChange={(e) => setNascimento(e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Celular" id="cel">
+                    <input
+                      id="cel"
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel-national"
+                      className="field tabular"
+                      value={celular}
+                      onChange={(e) => setCelular(e.target.value)}
+                      placeholder="(11) 98765-4321"
+                    />
+                  </Field>
+                </div>
+                <Field label="E-mail" id="email">
                   <input
-                    id="nasc"
-                    type="date"
+                    id="email"
+                    type="email"
+                    autoComplete="email"
                     className="field"
-                    value={nascimento}
-                    onChange={(e) => setNascimento(e.target.value)}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
                   />
                 </Field>
-                <Field label="Celular" id="cel">
-                  <input
-                    id="cel"
-                    type="tel"
-                    inputMode="tel"
-                    autoComplete="tel-national"
-                    className="field tabular"
-                    value={celular}
-                    onChange={(e) => setCelular(e.target.value)}
-                    placeholder="(11) 98765-4321"
-                  />
-                </Field>
-              </div>
-
-              <Field label="Seu documento com foto" id="tipo-doc">
-                <select
-                  id="tipo-doc"
-                  className="field"
-                  value={tipoDoc}
-                  onChange={(e) => setTipoDoc(e.target.value as TipoDocumentoPessoa)}
+                <Field
+                  label="Senha"
+                  id="senha"
+                  hint="Mínimo de 10 caracteres. Evite senhas comuns, seu nome ou CPF."
                 >
-                  {(Object.keys(DOCS_PESSOA) as TipoDocumentoPessoa[]).map((t) => (
-                    <option key={t} value={t}>
-                      {DOCS_PESSOA[t]}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <CampoDocumento
-                rotulo={`${DOCS_PESSOA[tipoDoc]} — frente`}
-                dica={
-                  docObrigatorio
-                    ? "Foto nítida, sem reflexo, com o documento inteiro. Conferimos CPF, nome e o rosto com a sua selfie."
-                    : "Demonstração: opcional."
-                }
-                valor={frente}
-                onChange={setFrente}
-              />
-              {tipoDoc !== "passaporte" && (
-                <CampoDocumento
-                  rotulo={`${DOCS_PESSOA[tipoDoc]} — verso (opcional)`}
-                  valor={verso}
-                  onChange={setVerso}
-                />
-              )}
+                  <input
+                    id="senha"
+                    type="password"
+                    autoComplete="new-password"
+                    className="field"
+                    value={senha}
+                    onChange={(e) => setSenha(e.target.value)}
+                  />
+                </Field>
+                <Field label="Repita a senha" id="senha2">
+                  <input
+                    id="senha2"
+                    type="password"
+                    autoComplete="new-password"
+                    className="field"
+                    value={senha2}
+                    onChange={(e) => setSenha2(e.target.value)}
+                  />
+                </Field>
+                {erro && <ErrorBox>{erro}</ErrorBox>}
+                <button className="btn btn-ink w-full">Continuar</button>
+              </form>
+            )}
 
-              <FacialStep ok={facialOk} onStart={() => setLiveness("cadastro")} />
-              {erro && <ErrorBox>{erro}</ErrorBox>}
-              <button className="btn btn-ink w-full" disabled={loading}>
-                {loading ? "Conferindo seus dados…" : "Criar conta"}
-              </button>
-            </form>
-            <p className="mt-6 text-center text-sm text-muted-foreground">
-              Já tem conta?{" "}
-              <Link to="/login" className="font-semibold text-ink underline underline-offset-4">
-                Entrar
-              </Link>
-            </p>
+            {etapa === "documento" && (
+              <form onSubmit={validarDocumento} className="mt-6 space-y-4">
+                <Voltar onClick={() => irPara("dados")} />
+                <h1 className="text-2xl text-ink">Documento com foto</h1>
+                <p className="text-sm text-muted-foreground">
+                  Foto nítida, sem reflexo, com o documento inteiro. Conferimos CPF, nome e o rosto
+                  com a sua verificação facial. As imagens não ficam guardadas.
+                </p>
+                <Field label="Qual documento" id="tipo-doc">
+                  <select
+                    id="tipo-doc"
+                    className="field"
+                    value={tipoDoc}
+                    onChange={(e) => setTipoDoc(e.target.value as TipoDocumentoPessoa)}
+                  >
+                    {(Object.keys(DOCS_PESSOA) as TipoDocumentoPessoa[]).map((t) => (
+                      <option key={t} value={t}>
+                        {DOCS_PESSOA[t]}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
+                <CampoDocumento
+                  rotulo={precisaVerso ? `${DOCS_PESSOA[tipoDoc]} — frente` : "Página com a foto"}
+                  valor={frente}
+                  onChange={setFrente}
+                />
+                {precisaVerso && (
+                  <CampoDocumento
+                    rotulo={`${DOCS_PESSOA[tipoDoc]} — verso`}
+                    valor={verso}
+                    onChange={setVerso}
+                  />
+                )}
+                {tipo === "PJ" && (
+                  <>
+                    <Field label="Documento da empresa" id="tipo-doc-empresa">
+                      <select
+                        id="tipo-doc-empresa"
+                        className="field"
+                        value={tipoDocEmpresa}
+                        onChange={(e) => setTipoDocEmpresa(e.target.value as TipoDocumentoEmpresa)}
+                      >
+                        {(["contrato_social", "ccmei", "cartao_cnpj"] as const).map((t) => (
+                          <option key={t} value={t}>
+                            {DOCS_EMPRESA[t]}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <CampoDocumento
+                      rotulo={DOCS_EMPRESA[tipoDocEmpresa]}
+                      dica="PDF ou foto legível, até 10 MB. Conferimos o CNPJ no documento."
+                      valor={docEmpresa}
+                      onChange={setDocEmpresa}
+                      aceitaPdf
+                      maxMb={10}
+                    />
+                  </>
+                )}
+                {!docObrigatorio && (
+                  <p className="text-xs text-mut3">Demonstração: os documentos são opcionais.</p>
+                )}
+                {erro && <ErrorBox>{erro}</ErrorBox>}
+                <button className="btn btn-ink w-full">Continuar</button>
+              </form>
+            )}
+
+            {etapa === "rosto" && (
+              <div className="mt-6 space-y-4">
+                <Voltar onClick={() => irPara("documento")} />
+                <h1 className="text-2xl text-ink">Verificação facial</h1>
+                <p className="text-sm text-muted-foreground">
+                  Pela câmera, ao vivo. A tela vai pedir alguns movimentos (piscar, sorrir, virar o
+                  rosto) numa ordem que muda a cada vez: faça só o que for pedido. Guardamos apenas
+                  um código do rosto, criptografado.
+                </p>
+                {erro && <ErrorBox>{erro}</ErrorBox>}
+                <button
+                  className="btn btn-ink w-full gap-2"
+                  disabled={loading}
+                  onClick={() => setCamera("cadastro")}
+                >
+                  <ScanFace size={20} /> {loading ? "Criando a conta…" : "Começar verificação"}
+                </button>
+              </div>
+            )}
+
+            {etapa === "entrar" && criado && (
+              <div className="mt-6">
+                <span className="grid h-12 w-12 place-items-center rounded-full bg-[color-mix(in_oklab,var(--pos)_16%,transparent)] text-pos">
+                  <Check size={26} strokeWidth={3} />
+                </span>
+                <h1 className="mt-4 text-2xl text-ink">Conta criada</h1>
+                <KycAviso status={criado.kyc.status} motivos={criado.kyc.motivos} />
+                {erroEmpresa ? (
+                  <>
+                    <div className="mt-4">
+                      <ErrorBox>
+                        Sua conta pessoal está pronta, mas a empresa não foi aberta: {erroEmpresa}
+                      </ErrorBox>
+                    </div>
+                    <button
+                      className="btn btn-ink mt-6 w-full"
+                      onClick={() => nav({ to: "/inicio" })}
+                    >
+                      Ir para a conta pessoal
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="mt-3 text-sm text-muted-foreground">
+                      Agora entre pela primeira vez: confirme o seu rosto mais uma vez.
+                      {empresa && " Em seguida abrimos a conta da empresa."}
+                    </p>
+                    {erro && (
+                      <div className="mt-4">
+                        <ErrorBox>{erro}</ErrorBox>
+                      </div>
+                    )}
+                    <button
+                      className="btn btn-ink mt-6 w-full gap-2"
+                      disabled={loading}
+                      onClick={() => setCamera("login")}
+                    >
+                      <ScanFace size={20} /> {loading ? "Entrando…" : "Entrar com o rosto"}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+
+            {etapa === "dados" && (
+              <p className="mt-6 text-center text-sm text-muted-foreground">
+                Já tem conta?{" "}
+                <Link to="/login" className="font-semibold text-ink underline underline-offset-4">
+                  Entrar
+                </Link>
+              </p>
+            )}
           </div>
         </div>
 
-        {liveness === "cadastro" && (
+        {camera === "cadastro" && (
           <LivenessCheck
             modo="cadastro"
-            onClose={() => setLiveness(null)}
+            onClose={() => setCamera(null)}
             onSuccess={(p) => {
-              setLiveness(null);
-              setProva({ p, em: Date.now() });
+              setCamera(null);
+              void criarConta(p);
+            }}
+          />
+        )}
+        {camera === "login" && criado && !erroEmpresa && (
+          <LivenessCheck
+            desafio={criado.etapa.desafio}
+            onClose={() => setCamera(null)}
+            onSuccess={(p) => {
+              setCamera(null);
+              void entrarComRosto(p);
             }}
           />
         )}
       </main>
     </div>
+  );
+}
+
+function Progresso({ atual }: { atual: Etapa }) {
+  const idx = ETAPAS.findIndex((e) => e.id === atual);
+  return (
+    <ol className="mt-6 grid grid-cols-4 gap-2" aria-label="Etapas do cadastro">
+      {ETAPAS.map((e, i) => (
+        <li key={e.id} aria-current={i === idx ? "step" : undefined}>
+          <span
+            className={cn(
+              "block h-1.5 rounded-full",
+              i < idx ? "bg-pos" : i === idx ? "bg-ink" : "bg-line2",
+            )}
+          />
+          <span className={cn("mt-1 block text-[11px]", i === idx ? "text-ink" : "text-mut3")}>
+            {e.rotulo}
+          </span>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function Voltar({ onClick }: { onClick: () => void }): ReactNode {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1 text-sm text-mut2"
+    >
+      <ArrowLeft size={16} /> Voltar
+    </button>
   );
 }
 
@@ -518,42 +608,4 @@ function KycAviso({ status, motivos }: { status: string; motivos: string[] }) {
       </div>
     );
   return null;
-}
-
-/** Passo de verificação facial com prova de vida. */
-function FacialStep({ ok, onStart }: { ok: boolean; onStart: () => void }) {
-  return (
-    <div className="rounded-[18px] border border-dashed border-line2 bg-background p-4">
-      <div className="flex items-start gap-3">
-        <span
-          className={cn(
-            "grid h-11 w-11 shrink-0 place-items-center rounded-full",
-            ok
-              ? "bg-[color-mix(in_oklab,var(--pos)_16%,transparent)] text-pos"
-              : "bg-tint text-ink",
-          )}
-        >
-          {ok ? <Check size={22} strokeWidth={3} /> : <ScanFace size={22} />}
-        </span>
-        <div className="min-w-0">
-          <p className="font-medium text-ink">
-            {ok ? "Verificação facial concluída" : "Verificação facial (prova de vida)"}
-          </p>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Pela câmera, ao vivo: piscar, sorrir e virar o rosto, na ordem que a tela pedir.
-            Guardamos só um código do rosto, criptografado.
-          </p>
-          {!ok && (
-            <button
-              type="button"
-              onClick={onStart}
-              className="mt-2 text-sm font-semibold text-ink underline underline-offset-4"
-            >
-              Iniciar verificação
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  );
 }

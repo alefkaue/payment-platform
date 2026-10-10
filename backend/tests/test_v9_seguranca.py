@@ -273,11 +273,19 @@ def test_folha_so_paga_funcionario_com_conta_pf(cliente):
 # ------------------------------------------------------------------ KYC
 
 
-def _cadastro_com_documento(cliente, *, cpf=None):
+def _cadastro_com_documento(cliente, *, cpf=None, documento=None):
     return cliente.post("/usuarios", headers={"X-Dispositivo-Id": "cel-kyc"}, json={
         "nome": "Maria Souza Lima", "email": "maria@ex.com", "senha": SENHA, "cpf": cpf or gerar_cpf(),
         "data_nascimento": "1990-05-04", "celular": "11987654321", "biometria": prova_cadastro(cliente),
-        "documento": {"tipo": "rg", "frente": _png()}})
+        "documento": documento or {"tipo": "rg", "frente": _png(), "verso": _png(130)}})
+
+
+def test_documento_exige_frente_e_verso(cliente):
+    for tipo in ("rg", "cnh", "cin"):
+        r = _cadastro_com_documento(cliente, documento={"tipo": tipo, "frente": _png()})
+        assert r.status_code == 400 and "verso" in r.json()["detail"], tipo
+    # passaporte é uma página só
+    assert _cadastro_com_documento(cliente, documento={"tipo": "passaporte", "frente": _png()}).status_code == 201
 
 
 def test_kyc_obrigatorio_exige_documento(cliente, monkeypatch):

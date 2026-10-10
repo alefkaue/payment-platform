@@ -38,6 +38,7 @@ from app.services import biometria_service, ocr_service
 logger = logging.getLogger("payflow.kyc")
 
 TIPOS_DOC_PESSOA = ("rg", "cnh", "cin", "passaporte")
+TIPOS_COM_VERSO = ("rg", "cnh", "cin")
 TIPOS_DOC_EMPRESA = ("contrato_social", "ccmei", "cartao_cnpj", "procuracao", "outro")
 # Rosto do documento abaixo disto (em relação ao limiar) é "claramente outra pessoa".
 _MARGEM_REPROVA_ROSTO = 0.12
@@ -58,6 +59,10 @@ def analisar_documento_pessoa(*, tipo: str, frente_b64: str, verso_b64: str | No
     """Devolve {status, provedor, sha256, campos, verificacoes, motivos, nivel_risco}."""
     if tipo not in TIPOS_DOC_PESSOA:
         raise HTTPException(status_code=400, detail="Tipo de documento inválido (use rg, cnh, cin ou passaporte).")
+    # RG, CNH e CIN têm dados e QR/MRZ no verso: só a frente não basta (e uma
+    # foto de frente "emprestada" fica mais difícil). Passaporte é uma página só.
+    if tipo in TIPOS_COM_VERSO and not verso_b64:
+        raise HTTPException(status_code=400, detail="Envie a foto da frente e do verso do documento.")
     s = get_settings()
     bruto, _, sha = arquivos.validar_arquivo(frente_b64, permitidos=arquivos.IMAGENS, limite_bytes=s.documento_max_bytes)
     imagens = [_decodificar(bruto)]
