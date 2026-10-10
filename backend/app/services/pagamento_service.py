@@ -20,6 +20,8 @@ Idempotência: a chave enviada pelo cliente vale por conta de origem (prefixo
 recebia de volta a transação de quem usou primeiro.
 """
 
+import hashlib
+import json
 import logging
 from datetime import timedelta
 from decimal import Decimal
@@ -222,13 +224,19 @@ def transferir_lote(repo: Repositorio, *, usuario: dict, conta: dict, dispositiv
     if total > _limite_facial():
         verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="lote")
 
+    # Remessa duplicada: o mesmo lote (mesmos itens, na mesma ordem) reenviado no mesmo dia
+    # devolve os mesmos pagamentos em vez de pagar de novo -- como os bancos fazem com
+    # arquivo de remessa repetido. Item com chave própria usa a dele.
+    assinatura = json.dumps([[i.destino.model_dump(mode="json"), str(i.valor), i.descricao] for i in itens],
+                            sort_keys=True)
+    lote_id = hashlib.sha256(f"{conta['carteira_id']}|{tempo.hoje_brt()}|{assinatura}".encode()).hexdigest()[:32]
     resultados = []
     for indice, item in enumerate(itens):
         try:
             destino = pix_service.resolver_destino(repo, item.destino)
             r = transferir(
                 repo, usuario=usuario, conta=conta, dispositivo=dispositivo, destino=destino, valor=item.valor,
-                descricao=item.descricao, idempotency_key=item.idempotency_key, ip=ip,
+                descricao=item.descricao, idempotency_key=item.idempotency_key or f"lote-{lote_id}-{indice}", ip=ip,
                 mfa_resolvido=True, verificacao_previa=verificacao,
             )
         except HTTPException as e:

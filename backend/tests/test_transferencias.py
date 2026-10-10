@@ -218,3 +218,17 @@ def test_teto_de_aparelho_novo_soma_todos_os_aparelhos(cliente):
     assert r.status_code == 403 and "somando todos" in r.json()["detail"]
     a.dispositivo = "celular-2"
     assert a.saldo() == "4000.00"
+
+
+def test_lote_reenviado_no_mesmo_dia_nao_paga_de_novo(cliente):
+    """Remessa duplicada: o mesmo lote reenviado devolve os mesmos pagamentos."""
+    a, b, c = Pessoa(cliente, "lote.a@ex.com"), Pessoa(cliente, "lote.b@ex.com"), Pessoa(cliente, "lote.c@ex.com")
+    depositar(cliente, a.numero, 1000)
+    itens = [{"destino": conta_ref(b.numero), "valor": "100.00"}, {"destino": conta_ref(c.numero), "valor": "50.00"}]
+    r1 = cliente.post("/pagamentos/lote", json={"itens": itens}, headers=a.h()).json()
+    r2 = cliente.post("/pagamentos/lote", json={"itens": itens}, headers=a.h()).json()
+    assert [x["transacao_id"] for x in r1] == [x["transacao_id"] for x in r2]
+    assert a.saldo() == "850.00"
+    # outro lote (valor diferente) paga normalmente
+    cliente.post("/pagamentos/lote", json={"itens": [{"destino": conta_ref(b.numero), "valor": "100.01"}]}, headers=a.h())
+    assert a.saldo() == "749.99"
