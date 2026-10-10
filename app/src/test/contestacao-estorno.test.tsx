@@ -88,6 +88,7 @@ function abrir(rota: typeof Comprovante | typeof Contas) {
       <Component />
     </QueryClientProvider>,
   );
+  if (rota === Contas) fireEvent.click(screen.getByRole("tab", { name: "Recebidas" }));
   return invalidar;
 }
 it("contesta com motivo mínimo, contador e estado de sucesso", async () => {
@@ -147,6 +148,7 @@ it.each(["aprovador", "operador", "consulta"])("%s não vê Estornar", async (pa
 it("cobrança pendente não mostra Estornar", async () => {
   vi.mocked(listarFaturas).mockResolvedValue([{ ...fatura, status: "pendente" }]);
   abrir(Contas);
+  fireEvent.click(screen.getByRole("tab", { name: "A receber" }));
   await screen.findByText("Cliente");
   expect(screen.queryByRole("button", { name: "Estornar" })).toBeNull();
 });

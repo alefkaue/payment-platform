@@ -122,6 +122,7 @@ export interface Transacao {
   auth_metodo: "senha" | "selfie" | "aprovacao" | "automatico" | "sistema";
   /** concluida | retida (bloqueio cautelar) | devolvida | devolvida_parcial */
   status?: string;
+  bloqueio_ate?: string;
   /** Já existe contestação (MED) desta transação; vem no comprovante (API e demonstração). */
   contestacao_aberta?: boolean;
   categoria: CategoriaTx;

@@ -7,8 +7,8 @@
  *   para apresentar offline. As regras do mock seguem as do backend
  *   (transferência sem split, split só em compra/cobrança com nota).
  *
- * Cartão virtual e contas a pagar ainda não têm endpoint no backend: no modo API
- * continuam com dados de demonstração.
+ * Cartão virtual ainda usa dados de demonstração no modo API.
+ * Contas a pagar ainda não têm endpoint: no modo API a lista fica vazia.
  */
 import { atestacaoDoAparelho } from "./dpop";
 import { centavosFolha, decimalFolha } from "./folha";
@@ -159,6 +159,7 @@ interface TransacaoApi {
   aplicou_split: boolean;
   auth_metodo: Transacao["auth_metodo"];
   status: string;
+  bloqueio_ate?: string | null;
   descricao: string | null;
   data_hora: string;
 }
@@ -246,6 +247,7 @@ function mapTransacao(t: TransacaoApi, minha: number): Transacao {
     aplicou_split: t.aplicou_split,
     auth_metodo: t.auth_metodo,
     status: t.status,
+    ...(t.bloqueio_ate ? { bloqueio_ate: t.bloqueio_ate } : {}),
     categoria,
     descricao,
     criado_em: t.data_hora,
@@ -1451,7 +1453,7 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
           imposto,
           liquido: r2(num(c.valor) - imposto),
           credito_gerado: 0,
-          vencimento: c.vencimento ?? new Date().toISOString(),
+          vencimento: c.vencimento ?? "",
           status: c.status === "paga" ? ("liquidado" as const) : ("pendente" as const),
         };
       });
@@ -1470,7 +1472,7 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
         imposto,
         liquido: r2(c.valor - imposto),
         credito_gerado: 0,
-        vencimento: c.vencimento ?? new Date().toISOString(),
+        vencimento: c.vencimento ?? "",
         status: c.status === "paga" ? "liquidado" : "pendente",
       };
     });
@@ -2257,16 +2259,46 @@ export async function pagarFolha(
   if (total > 50000n && !biometria) throw new ApiError("Confirme o pagamento com seu rosto.");
   await sincronizar();
   const saldo = centavosFolha(sessao.conta.saldo.toFixed(2));
-  if (total > saldo) throw new ApiError("Saldo insuficiente.");
-  sessao.conta.saldo = Number(saldo - total) / 100;
-  gastosFolhaDemo.set(chave, gasto + total);
+  const pagamentos = pedido.itens.map((item) => {
+    const f = listaFuncionariosDemo().find((f) => f.id === item.funcionario_id)!;
+    const pessoa = banco().pessoas.find((p) => p.cpf === cpfsFuncionariosDemo.get(f.id));
+    const destino = pessoa && contasDa(pessoa).find((c) => c.tipo === "PF");
+    return { f, destino, valor: centavosFolha(item.valor ?? f.salario ?? "0") };
+  });
+  const liquidado = pagamentos.reduce((s, p) => s + (p.destino ? p.valor : 0n), 0n);
+  if (liquidado > saldo) throw new ApiError("Saldo insuficiente.");
+  const resultados: Extract<ResultadoFolha, { resultados: unknown }>["resultados"] = [];
+  for (const { f, destino, valor } of pagamentos) {
+    if (!destino) {
+      resultados.push({ funcionario_id: f.id, situacao: "erro", erro: "sem conta Astro" });
+      continue;
+    }
+    const t: Transacao = {
+      id: genId(),
+      origem_carteira_id: sessao.conta.carteira_id,
+      destino_carteira_id: destino.carteira_id,
+      valor_bruto: num(decimalFolha(valor)),
+      liquido: num(decimalFolha(valor)),
+      cbs: 0,
+      ibs: 0,
+      aplicou_split: false,
+      tipo_destino: "PF",
+      auth_metodo: biometria ? "selfie" : "senha",
+      status: "concluida",
+      categoria: "transferencia",
+      descricao: `${descricao || "Folha de pagamento"} · ${f.nome}`,
+      criado_em: new Date().toISOString(),
+    };
+    // Relê a conta para conservar créditos quando dois itens têm o mesmo destino.
+    const atual = contaPorId(destino.carteira_id)!;
+    atual.saldo = num(decimalFolha(centavosFolha(atual.saldo.toFixed(2)) + valor));
+    guardarConta(atual);
+    guardarTransacao(t);
+    resultados.push({ funcionario_id: f.id, situacao: "pago", transacao_id: t.id });
+  }
+  sessao.conta.saldo = num(decimalFolha(saldo - liquidado));
+  gastosFolhaDemo.set(chave, gasto + liquidado);
   persistirSessao();
   await aguardarEnvio();
-  return {
-    resultados: itens.map((i) => ({
-      funcionario_id: i.funcionario_id,
-      situacao: "pago",
-      transacao_id: genId(),
-    })),
-  };
+  return { resultados };
 }
