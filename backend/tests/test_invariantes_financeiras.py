@@ -78,7 +78,7 @@ def test_dinheiro_nunca_nasce_nem_some(cliente, semente, monkeypatch):
     monkeypatch.setattr(cliente, "request", contar)
     for passo in range(120):
         op = rnd.choice(["pix", "pix", "pix", "pix_mesma_chave", "cobrar", "pagar", "estornar",
-                         "contestar", "decidir_med", "liberar", "repassar", "rendimento"])
+                         "contestar", "decidir_med", "liberar", "repassar", "rendimento", "devolver"])
         try:
             if op in ("pix", "pix_mesma_chave"):
                 p, conta = rnd.choice(contas)
@@ -112,6 +112,11 @@ def test_dinheiro_nunca_nasce_nem_some(cliente, semente, monkeypatch):
             elif op == "contestar" and enviadas:
                 p, tid = rnd.choice(enviadas)
                 cliente.post(f"/pagamentos/transacoes/{tid}/contestar", json={"motivo": "não reconheço"}, headers=p.h())
+            elif op == "devolver" and enviadas:
+                _, tid = rnd.choice(enviadas)
+                for q in pessoas:  # só quem recebeu consegue; os outros recebem 404
+                    cliente.post(f"/pagamentos/transacoes/{tid}/devolver", headers=q.h(),
+                                 json={"valor": rnd.choice(["1.00", "10.00", "50.00", "0.01"])} if rnd.random() < .7 else {})
             elif op == "decidir_med":
                 abertas = cliente.get("/admin/contestacoes", headers=adm).json()
                 if abertas:
