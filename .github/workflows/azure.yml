@@ -1,0 +1,94 @@
+name: Deploy Azure (Astro)
+
+# Publica a API (Container Apps) e o app web (Static Web Apps) no ambiente do pentest.
+# Login no Azure por OIDC: nenhuma senha ou chave guardada no GitHub (ver AZURE.md §3).
+# Sem as variáveis do repositório (Settings → Variables) os jobs nem rodam.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "app/**"
+      - ".github/workflows/azure.yml"
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # token OIDC para o azure/login
+  contents: read
+
+concurrency:
+  group: azure-deploy
+  cancel-in-progress: false
+
+env:
+  RG: ${{ vars.AZURE_RG }}
+  ACR: ${{ vars.AZURE_ACR }}
+  SWA: ${{ vars.AZURE_SWA }}
+
+jobs:
+  api:
+    if: vars.AZURE_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # O build roda dentro do ACR (sem Docker no runner) e a imagem leva o SHA do commit.
+      - name: Build da imagem no ACR
+        run: az acr build -r "$ACR" -t "astro-api:${GITHUB_SHA}" -f backend/Dockerfile backend
+
+      - name: Nova revisão da API
+        run: |
+          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
+          az containerapp update -g "$RG" -n astro-api --image "$SERVIDOR/astro-api:${GITHUB_SHA}"
+          az containerapp revision list -g "$RG" -n astro-api \
+            --query "[?properties.active].{revisao:name, saude:properties.healthState}" -o table
+
+  front:
+    if: vars.AZURE_CLIENT_ID != '' && vars.ASTRO_API_URL != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Instalar dependências
+        working-directory: app
+        run: npm ci
+
+      # Gera também o staticwebapp.config.json com a CSP (scripts/cabecalhos.mjs).
+      - name: Build (SPA + cabeçalhos de segurança)
+        working-directory: app
+        env:
+          VITE_API_URL: ${{ vars.ASTRO_API_URL }}
+        run: npm run build
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      # O token de deploy do Static Web Apps é lido na hora (com o login OIDC), não fica no GitHub.
+      - name: Token de deploy do Static Web Apps
+        id: swa
+        run: |
+          TOKEN=$(az staticwebapp secrets list -g "$RG" -n "$SWA" --query properties.apiKey -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
+          action: upload
+          app_location: app/dist/client
+          skip_app_build: true
+          skip_api_build: true

@@ -4,7 +4,8 @@ Dependências do FastAPI: autenticação, contexto de conta e aparelho.
 - `usuario_atual`: exige access token JWT (Authorization: Bearer).
 - `admin_atual`: além disso, papel admin.
 - `ip_cliente`: IP real. Só lê X-Forwarded-For quando a conexão vem de um proxy
-  listado em PROXIES_CONFIAVEIS -- senão qualquer cliente forjaria o próprio IP.
+  listado em PROXIES_CONFIAVEIS (IP ou CIDR) -- senão qualquer cliente forjaria o
+  próprio IP. Atrás do Azure Front Door, X-Azure-ClientIP quando X-Azure-FDID bate.
 - `dispositivo_atual`: aparelho do header X-Dispositivo-Id (registrado no login).
 - `conta_atual`: carteira em uso. Sem header, a carteira PF da pessoa. Com
   `X-Conta: <numero>`, uma carteira PJ em que a pessoa tem vínculo ativo -- é
@@ -12,6 +13,8 @@ Dependências do FastAPI: autenticação, contexto de conta e aparelho.
 """
 
 import hashlib
+import ipaddress
+import secrets
 from datetime import timedelta
 
 import jwt
@@ -32,18 +35,38 @@ def get_repo() -> Repositorio:
     return get_repository()
 
 
+def _ip(texto: str | None):
+    try:
+        return ipaddress.ip_address((texto or "").strip())
+    except ValueError:
+        return None
+
+
 def ip_cliente(request: Request) -> str | None:
     if not request.client:
         return None
+    s = get_settings()
+    # Atrás do Azure Front Door: ele sobrescreve X-Azure-FDID e X-Azure-ClientIP, então
+    # o header só vale se o id do perfil bater (quem chama a origem direto não sabe o id).
+    fdid = request.headers.get("x-azure-fdid", "")
+    if s.front_door_id and secrets.compare_digest(fdid.encode(), s.front_door_id.encode()):
+        ip = _ip(request.headers.get("x-azure-clientip"))
+        if ip:
+            return str(ip)
     direto = request.client.host
-    confiaveis = get_settings().proxies_confiaveis_lista
+    redes = s.proxies_confiaveis_redes
+
+    def confiavel(texto: str) -> bool:
+        ip = _ip(texto)
+        return ip is not None and any(ip in r for r in redes)
+
     xff = request.headers.get("x-forwarded-for")
-    if not xff or direto not in confiaveis:
+    if not xff or not confiavel(direto):
         return direto
     # Percorre da direita para a esquerda pulando os proxies confiáveis.
     for ip in reversed([p.strip() for p in xff.split(",") if p.strip()]):
-        if ip not in confiaveis:
-            return ip
+        if not confiavel(ip):
+            return ip if _ip(ip) else direto
     return direto
 
 

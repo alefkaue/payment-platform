@@ -10,5 +10,9 @@ if [ -n "$DATABASE_URL" ]; then
   alembic upgrade head
 fi
 
+# --no-server-header: não anuncia "uvicorn" nas respostas.
+# O IP do cliente NÃO vem do --proxy-headers do uvicorn: quem decide é
+# app/deps.py:ip_cliente (PROXIES_CONFIAVEIS / FRONT_DOOR_ID).
 echo "[entrypoint] Iniciando API..."
-exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}"
+exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" \
+  --no-server-header --no-proxy-headers

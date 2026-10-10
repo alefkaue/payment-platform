@@ -90,6 +90,31 @@ def test_ip_atras_de_proxy(cliente, monkeypatch):
     assert ip_cliente(req("9.9.9.9", "1.2.3.4")) == "9.9.9.9"
     monkeypatch.setattr(get_settings(), "proxies_confiaveis", "10.0.0.1")
     assert ip_cliente(req("10.0.0.1", "1.2.3.4, 10.0.0.1")) == "1.2.3.4"
+    # faixa CIDR (sub-rede do Container Apps): o proxy de entrada muda de IP
+    monkeypatch.setattr(get_settings(), "proxies_confiaveis", "10.20.0.0/23")
+    assert ip_cliente(req("10.20.1.7", "forjado, 1.2.3.4")) == "1.2.3.4"
+    assert ip_cliente(req("10.20.2.1", "1.2.3.4")) == "10.20.2.1"
+    # lixo no header não vira "IP"
+    assert ip_cliente(req("10.20.1.7", "nao-e-ip")) == "10.20.1.7"
+
+
+def test_ip_atras_do_front_door(cliente, monkeypatch):
+    from starlette.requests import Request
+
+    from app.core.config import get_settings
+    from app.deps import ip_cliente
+
+    def req(cabecalhos):
+        h = [(k.encode(), v.encode()) for k, v in cabecalhos.items()]
+        return Request({"type": "http", "client": ("10.20.0.9", 1), "headers": h})
+
+    fd = {"x-azure-fdid": "id-do-perfil", "x-azure-clientip": "1.2.3.4"}
+    # sem FRONT_DOOR_ID configurado, os headers do Front Door são ignorados
+    assert ip_cliente(req(fd)) == "10.20.0.9"
+    monkeypatch.setattr(get_settings(), "front_door_id", "id-do-perfil")
+    assert ip_cliente(req(fd)) == "1.2.3.4"
+    # quem chama a origem direto e não sabe o id não escolhe o próprio IP
+    assert ip_cliente(req({**fd, "x-azure-fdid": "chute"})) == "10.20.0.9"
 
 
 def test_eu_lista_contas(cliente):

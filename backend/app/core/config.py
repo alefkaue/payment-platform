@@ -13,6 +13,7 @@ pra dev e inaceitável pra produção (por isso o aviso). Em produção esses va
 vêm do Azure Key Vault / variáveis do App Service.
 """
 
+import ipaddress
 import secrets
 from functools import lru_cache
 
@@ -112,8 +113,12 @@ class Settings(BaseSettings):
 
     # ---------- Rate limit por IP ----------
     login_max_tentativas_ip: int = Field(default=30, alias="LOGIN_MAX_TENTATIVAS_IP")
-    # Proxies cujo X-Forwarded-For é confiável (vírgula). Vazio = ignora o header.
+    # Proxies cujo X-Forwarded-For é confiável (vírgula; IP ou faixa CIDR, ex.: a sub-rede
+    # do Container Apps, onde fica o proxy de entrada). Vazio = ignora o header.
     proxies_confiaveis: str = Field(default="", alias="PROXIES_CONFIAVEIS")
+    # Azure Front Door: id do perfil (header X-Azure-FDID, que o Front Door sobrescreve).
+    # Quando bate, o IP do cliente vem de X-Azure-ClientIP. Vazio = não usa Front Door.
+    front_door_id: str = Field(default="", alias="FRONT_DOOR_ID")
     # Consultas de chave Pix por usuário por hora (anti-varredura, como no DICT).
     consulta_chave_max_hora: int = Field(default=60, alias="CONSULTA_CHAVE_MAX_HORA")
 
@@ -214,8 +219,9 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
-    def proxies_confiaveis_lista(self) -> set[str]:
-        return {p.strip() for p in self.proxies_confiaveis.split(",") if p.strip()}
+    def proxies_confiaveis_redes(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
+        # strict=False: "10.0.0.1" vira 10.0.0.1/32 e "10.20.0.5/23" não derruba o boot.
+        return [ipaddress.ip_network(p.strip(), strict=False) for p in self.proxies_confiaveis.split(",") if p.strip()]
 
     @property
     def admin_ips_lista(self) -> set[str]:

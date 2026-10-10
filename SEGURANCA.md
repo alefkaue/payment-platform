@@ -57,7 +57,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 | 6 | **Arquivar Loja/Viagens/pontos**: telas para `app/src/_arquivado/`, fora da navegação; backend com `BENEFICIOS_HABILITADOS=0` por padrão | pedido do Alef, A8 | ✅ |
 | 7 | **Front**: CSP e cabeçalhos no host (Static Web Apps), overlay de debug só em dev, build de produção recusa modo demonstração | A5 | ✅ |
 | 8 | **Segredos e config**: tirar a derivação de segredos e o CORS `*.netlify.app`; Key Vault no Azure | A6 | ✅ (Key Vault entra com a infra, item 9) |
-| 9 | **Azure + WAF + `PENTEST.md`** (escopo, regras, contas de teste, como reportar) e APK Android pelo CI | objetivo do pentest | ⬜ |
+| 9 | **Azure + WAF + `PENTEST.md`** (escopo, regras, contas de teste, como reportar) e APK Android pelo CI | objetivo do pentest | 🟡 escrito, falta subir (precisa da conta Azure) |
 | 10 | **App nativo**: tokens no Keystore/Keychain, certificate pinning, Play Integrity / App Attest | A7 | ⬜ (depois do APK existir) |
 
 ## 4. Como os outros grupos vão fazer o pentest (proposta)
@@ -190,6 +190,20 @@ justamente ver se alguém burla.
   **Atenção — deploy de demonstração já existente no Render**: depois deste commit ele **não sobe** até ganhar
   as 4 variáveis no painel. Como a `EMBEDDING_KEY` muda, as biometrias cadastradas lá deixam de abrir (cada
   pessoa refaz o cadastro, ou recria-se o banco) e as sessões abertas caem (JWT novo).
+- 10/10 (5ª sessão) — **Item 9 escrito, não implantado** (não há conta Azure nem Docker nesta máquina).
+  `infra/azure/main.bicep` (compila e passa no lint do Bicep 0.48): VNet com Postgres Flexible B1ms **só
+  privado**, Key Vault RBAC com os 4 segredos, identidade gerenciada (AcrPull + Secrets User), ACR, Container
+  Apps (probes em `/saude`, 1–3 réplicas), Static Web Apps (CSP do `cabecalhos.mjs`) e Front Door Standard
+  com WAF (30 req/min por IP em `/auth|/biometria|/identidade`, 300 req/min no geral). Deploy em 2 passos
+  (sem imagem → `az acr build` → com imagem), roteiro em `AZURE.md`. `.github/workflows/azure.yml`: login
+  **OIDC** (sem segredo no GitHub), `az acr build` com o SHA + nova revisão; front com o token do SWA lido na
+  hora. `backend/Dockerfile` endurecido: Tesseract + por, modelos baixados e conferidos no build e só leitura,
+  `MODELOS_DOWNLOAD=0`, `AMBIENTE=producao`, uvicorn `--no-server-header --no-proxy-headers`;
+  `backend/.dockerignore`. **IP do cliente**: `PROXIES_CONFIAVEIS` aceita CIDR (o proxy do Container Apps muda
+  de IP) e `FRONT_DOOR_ID` faz a API usar `X-Azure-ClientIP` só quando `X-Azure-FDID` bate (2 testes; 189 no
+  backend). CORS inclui `https://localhost` (origem do APK Capacitor). `PENTEST.md` para os outros grupos:
+  escopo, regras (Microsoft RoE, ≤10 req/s, só contas próprias), contas, como gerar DPoP, o que já sabemos,
+  modelo de relatório. **Não testado de verdade**: build da imagem e o deploy (fazer com `AZURE.md`).
 
 ### Próximos passos detalhados (itens 9 e 10)
 

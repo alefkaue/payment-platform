@@ -1,40 +1,45 @@
+# Backend de PRODUÇÃO da Astro (Azure Container Apps, ver infra/azure e AZURE.md).
+# O Dockerfile da raiz é o de demonstração (Render); este não liga nenhum modo de teste.
 FROM python:3.12-slim
 
-# opencv-python (usado pelo DeepFace para MFA facial) precisa de libs nativas que a
-# imagem slim não traz. Sem isso o container derruba na primeira requisição de
-# biometria com "ImportError: libGL.so.1".
+# - libgl1 / libglib2.0-0: OpenCV e MediaPipe (sem elas: "ImportError: libGL.so.1").
+# - tesseract-ocr + idioma por: OCR dos documentos do KYC (DOCUMENTO_PROVEDOR=tesseract).
 RUN apt-get update && apt-get install -y --no-install-recommends \
         libgl1 \
         libglib2.0-0 \
+        tesseract-ocr \
+        tesseract-ocr-por \
     && rm -rf /var/lib/apt/lists/*
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    AMBIENTE=producao \
+    BIOMETRIA_MOTOR=opencv \
+    DOCUMENTO_PROVEDOR=tesseract \
+    MODELOS_DIR=/opt/astro/modelos
 
 WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Opcional: baixar os pesos do DeepFace durante o BUILD (em vez da 1ª requisição).
-# Descomente se o build tiver internet para github.com:
-# RUN python -c "from deepface import DeepFace; \
-#     DeepFace.build_model('Facenet', task='facial_recognition'); \
-#     DeepFace.build_model('Fasnet', task='spoofing')"
-
+# Modelos da biometria baixados NO BUILD e conferidos pelo SHA-256 fixado em
+# app/core/modelos.py. Em runtime MODELOS_DOWNLOAD=0: o container nunca baixa nada.
+# A pasta fica do root e só leitura para o usuário da API (modelo trocado = não carrega).
 COPY app ./app
-COPY alembic ./alembic
-COPY alembic.ini .
-COPY entrypoint.sh .
-RUN chmod +x entrypoint.sh
+RUN AMBIENTE=desenvolvimento python -m app.core.modelos baixar \
+    && chmod -R a-w /opt/astro/modelos
+ENV MODELOS_DOWNLOAD=0
 
-# Roda como usuário SEM privilégio (item #17 da auditoria: antes rodava como root).
-# O cache dos pesos do DeepFace fica em /home/payflow/.deepface -- por isso o HOME
-# precisa pertencer ao usuário.
-RUN useradd --create-home --uid 10001 payflow \
-    && chown -R payflow:payflow /app
-USER payflow
-ENV HOME=/home/payflow
+COPY alembic ./alembic
+COPY alembic.ini entrypoint.sh ./
+
+# Usuário sem privilégio e código só leitura: uma falha na API não reescreve a própria API.
+RUN useradd --create-home --uid 10001 astro \
+    && chmod 0555 entrypoint.sh
+USER astro
+ENV HOME=/home/astro
 
 EXPOSE 8000
 
