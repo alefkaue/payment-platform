@@ -194,6 +194,10 @@ def transferir(
             verificacao_facial=verificacao, idempotency_key=chave_idempotencia(conta, idempotency_key),
             bloqueio_ate=bloqueio,
             checar=checar,
+            # Outbox: o aviso "pix.recebido" nasce na mesma transação do dinheiro.
+            evento=(lambda tx: (destino["empresa_id"], "pix.recebido", {
+                "transacao_id": tx["id"], "valor": tx["liquido"], "pagador": tx["origem"]["nome"],
+                "status": tx["status"]})) if destino["titular_tipo"] == "PJ" else None,
         )
     except SaldoInsuficienteError:
         raise HTTPException(status_code=400, detail="Saldo insuficiente.")
@@ -207,10 +211,7 @@ def transferir(
         "transacao_id": t["id"], "valor": str(valor), "destino": destino["carteira_id"], "auth": metodo.value,
         "status": t["status"],
     })
-    if destino["titular_tipo"] == "PJ":
-        webhook_service.emitir(repo, empresa_id=destino["empresa_id"], evento="pix.recebido", payload={
-            "transacao_id": t["id"], "valor": t["liquido"], "pagador": t["origem"]["nome"], "status": t["status"],
-        })
+    webhook_service.entregar_agora(repo, t.pop("_entregas", None))
     return {"transacao": t}
 
 

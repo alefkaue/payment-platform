@@ -12,6 +12,7 @@ DENTRO do lock, via o callback `checar`, para duas operações simultâneas não
 passarem as duas pelo mesmo limite.
 """
 
+import json
 from contextlib import nullcontext
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -386,11 +387,17 @@ class Repositorio(RepositorioExtras):
         usar_bloqueado_destino_primeiro: bool = False,
         checar: Optional[Callable[[Session, Carteira], None]] = None,
         cobranca_id: Optional[int] = None,
+        evento: Optional[Callable[[dict], tuple[Optional[int], str, dict]]] = None,
     ) -> dict:
         """Move `split.valor_bruto` da origem: o destino recebe `split.liquido`
         (no saldo bloqueado se `bloqueio_ate`), a conta TRIBUTOS recebe cbs+ibs.
         Levanta SaldoInsuficienteError; `checar` pode levantar qualquer erro de
-        domínio (limite estourado etc.) -- tudo dentro do lock."""
+        domínio (limite estourado etc.) -- tudo dentro do lock.
+
+        Outbox: `evento(transacao) -> (empresa_id, nome, payload)` monta o webhook, e as
+        entregas são gravadas NA MESMA transação do dinheiro (se o processo cair depois do
+        commit, o job de webhooks entrega; se cair antes, nem o dinheiro nem o evento
+        existem). Os ids das entregas voltam em `_entregas` (para a entrega imediata)."""
         def repetida(ja: Transacao) -> dict:
             if (ja.origem_carteira_id, ja.destino_carteira_id, ja.valor_bruto, ja.tipo,
                 ja.cbs, ja.ibs, ja.liquido, ja.aplicou_split) != (
@@ -512,6 +519,7 @@ class Repositorio(RepositorioExtras):
             if cobranca_id is not None:
                 cob.status, cob.transacao_id, cob.paga_em = "paga", t.id, agora
             self._vincular_historico(s, t.id)
+            entregas = self._enfileirar_webhooks(s, evento(self._transacao_dict(s, t))) if evento else []
             try:
                 s.commit()
             except IntegrityError:
@@ -522,7 +530,25 @@ class Repositorio(RepositorioExtras):
                         return repetida(ja)
                 raise
             s.refresh(t)
-            return self._transacao_dict(s, t)
+            r = self._transacao_dict(s, t)
+            if evento:
+                r["_entregas"] = [e.id for e in entregas]
+            return r
+
+    @staticmethod
+    def _enfileirar_webhooks(s: Session, ev: tuple[Optional[int], str, dict]) -> list[WebhookEntrega]:
+        """Entregas do evento para os webhooks ativos da empresa, na sessão do movimento."""
+        empresa_id, nome, payload = ev
+        if empresa_id is None:
+            return []
+        dados = json.loads(json.dumps(payload, default=str))
+        entregas = [WebhookEntrega(webhook_id=w.id, evento=nome, payload=dados)
+                    for w in s.scalars(select(Webhook).where(Webhook.empresa_id == empresa_id, Webhook.ativo.is_(True))
+                                       .order_by(Webhook.id))
+                    if nome in (w.eventos or [])]
+        s.add_all(entregas)
+        s.flush()
+        return entregas
 
     def liberar_bloqueio(self, transacao_id: int, *, _sessao: Session | None = None) -> Optional[dict]:
         """Retida -> concluída: move o valor do saldo bloqueado para o livre."""

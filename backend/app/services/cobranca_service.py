@@ -183,6 +183,10 @@ def pagar(
             auth_metodo=metodo, autor_usuario_id=usuario["id"], dispositivo_id=dispositivo["id"] if dispositivo else None,
             descricao=cob["descricao"] or f"Cobrança {txid}", verificacao_facial=verificacao,
             idempotency_key=chave_idempotencia(conta, idempotency_key), checar=checar, cobranca_id=cob["id"],
+            # Outbox: o aviso "cobranca.paga" nasce na mesma transação do dinheiro.
+            evento=lambda tx: (cob["recebedor"]["empresa_id"], "cobranca.paga", {
+                "txid": txid, "transacao_id": tx["id"], "valor": tx["valor_bruto"], "liquido": tx["liquido"],
+                "cbs": tx["cbs"], "ibs": tx["ibs"], "nfe_chave": cob["nfe_chave"]}),
         )
     except SaldoInsuficienteError:
         raise HTTPException(status_code=400, detail="Saldo insuficiente.")
@@ -196,10 +200,7 @@ def pagar(
     repo.registrar_log(ator=usuario["email"], acao="cobranca_paga", ip=ip, detalhe={
         "txid": txid, "transacao_id": t["id"], "cbs": str(t["cbs"]), "ibs": str(t["ibs"]), "auth": metodo.value,
     })
-    webhook_service.emitir(repo, empresa_id=cob["recebedor"]["empresa_id"], evento="cobranca.paga", payload={
-        "txid": txid, "transacao_id": t["id"], "valor": t["valor_bruto"], "liquido": t["liquido"],
-        "cbs": t["cbs"], "ibs": t["ibs"], "nfe_chave": cob["nfe_chave"],
-    })
+    webhook_service.entregar_agora(repo, t.pop("_entregas", None))
     return {"transacao": t}
 
 

@@ -173,6 +173,14 @@ def entregar(repo: Repositorio, entrega_id: int) -> None:
         logger.info("Webhook %s falhou (%s)", entrega_id, resposta)
 
 
+def entregar_agora(repo: Repositorio, entregas: list[int] | None) -> None:
+    """Tenta já as entregas gravadas no outbox (o job de webhooks garante as que falharem)."""
+    if not entregas or not get_settings().webhook_entrega_imediata:
+        return
+    for entrega_id in entregas:
+        threading.Thread(target=entregar, args=(repo, entrega_id), daemon=True).start()
+
+
 def emitir(repo: Repositorio, *, empresa_id: int | None, evento: str, payload: dict) -> None:
     if empresa_id is None:
         return
