@@ -10,6 +10,7 @@
  * Cartão virtual ainda usa dados de demonstração no modo API.
  * Contas a pagar ainda não têm endpoint: no modo API a lista fica vazia.
  */
+import { normalizarCelular } from "./celular";
 import { atestacaoDoAparelho } from "./dpop";
 import { centavosFolha, decimalFolha } from "./folha";
 import type { Funcionario, FuncionarioCreate, FolhaItem, ResultadoFolha } from "./types";
@@ -460,6 +461,8 @@ export async function concluirRecuperacao(
  * depois do rosto do login: no backend, quem abre empresa é a pessoa logada.
  */
 export async function registrar(p: RegistrarPayload): Promise<CadastroResposta> {
+  if (p.celular !== undefined && !normalizarCelular(p.celular))
+    throw new ApiError("Informe um celular válido: DDD e 9 dígitos começando por 9.");
   await delay(700);
   if (p.senha.length < 10) throw new ApiError("A senha precisa ter ao menos 10 caracteres.");
   if (MODO_API) {
@@ -536,6 +539,44 @@ export async function registrar(p: RegistrarPayload): Promise<CadastroResposta> 
   };
 }
 
+/** A prova de vida do cadastro também autoriza a primeira sessão. */
+export async function registrarEEntrar(p: RegistrarPayload): Promise<{
+  resposta: LoginResposta;
+  kyc: KycResultado;
+  erroEmpresa?: string;
+}> {
+  if (!MODO_API) {
+    const criado = await registrar(p);
+    const r = await concluirCadastro(criado.etapa, p.biometria, p.empresa);
+    return { ...r, kyc: criado.kyc };
+  }
+  if (p.celular !== undefined && !normalizarCelular(p.celular))
+    throw new ApiError("Informe um celular válido: DDD e 9 dígitos começando por 9.");
+  definirConta(null);
+  salvarTokens(null);
+  const criado = await post<{
+    conta: { kyc?: KycResultado };
+    tokens: { access_token: string; refresh_token: string };
+  }>("/usuarios/cadastro-sessao", {
+    nome: p.nome,
+    email: p.email,
+    senha: p.senha,
+    cpf: p.cpf,
+    data_nascimento: p.data_nascimento,
+    celular: p.celular,
+    biometria: p.biometria,
+    ...(p.documento ? { documento: p.documento } : {}),
+    atestacao: await atestacaoDoAparelho(),
+  });
+  salvarTokens(criado.tokens);
+  const { pessoa, contas } = await contasDaPessoa();
+  const conta = contas.find((c) => c.tipo === "PF") ?? contas[0];
+  if (!conta) throw new ApiError("Esta pessoa não tem nenhuma conta para operar.", 404);
+  selecionarConta(conta);
+  const r = await abrirEmpresaDoCadastro({ pessoa, contas, conta }, p.empresa);
+  return { ...r, kyc: criado.conta.kyc ?? { status: "pendente", motivos: [] } };
+}
+
 /**
  * Etapa 2 do primeiro login e, se for o caso, a abertura da empresa. Se só a
  * empresa falhar (ex.: CNPJ recusado), a pessoa continua logada na conta
@@ -547,6 +588,13 @@ export async function concluirCadastro(
   empresa?: EmpresaPayload,
 ): Promise<{ resposta: LoginResposta; erroEmpresa?: string }> {
   const r = await concluirLogin(etapa, prova);
+  return abrirEmpresaDoCadastro(r, empresa);
+}
+
+async function abrirEmpresaDoCadastro(
+  r: LoginResposta,
+  empresa?: EmpresaPayload,
+): Promise<{ resposta: LoginResposta; erroEmpresa?: string }> {
   // No modo demonstração a PJ já nasceu junto com a pessoa.
   if (!MODO_API || !empresa) return { resposta: r };
   try {
@@ -886,6 +934,9 @@ export async function pagarCobranca(
 
 /** Depósito: no modo API o dinheiro entra por Pix para uma chave sua (ou pelo admin). */
 export async function depositar(p: DepositarPayload): Promise<Transacao> {
+  if (!Number.isFinite(p.valor) || p.valor <= 0)
+    throw new ApiError("Informe um valor válido, a partir de R$ 0,01.");
+  if (p.valor > 10_000) throw new ApiError("O limite do banco é de R$ 10.000,00 por depósito.");
   await delay(600);
   if (MODO_API) {
     // Servidor de demonstração (DEPOSITO_DEMO=1) libera dinheiro de teste; num servidor

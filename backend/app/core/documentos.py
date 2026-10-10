@@ -22,7 +22,7 @@ def _dv_mod11(base: str, pesos: list[int]) -> int:
 
 def cpf_valido(cpf: str) -> bool:
     c = somente_digitos(cpf)
-    if len(c) != 11 or c == c[0] * 11:
+    if len(c) != 11 or not c.isascii() or c == c[0] * 11:
         return False
     d1 = _dv_mod11(c[:9], list(range(10, 1, -1)))
     d2 = _dv_mod11(c[:9] + str(d1), list(range(11, 1, -1)))
@@ -31,7 +31,7 @@ def cpf_valido(cpf: str) -> bool:
 
 def cnpj_valido(cnpj: str) -> bool:
     c = somente_digitos(cnpj)
-    if len(c) != 14 or c == c[0] * 14:
+    if len(c) != 14 or not c.isascii() or c == c[0] * 14:
         return False
     p1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
     p2 = [6] + p1
@@ -118,11 +118,21 @@ def mascarar_nome(nome: str) -> str:
     return " ".join([partes[0]] + [p[0] + "***" for p in partes[1:]])
 
 
+DDDS_BRASIL = frozenset("11 12 13 14 15 16 17 18 19 21 22 24 27 28 31 32 33 34 35 37 38 41 42 43 44 45 46 47 48 49 51 53 54 55 61 62 63 64 65 66 67 68 69 71 73 74 75 77 79 81 82 83 84 85 86 87 88 89 91 92 93 94 95 96 97 98 99".split())
+
+
 def normalizar_celular(valor: str) -> str | None:
-    """Aceita formatos comuns e devolve +55DDDNÚMERO (padrão do DICT)."""
+    """Celular brasileiro: DDD válido + 9XXXXXXXX; aceita +55 e pontuação usual.
+    Confirma o formato, não a existência da linha nem sua posse.
+    """
+    import re
+    if not re.fullmatch(r"[0-9+() .\-]+", valor):
+        return None
+    if '+' in valor and (not valor.strip().startswith('+55') or valor.count('+') != 1):
+        return None
     d = somente_digitos(valor)
-    if d.startswith("55") and len(d) in (12, 13):
+    if len(d) == 13 and d.startswith("55"):
         d = d[2:]
-    if len(d) not in (10, 11):
+    if len(d) != 11 or d[:2] not in DDDS_BRASIL or d[2] != '9':
         return None
     return f"+55{d}"

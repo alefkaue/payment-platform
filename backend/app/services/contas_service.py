@@ -26,7 +26,8 @@ from app.core import security
 from app.core.config import get_settings
 from app.core.documentos import cnpj_valido, cpf_valido, normalizar_celular, somente_digitos
 from app.db.models import RegimeApuracao
-from app.repositories.exceptions import CnpjDuplicadoError, CpfDuplicadoError, EmailDuplicadoError
+from app.repositories.exceptions import (CnpjDuplicadoError, CpfDuplicadoError, EmailDuplicadoError,
+                                         RostoDuplicadoError, CadastroFacialIndisponivelError)
 from app.repositories.repository import Repositorio
 from app.services import biometria_service, cnpj_service, documento_service, senha_policy
 from app.services.seguranca_service import LIMITES_PADRAO
@@ -82,8 +83,10 @@ def criar_pessoa(repo: Repositorio, *, nome: str, email: str, senha: str, cpf: s
             limites_padrao=LIMITES_PADRAO["PF"], data_nascimento=data_nascimento, celular=cel,
             kyc_status=kyc["status"] if kyc else "pendente",
         )
-    except (EmailDuplicadoError, CpfDuplicadoError) as e:
-        raise HTTPException(status_code=409, detail=str(e))
+    except (EmailDuplicadoError, CpfDuplicadoError, RostoDuplicadoError):
+        raise HTTPException(status_code=409, detail=_DUPLICADO) from None
+    except CadastroFacialIndisponivelError:
+        raise HTTPException(status_code=503, detail="Não foi possível conferir o cadastro facial. Procure o suporte.") from None
 
     uid = conta["usuario_id"]
     if kyc:

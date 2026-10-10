@@ -1,6 +1,6 @@
 """Abertura de conta (PF/PJ), contas, empresa, equipe (convites), convites recebidos e folha."""
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
 from app.core.config import get_settings
 from app.core.limites import limitar_por_ip
@@ -28,6 +28,7 @@ from app.schemas.contas import (
     FolhaPagar,
     FuncionarioCreate,
     PessoaCreate,
+    CadastroSessaoCreate, CadastroSessaoResponse,
     VinculoResponse,
     VinculoUpdate,
 )
@@ -55,6 +56,33 @@ def cadastrar_pessoa(
         dispositivo_hash=hash_dispositivo(x_dispositivo_id) if x_dispositivo_id else None, ip=ip,
         data_nascimento=dados.data_nascimento, celular=dados.celular, documento=dados.documento,
     )
+
+
+@router.post("/usuarios/cadastro-sessao", response_model=CadastroSessaoResponse, status_code=201)
+def cadastrar_com_sessao(
+    dados: CadastroSessaoCreate, request: Request,
+    repo: Repositorio = Depends(get_repo), ip: str | None = Depends(ip_cliente),
+    x_dispositivo_id: str | None = Header(default=None, max_length=128),
+    dpop: str | None = Header(default=None, alias="DPoP"),
+):
+    """Uma prova de vida cria a pessoa e a primeira sessão. Logins futuros exigem MFA."""
+    from app.core import dpop as dpop_prova
+    from app.services import auth_service
+
+    jkt = dpop_prova.verificar(dpop, metodo=request.method, caminho=request.url.path, repo=repo) if dpop else None
+    auth_service._exigir_jkt(jkt)
+    nivel = auth_service._conferir_atestacao(repo, {"id": None, "email": dados.email}, dados.atestacao, jkt=jkt, ip=ip)
+    conta = cadastrar_pessoa(dados, repo, ip, x_dispositivo_id)
+    usuario = repo.obter_usuario_por_id(conta["usuario_id"])
+    dev = hash_dispositivo(x_dispositivo_id) if x_dispositivo_id else None
+    disp = repo.registrar_dispositivo(usuario_id=usuario["id"], id_hash=dev,
+        nome=auth_service._nome_aparelho(request.headers.get("user-agent")), confiavel=True,
+        atestacao=nivel, atualizar_atestacao=True) if dev else None
+    tokens = auth_service.emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dev,
+        ip=ip, user_agent=request.headers.get("user-agent"), jkt=jkt)
+    repo.registrar_log(ator=usuario["email"], acao="login", ip=ip, usuario_id=usuario["id"],
+        detalhe={"origem": "cadastro", "fatores": ["senha", "rosto"]})
+    return {"conta": conta, "tokens": tokens}
 
 
 @router.get("/contas", response_model=list[ContaResponse])

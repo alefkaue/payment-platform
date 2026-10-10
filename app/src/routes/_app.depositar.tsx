@@ -5,6 +5,7 @@ import { useState } from "react";
 import { Check } from "lucide-react";
 import { depositar } from "@/lib/api";
 import { fmtBRL, parseValor } from "@/lib/format";
+import { LIMITE_DEPOSITO, mascararDeposito } from "@/lib/valor-deposito";
 import { cn } from "@/lib/utils";
 import { ErrorBox, Field, PageTitle } from "@/components/payflow/ui";
 
@@ -38,6 +39,8 @@ function DepositoDemo() {
     e.preventDefault();
     setErro(null);
     if (!(valor > 0)) return setErro("Informe um valor válido.");
+    if (valor > LIMITE_DEPOSITO)
+      return setErro("O limite do banco é de R$ 10.000,00 por depósito.");
     setLoading(true);
     try {
       await depositar({ valor });
@@ -79,16 +82,28 @@ function DepositoDemo() {
             autoFocus
             className="field tabular text-lg"
             value={valorStr}
-            onChange={(e) => setValorStr(e.target.value)}
+            onChange={(e) => {
+              const formatado = mascararDeposito(e.target.value);
+              if (formatado === null) {
+                setErro("O limite do banco é de R$ 10.000,00 por depósito.");
+                return;
+              }
+              setErro(null);
+              setValorStr(formatado);
+            }}
             placeholder="0,00"
           />
         </Field>
+        <p className="text-xs text-mut3">Limite do banco por depósito: R$ 10.000,00.</p>
         <div className="flex flex-wrap gap-2">
           {ATALHOS.map((v) => (
             <button
               key={v}
               type="button"
-              onClick={() => setValorStr(String(v))}
+              onClick={() => {
+                setValorStr(mascararDeposito(`${v}00`) ?? "");
+                setErro(null);
+              }}
               className={cn(
                 "rounded-full px-4 py-2 text-sm font-medium transition",
                 valor === v ? "bg-ink text-ink-foreground" : "bg-tint text-mut2 hover:text-ink",

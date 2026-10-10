@@ -165,6 +165,9 @@ class Settings(BaseSettings):
     # sem TensorFlow -- padrão) | "deepface" (legado, pesado). BIOMETRIA_STUB=1
     # continua desligando tudo nos testes.
     biometria_motor: str = Field(default="opencv", alias="BIOMETRIA_MOTOR")
+    # Dev: permite cadastro real enquanto contas antigas ainda usam login simulado.
+    # None segue BIOMETRIA_STUB. Nunca habilitar stub em produção.
+    biometria_stub_cadastro: bool | None = Field(default=None, alias="BIOMETRIA_STUB_CADASTRO")
     # Pasta dos modelos (.onnx/.task). Em produção vêm embutidos na imagem Docker
     # (MODELOS_DOWNLOAD=0); em dev são baixados uma vez e conferidos por SHA-256.
     modelos_dir: str | None = Field(default=None, alias="MODELOS_DIR")
@@ -282,7 +285,7 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     s = Settings()
-    if s.biometria_stub and s.em_producao:
+    if (s.biometria_stub or s.biometria_stub_cadastro is True) and s.em_producao:
         raise RuntimeError(
             "BIOMETRIA_STUB não pode ser usado em produção -- é um modo de teste "
             "que aprova qualquer rosto. Desligue-o (BIOMETRIA_STUB=0)."

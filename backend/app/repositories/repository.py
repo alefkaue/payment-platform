@@ -13,12 +13,13 @@ passarem as duas pelo mesmo limite.
 """
 
 import json
+import threading
 from contextlib import nullcontext
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Callable, Optional
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, or_, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -71,6 +72,8 @@ from app.repositories.exceptions import (
 from app.repositories.extras import RepositorioExtras
 from app.services.split_service import ResultadoSplit
 
+_LOCK_CADASTRO_FACIAL = threading.Lock()
+
 ZERO = Decimal("0.00")
 SISTEMAS = ("CAIXA", "TRIBUTOS", "FISCO")
 
@@ -113,7 +116,12 @@ class Repositorio(RepositorioExtras):
     ) -> dict:
         """Cria a pessoa e (opcional) a carteira PF com os limites padrão, numa
         transação só."""
-        with self._sf() as s:
+        with _LOCK_CADASTRO_FACIAL, self._sf() as s:
+            if embedding_cifrado is not None:
+                if s.bind.dialect.name == "postgresql":
+                    # Serializa cadastro facial também entre processos/instâncias.
+                    s.execute(text("SELECT pg_advisory_xact_lock(731408221)"))
+                self._exigir_rosto_unico(s, embedding_cifrado)
             u = Usuario(
                 nome=nome, email=email.lower().strip(), cpf=cpf, senha_hash=senha_hash,
                 papel=papel, embedding_facial_cifrado=embedding_cifrado,
@@ -137,6 +145,40 @@ class Repositorio(RepositorioExtras):
             if carteira is None:
                 return self._usuario_auth_dict(u)
             return self._conta_dict(s, carteira)
+
+    @staticmethod
+    def _exigir_rosto_unico(s: Session, blob: bytes) -> None:
+        from app.core import security
+        from app.repositories.exceptions import CadastroFacialIndisponivelError, RostoDuplicadoError
+        from app.services import face_engine
+        import math
+
+        novo = security.decifrar_embedding(blob)
+        if novo is None:
+            raise CadastroFacialIndisponivelError()
+        if novo["modelo"] == "stub":
+            if (not get_settings().biometria_stub or get_settings().biometria_stub_cadastro is False
+                    or get_settings().em_producao):
+                raise CadastroFacialIndisponivelError()
+            return  # Todos os testes de fluxo têm o mesmo vetor artificial.
+        motor = face_engine.motor()
+        vetor = novo["vetor"]
+        if novo["modelo"] != motor.nome or not vetor or not all(math.isfinite(x) for x in vetor) or not any(vetor):
+            raise CadastroFacialIndisponivelError()
+        existentes = s.scalars(select(Usuario.embedding_facial_cifrado).where(
+            Usuario.embedding_facial_cifrado.is_not(None))).yield_per(100)
+        for cifrado in existentes:
+            anterior = security.decifrar_embedding(bytes(cifrado))
+            if anterior is None:
+                raise CadastroFacialIndisponivelError()
+            if anterior["modelo"] == "stub" and not get_settings().em_producao:
+                continue  # Contas fictícias não representam rostos reais.
+            if anterior["modelo"] != novo["modelo"] or len(anterior["vetor"]) != len(vetor):
+                raise CadastroFacialIndisponivelError()
+            if not all(math.isfinite(x) for x in anterior["vetor"]) or not any(anterior["vetor"]):
+                raise CadastroFacialIndisponivelError()
+            if motor.similaridade(vetor, anterior["vetor"]) >= motor.limiar:
+                raise RostoDuplicadoError()
 
     def obter_usuario_por_email(self, email: str) -> Optional[dict]:
         with self._sf() as s:

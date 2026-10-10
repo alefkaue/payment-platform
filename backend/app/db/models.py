@@ -799,3 +799,9 @@ Index("uq_pendente_empresa_chave", OperacaoPendente.empresa_id, OperacaoPendente
 Index("uq_mfa_usado_referencia", SessaoMfa.referencia, unique=True,
       postgresql_where=text("tipo = 'mfa_usado' AND sucesso"),
       sqlite_where=text("tipo = 'mfa_usado' AND sucesso"))
+
+# Forma canônica impede contornar unicidade usando CPF/CNPJ com pontuação ou Unicode.
+from app.db.identidade_v1 import CHECKS_IDENTIDADE
+for _tabela, _regras in CHECKS_IDENTIDADE.items():
+    for _nome, _sql in _regras:
+        Base.metadata.tables[_tabela].append_constraint(CheckConstraint(_sql, name=_nome))

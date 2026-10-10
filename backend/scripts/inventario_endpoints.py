@@ -33,6 +33,7 @@ REGRAS = {
     ("POST", "/auth/senha"): "Senha atual + rosto; política de senha; encerra as outras sessões",
     ("POST", "/auth/recuperacao"): "E-mail/CPF + nascimento; resposta igual exista a conta ou não; limite por IP e por conta",
     ("POST", "/auth/recuperacao/concluir"): "Rosto com prova de vida completa, mesmo aparelho e chave; uso único; derruba todas as sessões",
+    ("POST", "/usuarios/cadastro-sessao"): "Cadastro com KYC + primeira sessão; uma prova de vida; DPoP e atestação antes da criação; limite por IP",
     ("POST", "/usuarios"): "Cadastro com KYC (rosto + documento); limite por IP; resposta neutra",
     ("POST", "/biometria/desafios"): "Desafio de prova de vida (uso único, 120 s)",
     ("POST", "/empresas"): "Pessoa com KYC; CNPJ conferido (BrasilAPI) e CPF no quadro de sócios",

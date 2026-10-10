@@ -24,7 +24,7 @@ def test_cpf_duplicado(cliente):
 
 
 def test_desafio_de_biometria_vale_uma_vez(cliente):
-    d = desafio(cliente)
+    d = desafio(cliente, modo="cadastro")
     corpo = {"nome": "Ana Lima", "email": "a@ex.com", "senha": SENHA, "cpf": gerar_cpf(),
              "biometria": {"desafio_id": d, "quadros": QUADROS}}
     assert cliente.post("/usuarios", json=corpo).status_code == 201

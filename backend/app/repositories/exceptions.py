@@ -27,3 +27,11 @@ class CnpjDuplicadoError(Exception):
 class ContaSistemaAusenteError(Exception):
     """Uma conta de sistema (CAIXA, TRIBUTOS, FISCO) não foi criada. Elas são
     criadas no boot (main.py:_preparar)."""
+
+
+class RostoDuplicadoError(Exception):
+    """O rosto corresponde a outra identidade já cadastrada."""
+
+
+class CadastroFacialIndisponivelError(Exception):
+    """Não foi possível conferir todas as identidades faciais existentes."""

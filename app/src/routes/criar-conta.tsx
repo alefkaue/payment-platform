@@ -2,12 +2,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useFecharAoVoltar } from "@/lib/mobile";
 import { useState, type ReactNode } from "react";
 import { ArrowLeft, Check, ScanFace } from "lucide-react";
-import { concluirCadastro, MODO_API, novoDesafioLogin, registrar } from "@/lib/api";
+import { MODO_API, registrarEEntrar } from "@/lib/api";
 import { PORTES, REGIMES_APURACAO } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
+import { mascararCelular, normalizarCelular } from "@/lib/celular";
 import { maskDoc } from "@/lib/format";
 import type {
-  CadastroResposta,
+  KycResultado,
   EmpresaPayload,
   PortePJ,
   ProvaBiometrica,
@@ -62,8 +63,8 @@ const ETAPAS: { id: Etapa; rotulo: string }[] = [
  *     com foto); na PJ também o documento da empresa;
  *  3. rosto (prova de vida de cadastro, com passos sorteados pelo servidor). Ao
  *     concluir, a conta é criada na hora (o desafio vale 2 minutos);
- *  4. primeiro login: o rosto de novo (2º fator) e, na PJ, a abertura da empresa
- *     já com a pessoa logada.
+ *  4. a mesma verificação autoriza a primeira sessão e a abertura da empresa.
+ *     Nos próximos acessos, o login continua exigindo senha e rosto.
  * O backend confere tudo de novo — a ordem das telas é só para guiar a pessoa.
  */
 function CriarConta() {
@@ -96,9 +97,8 @@ function CriarConta() {
   const [tipoDocEmpresa, setTipoDocEmpresa] = useState<TipoDocumentoEmpresa>("contrato_social");
   const [docEmpresa, setDocEmpresa] = useState<string | null>(null);
   // 3-4. rosto e entrada
-  const [camera, setCamera] = useState<null | "cadastro" | "login">(null);
-  const [criado, setCriado] = useState<CadastroResposta | null>(null);
-  const [empresa, setEmpresa] = useState<EmpresaPayload | undefined>(undefined);
+  const [camera, setCamera] = useState<null | "cadastro">(null);
+  const [criado, setCriado] = useState<{ kyc: KycResultado } | null>(null);
   const [erroEmpresa, setErroEmpresa] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -126,7 +126,8 @@ function CriarConta() {
     if (tipo === "PJ" && (!representante.trim() || cpf.replace(/\D/g, "").length !== 11))
       return setErro("Informe o seu nome e o seu CPF (de quem vai operar a conta da empresa).");
     if (!nascimento) return setErro("Informe a data de nascimento.");
-    if (celular.replace(/\D/g, "").length < 10) return setErro("Informe um celular com DDD.");
+    if (!normalizarCelular(celular))
+      return setErro("Informe um celular válido: DDD e 9 dígitos começando por 9.");
     irPara("documento");
   }
 
@@ -159,7 +160,7 @@ function CriarConta() {
                 : {}),
             }
           : undefined;
-      const r = await registrar({
+      const r = await registrarEEntrar({
         nome: tipo === "PF" ? nome : representante,
         email,
         senha,
@@ -172,9 +173,14 @@ function CriarConta() {
         biometria: prova,
         ...(pj ? { empresa: pj } : {}),
       });
-      setEmpresa(pj);
-      setCriado(r);
-      irPara("entrar");
+      setCriado({ kyc: r.kyc });
+      entrar(r.resposta);
+      if (r.erroEmpresa) {
+        setErroEmpresa(r.erroEmpresa);
+        irPara("entrar");
+      } else {
+        await nav({ to: "/inicio" });
+      }
     } catch (err) {
       // Erro de dados (senha fraca, CPF já usado…): volta para a etapa que resolve.
       const msg = (err as Error).message;
@@ -182,26 +188,6 @@ function CriarConta() {
       if (/senha|e-mail|CPF|conta com estes dados|nome|celular|nascimento/i.test(msg))
         setEtapa("dados");
       else if (/documento|verso|imagem|arquivo|identidade/i.test(msg)) setEtapa("documento");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function entrarComRosto(p: ProvaBiometrica) {
-    if (!criado) return;
-    setLoading(true);
-    setErro(null);
-    try {
-      const r = await concluirCadastro(criado.etapa, p, empresa);
-      entrar(r.resposta);
-      if (r.erroEmpresa) setErroEmpresa(r.erroEmpresa);
-      else nav({ to: "/inicio" });
-    } catch (err) {
-      setErro((err as Error).message);
-      // o desafio é de uso único: prepara outro para a próxima tentativa
-      novoDesafioLogin(criado.etapa)
-        .then((e) => setCriado({ ...criado, etapa: e }))
-        .catch(() => nav({ to: "/login" }));
     } finally {
       setLoading(false);
     }
@@ -351,7 +337,8 @@ function CriarConta() {
                       autoComplete="tel-national"
                       className="field tabular"
                       value={celular}
-                      onChange={(e) => setCelular(e.target.value)}
+                      onChange={(e) => setCelular(mascararCelular(e.target.value))}
+                      maxLength={15}
                       placeholder="(11) 98765-4321"
                     />
                   </Field>
@@ -491,21 +478,11 @@ function CriarConta() {
                   </>
                 ) : (
                   <>
-                    <p className="mt-3 text-sm text-muted-foreground">
-                      Agora entre pela primeira vez: confirme o seu rosto mais uma vez.
-                      {empresa && " Em seguida abrimos a conta da empresa."}
-                    </p>
-                    {erro && (
-                      <div className="mt-4">
-                        <ErrorBox>{erro}</ErrorBox>
-                      </div>
-                    )}
                     <button
-                      className="btn btn-ink mt-6 w-full gap-2"
-                      disabled={loading}
-                      onClick={() => setCamera("login")}
+                      className="btn btn-ink mt-6 w-full"
+                      onClick={() => nav({ to: "/inicio" })}
                     >
-                      <ScanFace size={20} /> {loading ? "Entrando…" : "Entrar com o rosto"}
+                      Acessar minha conta
                     </button>
                   </>
                 )}
@@ -530,16 +507,6 @@ function CriarConta() {
             onSuccess={(p) => {
               setCamera(null);
               void criarConta(p);
-            }}
-          />
-        )}
-        {camera === "login" && criado && !erroEmpresa && (
-          <LivenessCheck
-            desafio={criado.etapa.desafio}
-            onClose={() => setCamera(null)}
-            onSuccess={(p) => {
-              setCamera(null);
-              void entrarComRosto(p);
             }}
           />
         )}

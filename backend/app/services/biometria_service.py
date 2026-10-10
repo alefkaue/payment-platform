@@ -196,12 +196,15 @@ def cadastrar(repo, prova, *, usuario_id: int | None = None) -> dict:
     vida e devolve {"vetor", "modelo"}."""
     modo, passos = _consumir_desafio(repo, prova.desafio_id, usuario_id)
     _validar_quadros(prova.quadros)
-    if stub_ligado():
-        logger.warning("BIOMETRIA_STUB ligado -- cadastro NÃO confere o rosto (modo de teste).")
-        return {"vetor": list(_EMBEDDING_STUB), "modelo": MODELO_STUB}
+    s = get_settings()
+    cadastro_stub = s.biometria_stub if s.biometria_stub_cadastro is None else s.biometria_stub_cadastro
     if modo != "cadastro":
         # Impede baixar o nível: usar um desafio curto (login) para cadastrar rosto.
         raise HTTPException(status_code=400, detail="Peça um desafio de cadastro (sequência completa).")
+
+    if cadastro_stub:
+        logger.warning("BIOMETRIA_STUB ligado -- cadastro NÃO confere o rosto (modo de teste).")
+        return {"vetor": list(_EMBEDDING_STUB), "modelo": MODELO_STUB}
 
     r = _executar(_analisar_sequencia, prova.quadros, passos)
     return {"vetor": r["templates"][0], "modelo": r["modelo"], "prob_real_min": r["prob_real_min"]}

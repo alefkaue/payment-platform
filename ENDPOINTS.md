@@ -1,6 +1,6 @@
 # Astro — inventário de endpoints
 
-> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (108 rotas).
+> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (109 rotas).
 > Não edite à mão: rode o script de novo quando a API mudar.
 
 - **pública**: sem login (as de autenticação têm limite por IP e/ou DPoP).
@@ -29,6 +29,7 @@
 | `DELETE` | `/auth/sessoes/{sessao_id}` | login + DPoP |  |  |
 | `POST` | `/auth/sessoes/encerrar-outras` | login + DPoP |  |  |
 | `POST` | `/usuarios` | pública |  | Cadastro com KYC (rosto + documento); limite por IP; resposta neutra |
+| `POST` | `/usuarios/cadastro-sessao` | pública |  | Cadastro com KYC + primeira sessão; uma prova de vida; DPoP e atestação antes da criação; limite por IP |
 | `GET` | `/contas` | login + DPoP |  |  |
 | `GET` | `/contas/atual` | login + DPoP | X-Conta |  |
 | `POST` | `/empresas` | login + DPoP |  | Pessoa com KYC; CNPJ conferido (BrasilAPI) e CPF no quadro de sócios |

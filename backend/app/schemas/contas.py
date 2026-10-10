@@ -1,10 +1,13 @@
 from datetime import date, datetime
+from typing import Annotated
 from decimal import Decimal
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
+from app.core.documentos import normalizar_celular
 from app.db.models import PapelVinculo, RegimeApuracao
-from app.schemas.comum import DinheiroOuZero, ProvaBiometrica
+from app.schemas.comum import ContaResponse, DinheiroOuZero, ProvaBiometrica
+from app.schemas.auth import TokenResponse
 
 # Base64 de imagem/PDF: ~10 MB de arquivo cabem em ~14 MB de texto.
 _B64_MAX = 14 * 1024 * 1024
@@ -30,6 +33,26 @@ class PessoaCreate(BaseModel):
     celular: str | None = Field(default=None, max_length=20)
     biometria: ProvaBiometrica
     documento: DocumentoIdentidadeEnvio | None = None
+
+
+    @field_validator("celular")
+    @classmethod
+    def celular_valido(cls, valor: str | None) -> str | None:
+        if valor is None:
+            return None
+        normalizado = normalizar_celular(valor)
+        if normalizado is None:
+            raise ValueError("Informe um celular válido: DDD e 9 dígitos começando por 9.")
+        return normalizado
+
+
+class CadastroSessaoCreate(PessoaCreate):
+    atestacao: list[Annotated[str, Field(max_length=8000)]] | None = Field(default=None, max_length=8)
+
+
+class CadastroSessaoResponse(BaseModel):
+    conta: ContaResponse
+    tokens: TokenResponse
 
 
 class EmpresaCreate(BaseModel):

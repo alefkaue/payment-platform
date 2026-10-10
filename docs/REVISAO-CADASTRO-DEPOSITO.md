@@ -1,0 +1,9 @@
+## Resultado
+Cartão: pedido direto do usuário — primeira sessão com uma captura e depósito monetário
+Status: concluído
+Commits: estas alterações e este relatório compõem o commit de cadastro, identidade e depósito solicitado pelo usuário para a main.
+Arquivos alterados: backend/app/routers/contas.py, backend/app/schemas/contas.py, backend/app/services/biometria_service.py, backend/scripts/inventario_endpoints.py, ENDPOINTS.md, app/src/lib/api.ts, app/src/routes/criar-conta.tsx, app/src/routes/_app.depositar.tsx, app/src/lib/valor-deposito.ts, testes relacionados e docs/CADASTRO.md.
+Testes: validação final completa — backend 479 passaram, 16 pulados, 1 aviso de depreciação; app 185 passaram e 2 pulados; TypeScript e build com VITE_API_URL passaram. Testes específicos de PostgreSQL e migração foram verificados na etapa de identidade. Não foi realizado novo teste físico com a câmera.
+O que NÃO foi feito e por quê: validação física com câmera e rosto do usuário depende de nova tentativa no dispositivo; não foi afirmada aprovação biométrica real. Não foi criado um limite total de saldo: R$ 10.000,00 é o teto existente do servidor por depósito de demonstração.
+Problemas que vi fora do escopo: a investigação anterior registrou rejeição facial 401 e bloqueio por tentativas 429; retirar a segunda captura não confirma que todas as dificuldades da captura física foram resolvidas.
+Como testar na mão (passos): abrir /criar-conta, preencher os dados e enviar documento; concluir uma captura e verificar entrada direta. Sair e entrar novamente: senha e rosto continuam exigidos. Abrir /depositar e digitar 1, 10, 100, 1000: aparecem 0,01, 0,10, 1,00, 10,00. Digitar acima de 10.000,00: o campo conserva o último valor permitido e informa "O limite do banco é de R$ 10.000,00 por depósito." Atalhos de R$ 50/100/250/500 continuam preenchendo o valor integral.
