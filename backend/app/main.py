@@ -79,7 +79,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Conta", "X-Dispositivo-Id", "X-Request-Id",
                    "Idempotency-Key", "DPoP"],
-    expose_headers=["X-Request-Id"],
+    # WWW-Authenticate: o app distingue "sessão recusada" (volta ao login) de outros 401 (ex.: rosto).
+    expose_headers=["X-Request-Id", "WWW-Authenticate", "Retry-After"],
     allow_credentials=True,
 )
 

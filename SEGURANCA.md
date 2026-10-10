@@ -5,9 +5,9 @@
 > passar por **pentest de outros grupos**. A seção 5 é o diário: o que já foi feito, em que commit, e
 > por onde continuar. Complementa o `HANDOFF-V9.md` (estado geral do projeto).
 >
-> **PARA A PRÓXIMA SESSÃO (parou em 09/10, fim da 3ª sessão):** itens 1 a 6 feitos e no GitHub. Continue no
-> **item 7** da tabela da seção 3 e siga a ordem. Antes de mexer: `git pull`. Rode os testes do backend
-> (`cd backend && .venv/Scripts/python.exe -m pytest`, 176 passando) e do app (`cd app && npx tsc --noEmit &&
+> **PARA A PRÓXIMA SESSÃO (parou em 09/10, 4ª sessão):** itens 1 a 7 feitos. Continue no
+> **item 8** da tabela da seção 3 e siga a ordem. Antes de mexer: `git pull`. Rode os testes do backend
+> (`cd backend && .venv/Scripts/python.exe -m pytest`, 177 passando) e do app (`cd app && npx tsc --noEmit &&
 > npx vitest run`). Atenção: o PC do Alef fica sem memória com app + backend + câmera abertos ao mesmo tempo.
 
 ---
@@ -55,7 +55,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 | 4 | **Força bruta e enumeração**: rate limit em cadastro/refresh/convites; atraso progressivo; tentativas por `mfa_token`; resposta neutra no cadastro | A4 | ✅ |
 | 5 | **Cadastro em etapas** (dados → documento → rosto, cada um numa página) e **documento frente e verso obrigatórios** (no app e no backend) | pedido do Alef | ✅ |
 | 6 | **Arquivar Loja/Viagens/pontos**: telas para `app/src/_arquivado/`, fora da navegação; backend com `BENEFICIOS_HABILITADOS=0` por padrão | pedido do Alef, A8 | ✅ |
-| 7 | **Front**: CSP e cabeçalhos no host (Static Web Apps), overlay de debug só em dev, build de produção recusa modo demonstração | A5 | ⬜ |
+| 7 | **Front**: CSP e cabeçalhos no host (Static Web Apps), overlay de debug só em dev, build de produção recusa modo demonstração | A5 | ✅ |
 | 8 | **Segredos e config**: tirar a derivação de segredos e o CORS `*.netlify.app`; Key Vault no Azure | A6 | ⬜ |
 | 9 | **Azure + WAF + `PENTEST.md`** (escopo, regras, contas de teste, como reportar) e APK Android pelo CI | objetivo do pentest | ⬜ |
 | 10 | **App nativo**: tokens no Keystore/Keychain, certificate pinning, Play Integrity / App Attest | A7 | ⬜ (depois do APK existir) |
@@ -144,10 +144,43 @@ justamente ver se alguém burla.
   e a leitura de `/pontos` em `minhaConta()`. Backend: `BENEFICIOS_HABILITADOS=0` por padrão — rotas de
   Loja/Viagens/pontos respondem 404 e o catálogo não é criado no boot (os testes ligam o módulo; teste novo
   `test_beneficios_desligados_respondem_404`). 176 testes no backend; app `tsc`/`vitest` ok.
+- 09/10 (4ª sessão) — **Item 7 feito.**
+  (a) **Sessão que cai volta para o login com o motivo.** O backend já mandava `WWW-Authenticate` em todo 401
+  de sessão (`deps.py`, DPoP) e **não** manda nos 401 de biometria ("rosto não confere"); agora o CORS expõe
+  esse header (`main.py`, `expose_headers`) e o app usa isso para separar os dois casos. `http.ts`: 401 de
+  sessão → tenta o refresh uma vez; se o servidor recusa (tempo máximo, inatividade, sessão encerrada, outro
+  aparelho), limpa tokens/conta, guarda o motivo do servidor e avisa `aoExpirarSessao`; o `AuthProvider`
+  zera o estado e o cache do React Query e o layout manda para `/login`, que mostra o motivo
+  (`motivoSaida`, lido uma vez). Refresh com 429/5xx ou sem rede **não** desloga (erro passageiro). 401 de
+  biometria não renova nem derruba (antes gastava um refresh e reenviava o desafio já usado). 401 nas rotas
+  `/auth/login*`, `/auth/refresh`, `/auth/logout` não é "queda de sessão"; `/auth/eu` e `/auth/sessoes`
+  agora também renovam.
+  (b) **Build de produção recusa o modo demonstração**: `vite.config.ts` falha no `vite build` (modo
+  production) sem `VITE_API_URL`, a não ser com `VITE_MODO_DEMO=1` explícito. O CI do APK lê a URL da
+  variável do repositório `ASTRO_API_URL` e, sem ela, gera de propósito o APK de demonstração.
+  **Atenção no deploy da apresentação (Netlify)**: o build agora exige `VITE_API_URL` (ou `VITE_MODO_DEMO=1`).
+  (c) **CSP e cabeçalhos no host**: `scripts/cabecalhos.mjs` roda depois do `vite build` (`npm run build`) e
+  grava em `dist/client` o `staticwebapp.config.json` (Azure Static Web Apps: CSP, fallback do SPA, cache) e o
+  `_headers` + `_redirects` (Netlify). CSP **sem `'unsafe-inline'` em script**: os 3 scripts inline do shell
+  do TanStack entram por **hash SHA-256** calculado do `_shell.html` gerado (o hash segue o parser HTML: o
+  estado do roteador tem um caractere NUL que o navegador troca por U+FFFD — sem isso a página ficava em
+  branco). Liberado só: MediaPipe (`cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/` e
+  `storage.googleapis.com/mediapipe-models/`), Google Fonts, a API (`VITE_API_URL`) e o sync do modo demo;
+  `'wasm-unsafe-eval'` (WebAssembly do MediaPipe, não libera `eval`); `frame-ancestors 'none'`,
+  `object-src 'none'`, `base-uri 'none'`. Mais: `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy:
+  no-referrer`, `Permissions-Policy: camera=(self)` e o resto desligado, COOP, HSTS. Estilo inline continua
+  liberado (bibliotecas de UI injetam `<style>`). `assemble-www.mjs` troca `/_shell.html` por `/index.html`
+  nesses arquivos quando monta o `www/`.
+  **Testado no Chrome** com um servidor que aplica o `_headers`: login renderiza, a prova de vida abre a câmera
+  e o MediaPipe rastreia o rosto sem nenhuma violação; script inline injetado e `fetch` para outro domínio
+  são bloqueados. Testes: `app/src/lib/sessao.test.ts` (5 casos) e `cabecalhos.test.ts` (6 casos);
+  backend `test_sessao_recusada_tem_www_authenticate_visivel_para_o_app`. 177 testes no backend; app 17.
+  **Ressalva**: a CSP vale no host web (PWA). No APK (Capacitor) quem serve é o WebView, sem esses headers —
+  fica para o item 10.
 
-### Próximos passos detalhados (itens 7 a 10)
+### Próximos passos detalhados (itens 8 a 10)
 
-- **7. Front**: (a) quando o refresh falhar (401), limpar a sessão e ir para `/login` com o motivo (hoje só
+- ~~**7. Front**~~ (feito, ver diário): (a) quando o refresh falhar (401), limpar a sessão e ir para `/login` com o motivo (hoje só
   mostra erro na tela) — ver `requisitar()` em `app/src/lib/http.ts` e `useAuth`; (b) build de produção deve
   **falhar** se `VITE_API_URL` não estiver definida (senão vira modo demonstração, onde qualquer login entra) —
   checar em `vite.config.ts` com `mode === "production"`; (c) CSP e cabeçalhos para o host do front:

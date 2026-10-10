@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { ScanFace } from "lucide-react";
-import { concluirLogin, login, MODO_API, novoDesafioLogin } from "@/lib/api";
+import { Clock, ScanFace } from "lucide-react";
+import { concluirLogin, login, MODO_API, motivoSaida, novoDesafioLogin } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { LoginEtapaMfa } from "@/lib/types";
 import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
@@ -34,6 +34,8 @@ function Login() {
   // Senha conferida: falta o rosto.
   const [etapa, setEtapa] = useState<LoginEtapaMfa | null>(null);
   const [camera, setCamera] = useState(false);
+  // Por que a sessão anterior caiu (tempo máximo, inatividade...), se caiu.
+  const [motivo] = useState(motivoSaida);
 
   async function enviarSenha(e: React.FormEvent) {
     e.preventDefault();
@@ -110,6 +112,15 @@ function Login() {
                 <p className="mt-1 text-sm text-muted-foreground">
                   Pessoa física ou empresa — tudo no mesmo lugar.
                 </p>
+
+                {motivo && (
+                  <div
+                    role="status"
+                    className="mt-5 flex items-start gap-2 rounded-[14px] bg-tint px-4 py-3 text-sm text-ink"
+                  >
+                    <Clock size={16} className="mt-0.5 shrink-0" /> <span>{motivo}</span>
+                  </div>
+                )}
 
                 <form onSubmit={enviarSenha} className="mt-7 space-y-4">
                   <Field

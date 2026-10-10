@@ -8,9 +8,12 @@
  *   escolhida no seletor).
  * - Manda também `DPoP`: prova assinada pela chave não exportável deste aparelho
  *   (src/lib/dpop.ts). O servidor só aceita o token junto com essa prova.
- * - Em 401 tenta renovar a sessão uma vez com o refresh token (uma renovação por
- *   vez: duas em paralelo com o mesmo refresh seriam vistas como reuso e o
- *   servidor derrubaria a sessão).
+ * - Em 401 de sessão (o servidor manda `WWW-Authenticate`; 401 de biometria não
+ *   manda) tenta renovar uma vez com o refresh token (uma renovação por vez: duas
+ *   em paralelo com o mesmo refresh seriam vistas como reuso e o servidor
+ *   derrubaria a sessão). Se a sessão não volta (tempo máximo, inatividade,
+ *   encerrada em outro aparelho...), limpa tudo e avisa `aoExpirarSessao`: o app
+ *   vai para o login mostrando o motivo que o servidor deu.
  * - Dinheiro vem como string ("1500.00"); quem converte para número (só para
  *   exibir) é api.ts via `num()`. Nenhuma conta de dinheiro é feita no app.
  */
@@ -33,6 +36,7 @@ export class ApiError extends Error {
 const K_TOKENS = "payflow-tokens";
 const K_CONTA = "payflow-conta-numero";
 const K_DISPOSITIVO = "payflow-dispositivo";
+const K_MOTIVO = "astro-motivo-saida";
 
 interface Tokens {
   access_token: string;
@@ -88,30 +92,77 @@ export function dispositivoId(): string {
 
 export const num = (v: string | number | null | undefined): number => (v == null ? 0 : Number(v));
 
-let renovando: Promise<boolean> | null = null;
+// --- Sessão encerrada pelo servidor -----------------------------------------
 
-async function renovarAgora(): Promise<boolean> {
-  if (!tokens?.refresh_token) return false;
-  // A sessão é presa ao aparelho: o refresh só vale com a mesma chave (DPoP).
-  const url = `${API_URL}/auth/refresh`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-Dispositivo-Id": dispositivoId(),
-      DPoP: await criarProva("POST", url),
-    },
-    body: JSON.stringify({ refresh_token: tokens.refresh_token }),
-  });
-  if (!r.ok) {
-    salvarTokens(null);
-    return false;
-  }
-  salvarTokens((await r.json()) as Tokens);
-  return true;
+type Ouvinte = (motivo: string) => void;
+const ouvintes = new Set<Ouvinte>();
+
+/** Chamado quando o servidor recusa a sessão e ela não pôde ser renovada. */
+export function aoExpirarSessao(fn: Ouvinte): () => void {
+  ouvintes.add(fn);
+  return () => ouvintes.delete(fn);
 }
 
-function renovar(): Promise<boolean> {
+function encerrarSessao(motivo: string) {
+  salvarTokens(null);
+  definirConta(null);
+  gravar(sess, K_MOTIVO, motivo);
+  ouvintes.forEach((fn) => fn(motivo));
+}
+
+/** Motivo da última queda de sessão (lido uma vez pela tela de login). */
+export function motivoSaida(): string | null {
+  if (typeof window === "undefined") return null;
+  const m = ler<string>(sess, K_MOTIVO);
+  gravar(sess, K_MOTIVO, null);
+  return m;
+}
+
+/** Rotas de entrada/saída: um 401 nelas não é "sessão caiu". */
+const ROTA_DE_ENTRADA = /^\/auth\/(login|refresh|logout)(\/|$)/;
+
+function detalheDe(dados: unknown): string | null {
+  const d = (dados as { detail?: unknown } | null)?.detail;
+  return typeof d === "string" ? d : null;
+}
+
+// --- Renovação ---------------------------------------------------------------
+
+/** ok = renovou; recusada = o servidor encerrou a sessão; falhou = erro passageiro. */
+type Renovacao = { ok: true } | { ok: false; recusada: boolean; motivo: string };
+
+let renovando: Promise<Renovacao> | null = null;
+
+async function renovarAgora(): Promise<Renovacao> {
+  if (!tokens?.refresh_token)
+    return { ok: false, recusada: true, motivo: "Sua sessão terminou. Entre de novo." };
+  // A sessão é presa ao aparelho: o refresh só vale com a mesma chave (DPoP).
+  const url = `${API_URL}/auth/refresh`;
+  let r: Response;
+  try {
+    r = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Dispositivo-Id": dispositivoId(),
+        DPoP: await criarProva("POST", url),
+      },
+      body: JSON.stringify({ refresh_token: tokens.refresh_token }),
+    });
+  } catch {
+    return { ok: false, recusada: false, motivo: "Sem conexão com o servidor." };
+  }
+  if (!r.ok) {
+    const motivo =
+      detalheDe(await r.json().catch(() => null)) ?? "Sua sessão terminou. Entre de novo.";
+    // 429/5xx: a sessão continua válida, só não deu para renovar agora.
+    return { ok: false, recusada: r.status === 401 || r.status === 403, motivo };
+  }
+  salvarTokens((await r.json()) as Tokens);
+  return { ok: true };
+}
+
+function renovar(): Promise<Renovacao> {
   renovando ??= renovarAgora().finally(() => {
     renovando = null;
   });
@@ -149,25 +200,30 @@ export async function requisitar<T>(
     throw new ApiError("Sem conexão com o servidor. Verifique a internet e tente de novo.", 0);
   }
 
-  if (
+  // 401 de sessão (token vencido, sessão encerrada, outra chave...). 401 de
+  // biometria ("rosto não confere") não traz WWW-Authenticate e não derruba nada.
+  const sessaoRecusada =
     r.status === 401 &&
-    !tentouRenovar &&
     !anonimo &&
-    tokens?.refresh_token &&
-    !caminho.startsWith("/auth/")
-  ) {
-    if (await renovar()) return requisitar<T>(metodo, caminho, corpo, true);
+    r.headers.has("WWW-Authenticate") &&
+    !ROTA_DE_ENTRADA.test(caminho);
+  let motivoQueda: string | null = null;
+  if (sessaoRecusada && !tentouRenovar) {
+    const rn = await renovar();
+    if (rn.ok) return requisitar<T>(metodo, caminho, corpo, true);
+    if (!rn.recusada)
+      throw new ApiError("Não deu para confirmar sua sessão agora. Tente de novo.", 503);
+    motivoQueda = rn.motivo;
   }
   const texto = await r.text();
   const dados = texto ? (JSON.parse(texto) as unknown) : null;
   if (!r.ok) {
-    const detalhe = (dados as { detail?: unknown } | null)?.detail;
     const msg =
-      typeof detalhe === "string"
-        ? detalhe
-        : Array.isArray(detalhe)
-          ? "Dados inválidos: confira os campos."
-          : `Erro ${r.status}`;
+      detalheDe(dados) ??
+      (Array.isArray((dados as { detail?: unknown } | null)?.detail)
+        ? "Dados inválidos: confira os campos."
+        : `Erro ${r.status}`);
+    if (sessaoRecusada) encerrarSessao(motivoQueda ?? msg);
     throw new ApiError(msg, r.status);
   }
   return { status: r.status, dados: dados as T };

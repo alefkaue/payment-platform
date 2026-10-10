@@ -104,6 +104,7 @@ import {
 } from "@/mocks/banco";
 
 export { ApiError, MODO_API };
+export { motivoSaida } from "./http";
 
 const delay = (ms = 450) => (MODO_API ? Promise.resolve() : new Promise((r) => setTimeout(r, ms)));
 const r2 = (n: number) => Math.round(n * 100) / 100;

@@ -423,3 +423,13 @@ def test_erro_de_validacao_nao_ecoa_o_valor(cliente):
     r = cliente.post("/auth/login", json={"email": segredo, "senha": ""})
     assert r.status_code == 422
     assert segredo not in r.text
+
+
+def test_sessao_recusada_tem_www_authenticate_visivel_para_o_app(cliente):
+    """O app só volta para o login em 401 com WWW-Authenticate (sessão); 401 de rosto não tem.
+    Para o navegador deixar o app ler o header, o CORS precisa expô-lo."""
+    r = cliente.get("/contas/atual", headers={"Origin": "http://localhost:8081"})
+    assert r.status_code == 401
+    assert r.headers.get("www-authenticate")
+    expostos = r.headers.get("access-control-expose-headers", "").lower()
+    assert "www-authenticate" in expostos

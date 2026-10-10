@@ -39,8 +39,14 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - name: Vite build (SPA)
+      # URL da API na variável do repositório ASTRO_API_URL (Settings → Variables).
+      # Sem ela o APK sai em modo demonstração, de propósito (VITE_MODO_DEMO=1):
+      # o build de produção recusa sair sem API se ninguém pedir a demonstração.
+      - name: Vite build (SPA) + cabeçalhos de segurança
         working-directory: app
+        env:
+          VITE_API_URL: ${{ vars.ASTRO_API_URL }}
+          VITE_MODO_DEMO: ${{ vars.ASTRO_API_URL == '' && '1' || '' }}
         run: npm run build
 
       - name: Montar www (SPA estático)

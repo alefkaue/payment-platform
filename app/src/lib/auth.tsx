@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { sair as sairApi, selecionarConta } from "./api";
+import { aoExpirarSessao } from "./http";
 import type { Conta, LoginResposta, Pessoa } from "./types";
 
 /**
@@ -32,6 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [conta, setConta] = useState<Conta | null>(null);
   const [contas, setContas] = useState<Conta[]>([]);
   const [pessoa, setPessoa] = useState<Pessoa | null>(null);
+  const qc = useQueryClient();
 
   useEffect(() => {
     try {
@@ -50,6 +53,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setReady(true);
   }, []);
+
+  // O servidor encerrou a sessão (tempo máximo, inatividade, encerrada em outro
+  // aparelho...): limpa o estado e o layout do app manda para o login, que mostra
+  // o motivo (motivoSaida). Não chama /auth/logout: a sessão já não existe.
+  useEffect(
+    () =>
+      aoExpirarSessao(() => {
+        setConta(null);
+        setContas([]);
+        setPessoa(null);
+        qc.clear(); // nada da sessão anterior fica na tela
+        try {
+          sessionStorage.removeItem(KEY);
+        } catch {
+          /* ignore */
+        }
+      }),
+    [qc],
+  );
 
   function salvar(c: Conta | null, cs: Conta[], p: Pessoa | null) {
     setConta(c);

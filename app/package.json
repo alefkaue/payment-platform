@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite dev",
-    "build": "vite build",
+    "build": "vite build && node scripts/cabecalhos.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
-    "build:mobile": "vite build && node scripts/assemble-www.mjs && npx cap sync android",
+    "build:mobile": "npm run build && node scripts/assemble-www.mjs && npx cap sync android",
     "preview:mobile": "http-server www -p 8099 -c-1",
     "apk": "npm run build:mobile && cd android && ./gradlew assembleDebug",
     "lint": "eslint .",
