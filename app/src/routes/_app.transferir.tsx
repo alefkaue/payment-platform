@@ -2,12 +2,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Clock, ScanFace } from "lucide-react";
-import { consultarDestino, transferir } from "@/lib/api";
+import { consultarCobranca, consultarDestino, pagarCobranca, transferir } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, parseValor } from "@/lib/format";
-import type { CarteiraInfo, ProvaBiometrica } from "@/lib/types";
+import type { CarteiraInfo, Cobranca, ProvaBiometrica } from "@/lib/types";
 import { ErrorBox, Field, PageTitle, ValueRow } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
+import { criarIntencaoPagamento } from "@/lib/intencao-pagamento";
 
 export const Route = createFileRoute("/_app/transferir")({
   head: () => ({
@@ -32,6 +33,11 @@ const LIMITE_FACIAL = 500;
  * em conta de empresa, acima da sua alçada a operação vai para aprovação.
  */
 function Transferir() {
+  const { conta } = useAuth();
+  return <TransferirConta key={conta?.carteira_id} />;
+}
+
+function TransferirConta() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const { conta } = useAuth();
@@ -42,6 +48,10 @@ function Transferir() {
   const [pendente, setPendente] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [intencao] = useState(criarIntencaoPagamento);
+  const [chave, setChave] = useState("");
+  const [modoCobranca, setModoCobranca] = useState(false);
+  const [cobranca, setCobranca] = useState<Cobranca | null>(null);
 
   const valor = parseValor(valorStr);
   const precisaFacial = valor > LIMITE_FACIAL;
@@ -51,10 +61,28 @@ function Transferir() {
     e.preventDefault();
     setErro(null);
     if (!destino.trim()) return setErro("Informe a chave Pix ou o número da conta.");
-    if (!(valor > 0)) return setErro("Informe um valor válido.");
+    if (!modoCobranca && !(valor > 0)) return setErro("Informe um valor válido.");
     setLoading(true);
     try {
-      setInfo(await consultarDestino(destino));
+      if (modoCobranca) {
+        const c = await consultarCobranca(destino.trim());
+        if (c.status !== "aberta") throw new Error("Esta cobrança não está aberta.");
+        setCobranca(c);
+        setValorStr(c.valor.toFixed(2).replace(".", ","));
+        setInfo({
+          carteira_id: c.recebedor_carteira_id ?? 0,
+          nome: c.recebedor_nome ?? "Recebedor",
+          tipo: "PJ",
+        });
+        setChave(
+          intencao.preparar(JSON.stringify([conta?.carteira_id, "cobranca", c.txid, c.valor])),
+        );
+      } else {
+        const d = await consultarDestino(destino);
+        setCobranca(null);
+        setInfo(d);
+        setChave(intencao.preparar(JSON.stringify([conta?.carteira_id, d.destino, valor])));
+      }
     } catch (err) {
       setErro((err as Error).message);
     } finally {
@@ -63,11 +91,20 @@ function Transferir() {
   }
 
   async function enviar(prova: ProvaBiometrica | null) {
-    if (!info?.destino) return;
+    if (!info || (!info.destino && !cobranca)) return;
     setErro(null);
     setLoading(true);
     try {
-      const r = await transferir({ destino: info.destino, valor, biometria: prova });
+      const r = cobranca
+        ? await pagarCobranca(cobranca.txid, chave, prova)
+        : await transferir({
+            destino: info.destino!,
+            valor,
+            biometria: prova,
+            idempotency_key: chave,
+          });
+      intencao.concluir();
+      setInfo(null);
       qc.invalidateQueries();
       if (r.tipo === "pendente") setPendente(r.mensagem);
       else nav({ to: "/comprovante/$id", params: { id: String(r.transacao.id) } });
@@ -119,25 +156,45 @@ function Transferir() {
 
       {!info ? (
         <form onSubmit={revisar} className="surface space-y-4 p-5 md:p-7">
-          <Field label="Chave Pix ou conta" id="destino" hint="Ex.: e-mail, CPF ou 12345678-9.">
+          <label className="flex gap-2 text-sm text-mut2">
+            <input
+              type="checkbox"
+              checked={modoCobranca}
+              onChange={(e) => setModoCobranca(e.target.checked)}
+            />
+            Pagar cobrança pelo identificador (txid)
+          </label>
+          <Field
+            label={modoCobranca ? "Identificador da cobrança (txid)" : "Chave Pix ou conta"}
+            id="destino"
+            hint={
+              modoCobranca
+                ? "Informe o identificador recebido de quem cobra."
+                : "Ex.: e-mail, CPF ou 12345678-9."
+            }
+          >
             <input
               id="destino"
               className="field"
               value={destino}
+              disabled={loading}
               onChange={(e) => setDestino(e.target.value)}
               placeholder="Chave Pix ou número da conta"
             />
           </Field>
-          <Field label="Valor (R$)" id="valor">
-            <input
-              id="valor"
-              inputMode="decimal"
-              className="field tabular text-lg"
-              value={valorStr}
-              onChange={(e) => setValorStr(e.target.value)}
-              placeholder="0,00"
-            />
-          </Field>
+          {!modoCobranca && (
+            <Field label="Valor (R$)" id="valor">
+              <input
+                id="valor"
+                inputMode="decimal"
+                className="field tabular text-lg"
+                value={valorStr}
+                disabled={loading}
+                onChange={(e) => setValorStr(e.target.value)}
+                placeholder="0,00"
+              />
+            </Field>
+          )}
           {erro && <ErrorBox>{erro}</ErrorBox>}
           <button className="btn btn-ink w-full" disabled={loading}>
             {loading ? "Consultando…" : "Revisar"}
@@ -159,11 +216,17 @@ function Transferir() {
             <div className="mt-5 divide-y divide-border">
               <ValueRow label="Valor" value={valor} strong />
             </div>
-            <p className="mt-3 rounded-[14px] bg-tint px-4 py-3 text-sm text-mut2">
-              Transferência não tem retenção de imposto: {info.nome} recebe {fmtBRL(valor)}.
-              {info.tipo === "PJ" &&
-                " Se for a compra de um produto ou serviço, peça a cobrança da empresa: aí a CBS e o IBS da nota são separados no pagamento."}
-            </p>
+            {cobranca ? (
+              <p className="mt-3 text-sm text-mut2">
+                O valor e os impostos da cobrança são conferidos pelo servidor.
+              </p>
+            ) : (
+              <p className="mt-3 rounded-[14px] bg-tint px-4 py-3 text-sm text-mut2">
+                Transferência não tem retenção de imposto: {info.nome} recebe {fmtBRL(valor)}.
+                {info.tipo === "PJ" &&
+                  " Se for a compra de um produto ou serviço, peça a cobrança da empresa: aí a CBS e o IBS da nota são separados no pagamento."}
+              </p>
+            )}
             {acimaDaAlcada && (
               <p className="mt-3 rounded-[14px] bg-tax-bg px-4 py-3 text-sm text-tax2">
                 Acima da sua alçada ({fmtBRL(conta?.alcada ?? 0)}): a transferência vai para
@@ -181,6 +244,7 @@ function Transferir() {
           <div className="grid gap-3 sm:grid-cols-[auto_1fr]">
             <button
               className="btn btn-ghost"
+              disabled={loading}
               onClick={() => {
                 setInfo(null);
                 setErro(null);
@@ -193,7 +257,9 @@ function Transferir() {
                 ? "Enviando…"
                 : acimaDaAlcada
                   ? "Enviar para aprovação"
-                  : "Confirmar transferência"}
+                  : cobranca
+                    ? "Confirmar pagamento"
+                    : "Confirmar transferência"}
             </button>
           </div>
         </div>

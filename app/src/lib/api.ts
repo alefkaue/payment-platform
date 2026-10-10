@@ -18,7 +18,6 @@ import {
   ApiError,
   definirConta,
   del,
-  dispositivoId,
   get,
   MODO_API,
   num,
@@ -803,7 +802,9 @@ function registrarPagamento(args: {
   return t;
 }
 
-export async function transferir(p: TransferirPayload): Promise<ResultadoTransferencia> {
+export async function transferir(
+  p: TransferirPayload & { idempotency_key?: string },
+): Promise<ResultadoTransferencia> {
   await delay(800);
   if (MODO_API) {
     const r = await requisitar<TransacaoApi | { operacao_id: number; mensagem: string }>(
@@ -814,7 +815,7 @@ export async function transferir(p: TransferirPayload): Promise<ResultadoTransfe
         valor: p.valor.toFixed(2),
         descricao: p.descricao,
         biometria: p.biometria ?? undefined,
-        idempotency_key: `${dispositivoId()}-${Date.now()}`,
+        idempotency_key: p.idempotency_key,
       },
     );
     if (r.status === 202) {
@@ -834,6 +835,33 @@ export async function transferir(p: TransferirPayload): Promise<ResultadoTransfe
   });
   await aguardarEnvio();
   return { tipo: "transacao", transacao: t };
+}
+
+export async function consultarCobranca(txid: string): Promise<Cobranca> {
+  if (MODO_API)
+    return mapCobranca(await get<CobrancaApi>(`/cobrancas/${encodeURIComponent(txid)}`));
+  const c = cobrancasDemo.find((c) => c.txid === txid);
+  if (!c) throw new ApiError("Cobrança não encontrada.", 404);
+  return { ...c };
+}
+
+export async function pagarCobranca(
+  txid: string,
+  idempotency_key: string,
+  biometria: ProvaBiometrica | null,
+): Promise<ResultadoTransferencia> {
+  if (!MODO_API) throw new ApiError("Pagamento de cobrança disponível com a API.");
+  const r = await requisitar<TransacaoApi | { operacao_id: number; mensagem: string }>(
+    "POST",
+    `/cobrancas/${encodeURIComponent(txid)}/pagar`,
+    { idempotency_key, biometria: biometria ?? undefined },
+  );
+  if (r.status === 202) {
+    const d = r.dados as { operacao_id: number; mensagem: string };
+    return { tipo: "pendente", ...d };
+  }
+  const c = await get<ContaApi>("/contas/atual");
+  return { tipo: "transacao", transacao: mapTransacao(r.dados as TransacaoApi, c.carteira_id) };
 }
 
 /** Depósito: no modo API o dinheiro entra por Pix para uma chave sua (ou pelo admin). */
@@ -2163,6 +2191,7 @@ export async function pagarFolha(
   itens: FolhaItem[],
   descricao?: string,
   biometria?: ProvaBiometrica,
+  idempotency_key?: string,
 ): Promise<ResultadoFolha> {
   // Reconstruir os itens impede campos extras, inclusive destino, no pedido.
   const pedido = {
@@ -2172,6 +2201,7 @@ export async function pagarFolha(
     })),
     ...(descricao ? { descricao } : {}),
     ...(biometria ? { biometria } : {}),
+    ...(idempotency_key ? { idempotency_key } : {}),
   };
   if (MODO_API) return post("/empresas/atual/folha/pagar", pedido);
   exigirFolhaDemo();
