@@ -6,6 +6,8 @@ pentest feito por outros grupos.
 
 | Documento | Para quê |
 |---|---|
+| `relatorios/AUDITORIA-2-SEGURANCA.md` | **Auditoria 2 (Claude + Codex)**: achados, correções, revisão cruzada, fuzz de invariantes e concorrência no Postgres |
+| `relatorios/` | Relatórios de cada ciclo (C1, C2) e a revisão da lógica bancária (R1) |
 | `RELATORIO-10-10-2026.md` | Resumo de tudo o que foi feito em 10/10/2026 |
 | `SECURITY_AUDIT.md` | Achados da auditoria, gravidade, evidência, correção, pendências e ações manuais de nuvem |
 | `THREAT_MODEL.md` | Ativos, atores, fronteiras de confiança, ameaças e riscos residuais |

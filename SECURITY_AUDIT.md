@@ -1,5 +1,7 @@
 # Astro — auditoria de segurança (10/10/2026)
 
+> **Há uma auditoria mais recente**: `relatorios/AUDITORIA-2-SEGURANCA.md` (10/10/2026, Claude + Codex).
+
 Auditoria do repositório antes do pentest dos outros grupos. Tudo o que está como
 **corrigido** tem teste automatizado citado e foi rodado; o que não pôde ser verificado
 aqui está marcado como tal. Não há afirmação de que a aplicação é invulnerável.
