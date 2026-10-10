@@ -214,24 +214,18 @@ function Linha({
         </div>
       </div>
 
-      {politica && m.status === "ativo" && (
-        <div className="mt-2 pl-[52px] text-xs font-semibold">
-          <button
-            className="text-ink underline underline-offset-4"
-            disabled={mut.isPending}
-            onClick={() => setEditando(true)}
-          >
-            Editar
-          </button>
-        </div>
-      )}
-      {editando && politica && (
-        <EditarMembro m={m} politica={politica} onFechar={() => setEditando(false)} />
-      )}
-
-      {podeGerir && m.status !== "revogado" && (
+      {((politica && m.status === "ativo") || (podeGerir && m.status !== "revogado")) && (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 pl-[52px] text-xs font-semibold">
-          {m.status === "ativo" && (
+          {politica && m.status === "ativo" && (
+            <button
+              className="text-ink underline underline-offset-4"
+              disabled={mut.isPending}
+              onClick={() => setEditando(true)}
+            >
+              Editar
+            </button>
+          )}
+          {podeGerir && m.status === "ativo" && (
             <button
               className="text-ink underline underline-offset-4"
               disabled={mut.isPending}
@@ -240,7 +234,7 @@ function Linha({
               Suspender
             </button>
           )}
-          {m.status === "suspenso" && (
+          {podeGerir && m.status === "suspenso" && (
             <button
               className="text-ink underline underline-offset-4"
               disabled={mut.isPending}
@@ -249,14 +243,19 @@ function Linha({
               Reativar
             </button>
           )}
-          <button
-            className="text-err underline underline-offset-4"
-            disabled={mut.isPending}
-            onClick={() => mut.mutate({ acao: "revogar" })}
-          >
-            {convite ? "Cancelar convite" : "Encerrar acesso"}
-          </button>
+          {podeGerir && (
+            <button
+              className="text-err underline underline-offset-4"
+              disabled={mut.isPending}
+              onClick={() => mut.mutate({ acao: "revogar" })}
+            >
+              {convite ? "Cancelar convite" : "Encerrar acesso"}
+            </button>
+          )}
         </div>
+      )}
+      {editando && politica && (
+        <EditarMembro m={m} politica={politica} onFechar={() => setEditando(false)} />
       )}
       {mut.isError && (
         <div className="mt-2">
