@@ -70,6 +70,7 @@ def test_sem_login_nada_protegido_responde(cliente):
     from app.main import app
 
     publicas = {"/auth/login", "/auth/login/mfa", "/auth/login/mfa/desafio", "/auth/refresh", "/auth/logout",
+                "/auth/recuperacao", "/auth/recuperacao/concluir",
                 "/usuarios", "/biometria/desafios", "/pagamentos/split/simular", "/pagamentos/split/transicao", "/", "/saude", "/pronto"}
     rotas = todas_as_rotas(app)
     assert len(rotas) > 90  # se a lista vier curta, o teste passaria sem testar nada

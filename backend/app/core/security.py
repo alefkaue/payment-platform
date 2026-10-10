@@ -41,7 +41,7 @@ _ph = PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1)
 _SENHA_MAX_BYTES = 1024  # evita DoS com senha gigante (Argon2 não trunca)
 
 # Tipos de token -> valor do cabeçalho `typ` (RFC 8725 §3.11, explicit typing).
-_TYP = {"access": "at+jwt", "refresh": "rt+jwt", "mfa": "mfa+jwt"}
+_TYP = {"access": "at+jwt", "refresh": "rt+jwt", "mfa": "mfa+jwt", "recuperacao": "rec+jwt"}
 
 
 # ---------------------------------------------------------------------------
@@ -174,6 +174,26 @@ def criar_mfa_token(usuario_id: int, *, dispositivo_hash: str | None,
     s = get_settings()
     return _criar_token(usuario_id, "mfa", timedelta(minutes=s.mfa_token_exp_min),
                         extra={"dev": dispositivo_hash, "cnf": _cnf(jkt)})
+
+
+def criar_recuperacao_token(usuario_id: int | None, *, dispositivo_hash: str | None,
+                            jkt: str | None = None) -> tuple[str, str, datetime]:
+    """Token da recuperação de senha (etapa 1 -> etapa 2). O JWT é legível pelo
+    cliente, então a pessoa vai CIFRADA em `u` e o `sub` é fixo: o token de quem
+    não existe (ou errou a data de nascimento) tem a mesma cara do verdadeiro."""
+    s = get_settings()
+    alvo = _fernet().encrypt(str(usuario_id or 0).rjust(12, "0").encode()).decode()
+    return _criar_token("recuperacao", "recuperacao", timedelta(minutes=s.recuperacao_token_exp_min),
+                        extra={"u": alvo, "dev": dispositivo_hash, "cnf": _cnf(jkt)})
+
+
+def usuario_da_recuperacao(payload: dict) -> int | None:
+    """Pessoa do token de recuperação, ou None se a etapa 1 não confirmou ninguém."""
+    try:
+        usuario_id = int(_fernet().decrypt(str(payload.get("u", "")).encode()))
+    except (InvalidToken, ValueError):
+        return None
+    return usuario_id or None
 
 
 def decodificar_token(token: str, tipo_esperado: str) -> dict:

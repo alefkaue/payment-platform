@@ -7,7 +7,8 @@ from app.core.config import get_settings
 from app.core.limites import limitar_por_ip
 from app.deps import get_repo, hash_dispositivo, ip_cliente, usuario_atual
 from app.repositories.repository import Repositorio
-from app.schemas.auth import LoginMfaRequest, LoginRequest, LoginResponse, MfaDesafioRequest, RefreshRequest, TokenResponse
+from app.schemas.auth import (LoginMfaRequest, LoginRequest, LoginResponse, MfaDesafioRequest, RecuperacaoConcluirRequest,
+                              RecuperacaoRequest, RefreshRequest, TokenResponse, TrocarSenhaRequest)
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -87,6 +88,45 @@ def refresh(
     return auth_service.renovar(repo, refresh_token=dados.refresh_token, ip=ip,
                                 dispositivo_hash=_dev(x_dispositivo_id), user_agent=_ua(request),
                                 jkt=_jkt(request, dpop, repo))
+
+
+@router.post("/senha")
+def trocar_senha(dados: TrocarSenhaRequest, usuario: dict = Depends(usuario_atual),
+                 repo: Repositorio = Depends(get_repo), ip: str | None = Depends(ip_cliente)):
+    """Troca de senha da pessoa logada: senha atual + rosto. Encerra as outras sessões."""
+    return auth_service.trocar_senha(repo, usuario=usuario, senha_atual=dados.senha_atual,
+                                     nova_senha=dados.nova_senha, prova=dados.biometria, ip=ip)
+
+
+@router.post("/recuperacao", status_code=201)
+def iniciar_recuperacao(
+    dados: RecuperacaoRequest,
+    request: Request,
+    repo: Repositorio = Depends(get_repo),
+    ip: str | None = Depends(ip_cliente),
+    x_dispositivo_id: str | None = Header(default=None, max_length=128),
+    dpop: str | None = Header(default=None, alias="DPoP"),
+):
+    """Esqueci a senha, etapa 1: e-mail/CPF + data de nascimento. Resposta igual
+    exista a conta ou não (token + desafio de prova de vida)."""
+    return auth_service.iniciar_recuperacao(repo, login=dados.login, data_nascimento=dados.data_nascimento, ip=ip,
+                                            dispositivo_hash=_dev(x_dispositivo_id), jkt=_jkt(request, dpop, repo))
+
+
+@router.post("/recuperacao/concluir", status_code=204)
+def concluir_recuperacao(
+    dados: RecuperacaoConcluirRequest,
+    request: Request,
+    repo: Repositorio = Depends(get_repo),
+    ip: str | None = Depends(ip_cliente),
+    x_dispositivo_id: str | None = Header(default=None, max_length=128),
+    dpop: str | None = Header(default=None, alias="DPoP"),
+):
+    """Etapa 2: rosto com prova de vida + senha nova. Derruba todas as sessões."""
+    auth_service.concluir_recuperacao(repo, recuperacao_token=dados.recuperacao_token, prova=dados.biometria,
+                                      nova_senha=dados.nova_senha, ip=ip, dispositivo_hash=_dev(x_dispositivo_id),
+                                      jkt=_jkt(request, dpop, repo))
+    return Response(status_code=204)
 
 
 @router.post("/logout", status_code=204)

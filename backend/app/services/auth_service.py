@@ -297,6 +297,104 @@ def renovar(repo: Repositorio, *, refresh_token: str, ip: str | None = None, dis
     return novos
 
 
+# ----------------------------------------------------------- senha (A-16)
+
+
+def trocar_senha(repo: Repositorio, *, usuario: dict, senha_atual: str, nova_senha: str, prova,
+                 ip: str | None) -> dict:
+    """Troca com a pessoa logada: senha atual + rosto com prova de vida. As outras
+    sessões caem (quem tinha a senha antiga não continua dentro)."""
+    from app.services import senha_policy, seguranca_service
+
+    u = repo.obter_usuario_por_id(usuario["id"])
+    if not u or not u["ativo"]:
+        raise HTTPException(status_code=401, detail="Conta inativa.")
+    # Errar a senha atual conta como erro de login: este caminho não dribla o limite.
+    _checar_rate_limit(repo, u["email"], ip)
+    if not security.verificar_senha(senha_atual, u["senha_hash"]):
+        repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=u["email"], ip=ip, usuario_id=u["id"],
+                                  detalhe={"etapa": "troca_senha"})
+        raise HTTPException(status_code=401, detail="Senha atual incorreta.")
+    if nova_senha == senha_atual:
+        raise HTTPException(status_code=400, detail="A nova senha precisa ser diferente da atual.")
+    senha_policy.validar(nova_senha, email=u["email"], cpf=u["cpf"] or "", nome=u["nome"])
+    seguranca_service.verificar_rosto(repo, usuario=u, prova=prova, ip=ip, tipo="troca_senha")
+    repo.atualizar_senha_hash(u["id"], security.hash_senha(nova_senha))
+    encerradas = repo.revogar_outras_sessoes(u["id"], usuario.get("sessao_id"))
+    repo.registrar_log(ator=u["email"], acao="senha_alterada", ip=ip, usuario_id=u["id"],
+                       detalhe={"sessoes_encerradas": encerradas})
+    return {"sessoes_encerradas": encerradas}
+
+
+def _checar_limite_recuperacao(repo: Repositorio, ref: str, ip: str | None) -> None:
+    s = get_settings()
+    desde = tempo.agora() - timedelta(hours=1)
+    if (ip and repo.contar_eventos(tipo="recuperacao", desde=desde, sucesso=None, ip=ip) >= s.recuperacao_max_ip_hora) \
+            or repo.contar_eventos(tipo="recuperacao", desde=desde, sucesso=None, referencia=ref) >= s.recuperacao_max_conta_hora:
+        raise HTTPException(status_code=429, detail="Muitos pedidos de recuperação. Tente novamente mais tarde.",
+                            headers={"Retry-After": "3600"})
+
+
+def iniciar_recuperacao(repo: Repositorio, *, login: str, data_nascimento, ip: str | None,
+                        dispositivo_hash: str | None, jkt: str | None = None) -> dict:
+    """Etapa 1 da recuperação: e-mail/CPF + data de nascimento. A resposta é SEMPRE
+    a mesma (token + desafio de prova de vida completo), exista a conta ou não: quem
+    só conhece um e-mail não descobre nada. Quem confirma é o rosto, na etapa 2."""
+    from app.services import biometria_service
+
+    _exigir_jkt(jkt)
+    identificador = login.lower().strip()
+    usuario = repo.obter_usuario_por_login(identificador)
+    ref = usuario["email"] if usuario else identificador
+    _checar_limite_recuperacao(repo, ref, ip)
+    confere = bool(usuario and usuario["ativo"] and usuario["tem_biometria"] and usuario["papel"] != "admin"
+                   and usuario["data_nascimento"] is not None and usuario["data_nascimento"] == data_nascimento)
+    alvo = usuario["id"] if confere else None
+    repo.registrar_sessao_mfa(tipo="recuperacao", sucesso=confere, referencia=ref, ip=ip,
+                              usuario_id=usuario["id"] if usuario else None)
+    if confere:
+        repo.registrar_log(ator=ref, acao="recuperacao_senha_pedida", ip=ip, usuario_id=usuario["id"])
+    token, _, exp = security.criar_recuperacao_token(alvo, dispositivo_hash=dispositivo_hash, jkt=jkt)
+    # Desafio de CADASTRO (todas as ações, embaralhadas): mais forte que o do login.
+    desafio = biometria_service.criar_desafio(repo, usuario_id=alvo, modo="cadastro")
+    return {"recuperacao_token": token, "expira_em": exp, "desafio": desafio}
+
+
+_RECUPERACAO_RECUSADA = "Não foi possível confirmar a sua identidade. Comece a recuperação de novo."
+
+
+def concluir_recuperacao(repo: Repositorio, *, recuperacao_token: str, prova, nova_senha: str, ip: str | None,
+                         dispositivo_hash: str | None, jkt: str | None = None) -> None:
+    """Etapa 2: rosto com prova de vida no MESMO aparelho e chave da etapa 1. Troca a
+    senha e derruba TODAS as sessões (se alguém tinha a senha, perde o acesso)."""
+    from app.services import senha_policy, seguranca_service
+
+    try:
+        payload = security.decodificar_token(recuperacao_token, "recuperacao")
+    except (jwt.PyJWTError, ValueError):
+        raise HTTPException(status_code=401, detail="A recuperação expirou. Comece de novo.")
+    if payload.get("dev") != dispositivo_hash or dpop.jkt_do_token(payload) != jkt:
+        raise HTTPException(status_code=401, detail="Conclua a recuperação no mesmo aparelho em que ela começou.")
+    usuario_id = security.usuario_da_recuperacao(payload)
+    usuario = repo.obter_usuario_por_id(usuario_id) if usuario_id else None
+    if not usuario or not usuario["ativo"]:
+        raise HTTPException(status_code=401, detail=_RECUPERACAO_RECUSADA)
+    # Antes do rosto, para não gastar tentativa de biometria com senha que não serve.
+    senha_policy.validar(nova_senha, email=usuario["email"], cpf=usuario["cpf"] or "", nome=usuario["nome"])
+    try:
+        seguranca_service.verificar_rosto(repo, usuario=usuario, prova=prova, ip=ip, tipo="recuperacao_senha")
+    except HTTPException as e:
+        if e.status_code == 429:
+            raise
+        raise HTTPException(status_code=401, detail=_RECUPERACAO_RECUSADA) from None
+    if not repo.registrar_sessao_mfa(tipo="mfa_usado", sucesso=True, referencia=payload["jti"],
+                                     usuario_id=usuario["id"], ip=ip):
+        raise HTTPException(status_code=401, detail="Esta recuperação já foi usada. Comece de novo.")
+    repo.atualizar_senha_hash(usuario["id"], security.hash_senha(nova_senha))
+    repo.revogar_todos_refresh(usuario["id"])
+    repo.registrar_log(ator=usuario["email"], acao="senha_recuperada", ip=ip, usuario_id=usuario["id"])
+
+
 def logout(repo: Repositorio, *, refresh_token: str) -> None:
     """Encerra a SESSÃO inteira (a família de refresh), não só o token atual."""
     try:

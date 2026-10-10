@@ -49,6 +49,10 @@ class Settings(BaseSettings):
     sessao_inatividade_min: int = Field(default=30, alias="SESSAO_INATIVIDADE_MIN")
     # Rotas públicas (SEGURANCA.md item 4): por IP, por hora / por 15 min.
     cadastro_max_ip_hora: int = Field(default=10, alias="CADASTRO_MAX_IP_HORA")
+    # Recuperação de senha (SECURITY_AUDIT A-16): por IP e por conta, por hora.
+    recuperacao_max_ip_hora: int = Field(default=10, alias="RECUPERACAO_MAX_IP_HORA")
+    recuperacao_max_conta_hora: int = Field(default=5, alias="RECUPERACAO_MAX_CONTA_HORA")
+    recuperacao_token_exp_min: int = Field(default=10, alias="RECUPERACAO_TOKEN_EXP_MIN")
     # Loja, Viagens e pontos (SEGURANCA.md item 6): arquivados no app; aqui ficam
     # desligados (404) para não serem superfície de ataque no pentest.
     beneficios_habilitados: bool = Field(default=False, alias="BENEFICIOS_HABILITADOS")

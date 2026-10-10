@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from typing import Annotated
 
@@ -48,3 +48,20 @@ class LoginResponse(BaseModel):
     token_type: str | None = None
     access_expira_em: datetime | None = None
     sessao_id: str | None = None
+
+
+class TrocarSenhaRequest(BaseModel):
+    senha_atual: str = Field(..., min_length=1, max_length=128)
+    nova_senha: str = Field(..., min_length=1, max_length=128)
+    biometria: ProvaBiometrica
+
+
+class RecuperacaoRequest(BaseModel):
+    login: str = Field(..., min_length=3, max_length=180, description="E-mail ou CPF.")
+    data_nascimento: date
+
+
+class RecuperacaoConcluirRequest(BaseModel):
+    recuperacao_token: str = Field(..., min_length=20, max_length=2000)
+    biometria: ProvaBiometrica
+    nova_senha: str = Field(..., min_length=1, max_length=128)

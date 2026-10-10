@@ -1,6 +1,6 @@
 # Astro — inventário de endpoints
 
-> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (101 rotas).
+> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (105 rotas).
 > Não edite à mão: rode o script de novo quando a API mudar.
 
 - **pública**: sem login (as de autenticação têm limite por IP e/ou DPoP).
@@ -19,6 +19,9 @@
 | `POST` | `/auth/login/mfa` | pública |  | Rosto com prova de vida sorteada (2º fator); mesmo aparelho e chave DPoP; atestação opcional (APK) |
 | `POST` | `/auth/login/mfa/desafio` | pública |  |  |
 | `POST` | `/auth/refresh` | pública |  | Refresh preso à chave DPoP e ao aparelho; rotação; limite por IP |
+| `POST` | `/auth/senha` | login + DPoP |  | Senha atual + rosto; política de senha; encerra as outras sessões |
+| `POST` | `/auth/recuperacao` | pública |  | E-mail/CPF + nascimento; resposta igual exista a conta ou não; limite por IP e por conta |
+| `POST` | `/auth/recuperacao/concluir` | pública |  | Rosto com prova de vida completa, mesmo aparelho e chave; uso único; derruba todas as sessões |
 | `POST` | `/auth/logout` | pública |  | Revoga a sessão inteira (família de refresh) |
 | `GET` | `/auth/eu` | login + DPoP |  |  |
 | `GET` | `/auth/sessoes` | login + DPoP |  |  |
@@ -116,3 +119,4 @@
 | `POST` | `/admin/jobs/webhooks` | admin + IP |  |  |
 | `GET` | `/` | pública |  |  |
 | `GET` | `/saude` | pública |  |  |
+| `GET` | `/pronto` | pública |  |  |

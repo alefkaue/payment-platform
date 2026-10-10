@@ -51,7 +51,7 @@ def validar(senha: str, *, email: str = "", cpf: str = "", nome: str = "") -> No
         raise HTTPException(status_code=400, detail="Essa senha é muito comum. Escolha outra.")
     if len(set(n)) <= 2:
         raise HTTPException(status_code=400, detail="Senha muito repetitiva. Escolha outra.")
-    if any(n in seq or seq.startswith(n) for seq in _SEQUENCIAS if len(n) >= 6):
+    if len(n) >= 6 and any(n in seq * 3 or n in (seq * 3)[::-1] for seq in _SEQUENCIAS):  # "123456789012", "0987654321"
         raise HTTPException(status_code=400, detail="Senha em sequência (ex.: 123456789). Escolha outra.")
     cpf_dig = re.sub(r"\D", "", cpf or "")
     if cpf_dig and (cpf_dig in re.sub(r"\D", "", senha) or cpf_dig[:6] in senha):
