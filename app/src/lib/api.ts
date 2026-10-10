@@ -1109,6 +1109,29 @@ const ACOES: Record<string, string> = {
   criar_conta_pj: "Abriu uma conta de empresa",
   convite_aceito: "Aceitou um convite de empresa",
   convite_recusado: "Recusou um convite de empresa",
+  convite: "Convidou uma pessoa para a empresa",
+  usuario_convidado: "Convidou uma pessoa para a empresa",
+  suspender: "Suspendeu um acesso à empresa",
+  usuario_suspenso: "Suspendeu um acesso à empresa",
+  reativar: "Reativou um acesso à empresa",
+  usuario_reativado: "Reativou um acesso à empresa",
+  revogar: "Revogou um acesso à empresa",
+  usuario_revogado: "Revogou um acesso à empresa",
+  alteracao: "Alterou permissões ou alçadas",
+  permissao_alterada: "Alterou permissões ou alçadas",
+  acesso_aprovado: "Aprovou uma mudança de acesso",
+  operacao_pendente: "Enviou uma operação para aprovação",
+  operacao_aprovada: "Aprovou uma operação",
+  operacao_rejeitada: "Rejeitou uma operação",
+  operacao_cancelada: "Cancelou uma operação pendente",
+  operacao_conciliada: "Conferiu o resultado de uma operação em execução",
+  aprovacao_parcial: "Registrou uma aprovação; falta outra pessoa aprovar",
+  cobranca_criada: "Criou uma cobrança",
+  cobranca_paga: "Pagou uma cobrança",
+  cobranca_cancelada: "Cancelou uma cobrança",
+  cobranca_estornada: "Estornou uma cobrança",
+  documento_empresa_enviado: "Enviou um documento da empresa",
+  credito_declarado: "Declarou um crédito de IBS/CBS",
   contestacao_aberta: "Contestou uma transação",
   kyc_documento_reenviado: "Reenviou o documento",
 };
@@ -1131,6 +1154,54 @@ export async function minhaAtividade(): Promise<Atividade[]> {
     { id: 2, acao: "login_aparelho_novo", ip: "189.33.7.120", criado_em: agoraMenos(60 * 26) },
     { id: 1, acao: "criar_conta_pf", ip: "177.12.40.8", criado_em: agoraMenos(60 * 24 * 30) },
   ].map((a) => ({ ...a, descricao: descreverAcao(a.acao) }));
+}
+
+export interface AuditoriaEmpresa extends Atividade {
+  ator: string;
+  usuario_id: number | null;
+  empresa_id: number | null;
+  detalhe: Record<string, unknown> | null;
+}
+
+/** Trilha da conta PJ selecionada; o servidor confere o papel em cada consulta. */
+export async function auditoriaEmpresa(limite = 50): Promise<AuditoriaEmpresa[]> {
+  if (!Number.isInteger(limite) || limite < 1 || limite > 200)
+    throw new ApiError("O limite deve ser um inteiro entre 1 e 200.");
+  if (MODO_API) {
+    const itens = await get<Omit<AuditoriaEmpresa, "descricao">[]>(
+      `/empresas/atual/auditoria?limite=${limite}`,
+    );
+    return itens.map((a) => ({ ...a, descricao: descreverAcao(a.acao) }));
+  }
+  if (sessao.conta.tipo !== "PJ") throw new ApiError("A auditoria é exclusiva para empresas.", 403);
+  if (sessao.conta.papel !== "admin" && sessao.conta.papel !== "aprovador")
+    throw new ApiError("Só administradores e aprovadores veem a trilha da empresa.", 403);
+  const eventos = [
+    {
+      acao: "operacao_aprovada",
+      detalhe: { operacao_id: 81, transacao_id: 601 },
+    },
+    {
+      acao: "operacao_pendente",
+      detalhe: { operacao_id: 81, valor: "280000.00" },
+    },
+    { acao: "cobranca_criada", detalhe: { valor: "18500.00" } },
+    { acao: "transferencia", detalhe: { transacao_id: 600, valor: "4200.00" } },
+    { acao: "permissao_alterada", detalhe: { vinculo_id: 3 } },
+    { acao: "convite_aceito", detalhe: { vinculo_id: 3 } },
+    { acao: "usuario_convidado", detalhe: { vinculo_id: 3 } },
+    { acao: "documento_empresa_enviado", detalhe: { tipo: "contrato_social" } },
+  ];
+  return eventos.slice(0, limite).map((a, i) => ({
+    ...a,
+    id: 8 - i,
+    descricao: descreverAcao(a.acao),
+    ator: i === 1 || i === 5 ? "ana@rodoforte.example" : "marina@rodoforte.example",
+    usuario_id: i === 1 || i === 5 ? 43 : 42,
+    empresa_id: sessao.conta.id,
+    ip: "192.0.2.10",
+    criado_em: agoraMenos(30 + i * 60),
+  }));
 }
 
 // =============================================================================
