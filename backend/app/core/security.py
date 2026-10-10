@@ -141,27 +141,36 @@ def _criar_token(sub: str, tipo: str, expira_em: timedelta, extra: dict | None =
     return token, jti, exp
 
 
+def _cnf(jkt: str | None) -> dict | None:
+    """Confirmação da chave (RFC 9449): o token só vale com prova DPoP desta chave."""
+    return {"jkt": jkt} if jkt else None
+
+
 def criar_access_token(usuario_id: int, papel: str, *, dispositivo_hash: str | None = None,
-                       sessao_id: str | None = None) -> tuple[str, datetime]:
+                       sessao_id: str | None = None, jkt: str | None = None) -> tuple[str, datetime]:
     s = get_settings()
     token, _, exp = _criar_token(
         usuario_id, "access", timedelta(minutes=s.access_token_exp_min),
-        extra={"papel": papel, "dev": dispositivo_hash, "sid": sessao_id},
+        extra={"papel": papel, "dev": dispositivo_hash, "sid": sessao_id, "cnf": _cnf(jkt)},
     )
     return token, exp
 
 
-def criar_refresh_token(usuario_id: int, *, sessao_id: str | None = None) -> tuple[str, str, datetime]:
+def criar_refresh_token(usuario_id: int, *, sessao_id: str | None = None,
+                        jkt: str | None = None) -> tuple[str, str, datetime]:
     """Retorna (token_bruto, jti, expira_em). No banco vai só hash_refresh(token)."""
     s = get_settings()
-    return _criar_token(usuario_id, "refresh", timedelta(days=s.refresh_token_exp_dias), extra={"sid": sessao_id})
+    return _criar_token(usuario_id, "refresh", timedelta(days=s.refresh_token_exp_dias),
+                        extra={"sid": sessao_id, "cnf": _cnf(jkt)})
 
 
-def criar_mfa_token(usuario_id: int, *, dispositivo_hash: str | None) -> tuple[str, str, datetime]:
+def criar_mfa_token(usuario_id: int, *, dispositivo_hash: str | None,
+                    jkt: str | None = None) -> tuple[str, str, datetime]:
     """Token intermediário: a senha confere, falta a prova facial. Só serve em
     POST /auth/login/mfa e expira em minutos."""
     s = get_settings()
-    return _criar_token(usuario_id, "mfa", timedelta(minutes=s.mfa_token_exp_min), extra={"dev": dispositivo_hash})
+    return _criar_token(usuario_id, "mfa", timedelta(minutes=s.mfa_token_exp_min),
+                        extra={"dev": dispositivo_hash, "cnf": _cnf(jkt)})
 
 
 def decodificar_token(token: str, tipo_esperado: str) -> dict:

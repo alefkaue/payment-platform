@@ -479,6 +479,16 @@ class Limite(Base):
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class JtiDpop(Base):
+    """`jti` das provas DPoP já usadas (uso único). Vive só o dobro da janela de
+    tempo da prova; as vencidas são apagadas a cada inserção."""
+
+    __tablename__ = "dpop_jtis"
+
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+
+
 class DesafioBiometria(Base):
     """Desafio de liveness gerado pelo SERVIDOR (nonce + ação pedida). A prova
     biométrica só vale com um desafio válido, não expirado e não usado -- o app

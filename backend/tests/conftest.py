@@ -23,6 +23,8 @@ os.environ["SPLIT_VIGENCIA"] = "2026"
 # KYC: os testes de fluxo não mandam documento; os de KYC ligam por monkeypatch.
 os.environ["KYC_DOCUMENTO_OBRIGATORIO"] = "0"
 os.environ["DOCUMENTO_PROVEDOR"] = "stub"
+# DPoP: os testes de fluxo usam tokens sem chave; test_dpop.py liga a exigência.
+os.environ["DPOP_OBRIGATORIO"] = "0"
 
 
 @pytest.fixture()

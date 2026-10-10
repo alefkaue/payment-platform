@@ -18,6 +18,7 @@ import jwt
 from fastapi import Depends, Header, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.core import dpop as dpop_prova
 from app.core import security, tempo
 from app.core.config import get_settings
 from app.db.models import Papel, PapelVinculo
@@ -51,13 +52,17 @@ def hash_dispositivo(dispositivo_id: str) -> str:
 
 
 def usuario_atual(
+    request: Request,
     credenciais: HTTPAuthorizationCredentials | None = Depends(_bearer),
     repo: Repositorio = Depends(get_repo),
     x_dispositivo_id: str | None = Header(default=None, max_length=128),
+    dpop: str | None = Header(default=None, alias="DPoP"),
 ) -> dict:
     """Valida o access token e, além da assinatura/expiração:
     - `dev`: o token foi emitido para ESTE aparelho (header X-Dispositivo-Id) --
       token copiado para outro aparelho não funciona;
+    - `cnf.jkt`: a requisição traz prova DPoP assinada pela chave do aparelho
+      que fez o login (token roubado sem a chave privada não serve);
     - `sid`: a sessão não foi encerrada (Segurança > Sessões) -- cai na hora;
     - o aparelho não está bloqueado (celular roubado)."""
     nao_autorizado = {"WWW-Authenticate": "Bearer"}
@@ -67,6 +72,15 @@ def usuario_atual(
         payload = security.decodificar_token(credenciais.credentials, "access")
     except (jwt.PyJWTError, ValueError):
         raise HTTPException(status_code=401, detail="Token inválido ou expirado.", headers=nao_autorizado)
+    jkt = dpop_prova.jkt_do_token(payload)
+    if jkt:
+        prova_jkt = dpop_prova.verificar(dpop, metodo=request.method, caminho=request.url.path, repo=repo,
+                                         access_token=credenciais.credentials)
+        if prova_jkt != jkt:
+            raise HTTPException(status_code=401, detail="Prova de posse (DPoP) inválida: chave de outro aparelho.",
+                                headers=nao_autorizado)
+    elif get_settings().dpop_obrigatorio:
+        raise HTTPException(status_code=401, detail="Sessão sem prova de posse. Entre de novo.", headers=nao_autorizado)
     dev = payload.get("dev")
     if dev and (not x_dispositivo_id or hash_dispositivo(x_dispositivo_id) != dev):
         raise HTTPException(status_code=401, detail="Sessão emitida para outro aparelho.", headers=nao_autorizado)
@@ -82,13 +96,15 @@ def usuario_atual(
 
 
 def usuario_opcional(
+    request: Request,
     credenciais: HTTPAuthorizationCredentials | None = Depends(_bearer),
     repo: Repositorio = Depends(get_repo),
     x_dispositivo_id: str | None = Header(default=None, max_length=128),
+    dpop: str | None = Header(default=None, alias="DPoP"),
 ) -> dict | None:
     if credenciais is None or not credenciais.credentials:
         return None
-    return usuario_atual(credenciais, repo, x_dispositivo_id)
+    return usuario_atual(request, credenciais, repo, x_dispositivo_id, dpop)
 
 
 def admin_atual(usuario: dict = Depends(usuario_atual), ip: str | None = Depends(ip_cliente)) -> dict:

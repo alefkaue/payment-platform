@@ -45,7 +45,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 | # | Item | Resolve | Estado |
 |---|---|---|---|
 | 1 | **Desafio aleatório** de prova de vida (ordem e ações sorteadas pelo servidor; quadros fora da ordem pedida não passam) | A1 | ✅ |
-| 2 | **Prova de posse da chave (DPoP-like)**: o app gera um par de chaves **não exportável** (WebCrypto; no APK, Keystore/Keychain), registra a pública no login e **assina cada requisição** (método, caminho, horário, nonce). Token roubado sem a chave não serve. Tokens saem do `sessionStorage` (memória + refresh amarrado à chave). | A2 | ⬜ |
+| 2 | **Prova de posse da chave (DPoP, RFC 9449)**: o app gera um par de chaves **não exportável** (WebCrypto; no APK, Keystore/Keychain), o login amarra os tokens à impressão da chave e **cada requisição vai assinada** (método, caminho, horário, id único, hash do token). Token roubado sem a chave não serve. | A2 | ✅ (falta Keystore no app nativo, item 10) |
 | 3 | **Sessão**: máximo absoluto (ex.: 12 h) e inatividade (ex.: 15 min) no servidor; aviso de login em aparelho novo | A3 | ⬜ |
 | 4 | **Força bruta e enumeração**: rate limit em cadastro/refresh/convites; atraso progressivo; tentativas por `mfa_token`; resposta neutra no cadastro | A4 | ⬜ |
 | 5 | **Cadastro em etapas** (dados → documento → rosto, cada um numa página) e **documento frente e verso obrigatórios** (no app e no backend) | pedido do Alef | ⬜ |
@@ -92,3 +92,19 @@ justamente ver se alguém burla.
   qualquer ordem; o **overlay de debug só aparece no `npm run dev`**. Testes: `test_liveness.py` com replay,
   vídeo universal, fora de ordem e ação extra (155 testes no backend).
   **Calibrar num aparelho real**: a tolerância de piscadas naturais (`PISCADAS_EXTRAS`, `PISCADAS_NATURAIS_MAX`).
+- 09/10 — **Item 2 feito (DPoP, RFC 9449).** Backend: `app/core/dpop.py` valida a prova (ES256, `jwk` pública no
+  cabeçalho, sem chave privada, `htm`/`htu`/`iat` ±60 s, `ath` = hash do access token, `jti` de uso único na
+  tabela `dpop_jtis` — migração `b7c8d9e0f1a2`). O `jkt` (impressão da chave) entra no mfa_token, no access e no
+  refresh (`cnf.jkt`); `deps.usuario_atual` exige prova da MESMA chave em toda requisição; refresh só renova com
+  a mesma chave. `DPOP_OBRIGATORIO=1` por padrão e **proibido desligar em produção**. CORS libera o header `DPoP`.
+  App: `src/lib/dpop.ts` (par ECDSA P-256 **não exportável** no IndexedDB; prova em cada requisição e no
+  refresh). Corrigido junto: refreshes em paralelo (ex.: tela de Aprovações faz 3 GETs) eram vistos como
+  **reuso de refresh** e derrubavam a sessão — agora uma renovação por vez. Testes: `test_dpop.py` (10 ataques:
+  token sem chave, chave do atacante, prova reenviada, outro método/endereço/horário, `ath` errado, `alg none`,
+  chave privada no cabeçalho, refresh roubado, etapa do rosto com outra chave, produção sem DPoP). 165 testes;
+  e2e do app passou com DPoP obrigatório.
+  **Decisão**: os tokens continuam no `sessionStorage` (sair dele obrigaria refazer login com rosto a cada
+  recarregar a página). Com DPoP, copiar o token não basta: XSS ainda poderia usar a chave **enquanto a aba está
+  aberta** — por isso o item 7 (CSP) continua importante.
+  **Para o pentest**: quem for testar a API direto precisa gerar provas DPoP (ver `tests/test_dpop.py`, classe
+  `Chave`, ou qualquer biblioteca DPoP); isso vai no `PENTEST.md`.

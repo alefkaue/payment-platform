@@ -28,7 +28,7 @@ from functools import lru_cache
 import jwt
 from fastapi import HTTPException
 
-from app.core import security, tempo
+from app.core import dpop, security, tempo
 from app.core.config import get_settings
 from app.repositories.repository import Repositorio
 
@@ -80,10 +80,18 @@ def autenticar(repo: Repositorio, *, email: str, senha: str, ip: str | None = No
     return usuario
 
 
+def _exigir_jkt(jkt: str | None) -> None:
+    """Sem prova de posse da chave (DPoP) não há login: o token nasceria sem
+    amarração e voltaria a servir para quem o roubasse (SEGURANCA.md item 2)."""
+    if jkt is None and get_settings().dpop_obrigatorio:
+        raise HTTPException(status_code=400, detail="Envie a prova de posse da chave (header DPoP). Atualize o app.")
+
+
 def iniciar_login(repo: Repositorio, *, email: str, senha: str, ip: str | None, dispositivo_hash: str | None,
-                  user_agent: str | None) -> dict:
+                  user_agent: str | None, jkt: str | None = None) -> dict:
     from app.services import biometria_service
 
+    _exigir_jkt(jkt)
     usuario = autenticar(repo, email=email, senha=senha, ip=ip)
     ref = email.lower().strip()
     if dispositivo_hash and repo.dispositivo_bloqueado(usuario["id"], dispositivo_hash):
@@ -97,23 +105,26 @@ def iniciar_login(repo: Repositorio, *, email: str, senha: str, ip: str | None, 
         repo.registrar_log(ator=usuario["email"], acao="login_admin", ip=ip, usuario_id=usuario["id"])
         disp = repo.registrar_dispositivo(usuario_id=usuario["id"], id_hash=dispositivo_hash, nome=None) if dispositivo_hash else None
         return {"mfa_requerido": False, **emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dispositivo_hash,
-                                                       ip=ip, user_agent=user_agent)}
+                                                       ip=ip, user_agent=user_agent, jkt=jkt)}
 
     if not usuario["tem_biometria"]:
         raise HTTPException(status_code=403, detail="Sua conta não tem biometria cadastrada. Procure o atendimento.")
-    mfa_token, _, exp = security.criar_mfa_token(usuario["id"], dispositivo_hash=dispositivo_hash)
+    mfa_token, _, exp = security.criar_mfa_token(usuario["id"], dispositivo_hash=dispositivo_hash, jkt=jkt)
     desafio = biometria_service.criar_desafio(repo, usuario_id=usuario["id"], modo="login")
     repo.registrar_sessao_mfa(tipo="login_senha", sucesso=True, usuario_id=usuario["id"], referencia=ref, ip=ip)
     return {"mfa_requerido": True, "mfa_token": mfa_token, "mfa_expira_em": exp, "desafio": desafio}
 
 
-def _usuario_do_mfa(repo: Repositorio, mfa_token: str, dispositivo_hash: str | None) -> tuple[dict, dict]:
+def _usuario_do_mfa(repo: Repositorio, mfa_token: str, dispositivo_hash: str | None,
+                    jkt: str | None = None) -> tuple[dict, dict]:
     try:
         payload = security.decodificar_token(mfa_token, "mfa")
     except (jwt.PyJWTError, ValueError):
         raise HTTPException(status_code=401, detail="Etapa de verificação expirada. Entre de novo com a senha.")
     if payload.get("dev") != dispositivo_hash:
         raise HTTPException(status_code=401, detail="A verificação precisa ser concluída no mesmo aparelho.")
+    if dpop.jkt_do_token(payload) != jkt:
+        raise HTTPException(status_code=401, detail="A verificação precisa ser concluída com a mesma chave do aparelho.")
     if repo.contar_eventos(tipo="mfa_usado", desde=tempo.agora() - timedelta(hours=1), sucesso=True,
                            referencia=payload["jti"]):
         raise HTTPException(status_code=401, detail="Esta etapa de verificação já foi usada. Entre de novo.")
@@ -123,19 +134,20 @@ def _usuario_do_mfa(repo: Repositorio, mfa_token: str, dispositivo_hash: str | N
     return usuario, payload
 
 
-def novo_desafio_mfa(repo: Repositorio, *, mfa_token: str, dispositivo_hash: str | None) -> dict:
+def novo_desafio_mfa(repo: Repositorio, *, mfa_token: str, dispositivo_hash: str | None,
+                     jkt: str | None = None) -> dict:
     """Outra tentativa da prova de vida dentro do mesmo login (o desafio é de uso único)."""
     from app.services import biometria_service
 
-    usuario, _ = _usuario_do_mfa(repo, mfa_token, dispositivo_hash)
+    usuario, _ = _usuario_do_mfa(repo, mfa_token, dispositivo_hash, jkt)
     return biometria_service.criar_desafio(repo, usuario_id=usuario["id"], modo="login")
 
 
 def concluir_login(repo: Repositorio, *, mfa_token: str, prova, ip: str | None, dispositivo_hash: str | None,
-                   user_agent: str | None) -> dict:
+                   user_agent: str | None, jkt: str | None = None) -> dict:
     from app.services import seguranca_service
 
-    usuario, payload = _usuario_do_mfa(repo, mfa_token, dispositivo_hash)
+    usuario, payload = _usuario_do_mfa(repo, mfa_token, dispositivo_hash, jkt)
     ref = usuario["email"]
     try:
         verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=prova, ip=ip, tipo="login")
@@ -153,7 +165,8 @@ def concluir_login(repo: Repositorio, *, mfa_token: str, prova, ip: str | None, 
     repo.registrar_log(ator=usuario["email"], acao="login", ip=ip, usuario_id=usuario["id"],
                        detalhe={"fatores": ["senha", "rosto"], "similaridade": verificacao.get("similaridade"),
                                 "dispositivo_id": disp["id"] if disp else None})
-    return emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dispositivo_hash, ip=ip, user_agent=user_agent)
+    return emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dispositivo_hash, ip=ip, user_agent=user_agent,
+                         jkt=jkt)
 
 
 def _nome_aparelho(user_agent: str | None) -> str | None:
@@ -170,11 +183,11 @@ def _nome_aparelho(user_agent: str | None) -> str | None:
 
 def emitir_tokens(repo: Repositorio, usuario: dict, *, dispositivo: dict | None = None,
                   dispositivo_hash: str | None = None, ip: str | None = None, user_agent: str | None = None,
-                  sessao_id: str | None = None) -> dict:
+                  sessao_id: str | None = None, jkt: str | None = None) -> dict:
     sid = sessao_id or security.novo_sessao_id()
     access, access_exp = security.criar_access_token(usuario["id"], usuario["papel"], dispositivo_hash=dispositivo_hash,
-                                                     sessao_id=sid)
-    refresh_bruto, jti, refresh_exp = security.criar_refresh_token(usuario["id"], sessao_id=sid)
+                                                     sessao_id=sid, jkt=jkt)
+    refresh_bruto, jti, refresh_exp = security.criar_refresh_token(usuario["id"], sessao_id=sid, jkt=jkt)
     repo.salvar_refresh(usuario_id=usuario["id"], jti=jti, token_hash=security.hash_refresh(refresh_bruto),
                         expira_em=refresh_exp, sessao_id=sid, dispositivo_id=dispositivo["id"] if dispositivo else None,
                         ip=ip, user_agent=user_agent)
@@ -183,11 +196,15 @@ def emitir_tokens(repo: Repositorio, usuario: dict, *, dispositivo: dict | None 
 
 
 def renovar(repo: Repositorio, *, refresh_token: str, ip: str | None = None, dispositivo_hash: str | None = None,
-            user_agent: str | None = None) -> dict:
+            user_agent: str | None = None, jkt: str | None = None) -> dict:
     try:
         payload = security.decodificar_token(refresh_token, "refresh")
     except (jwt.PyJWTError, ValueError):
         raise HTTPException(status_code=401, detail="Sessão expirada. Entre de novo.")
+    # Refresh roubado não renova sem a chave do aparelho que fez o login.
+    jkt_sessao = dpop.jkt_do_token(payload)
+    if jkt_sessao != jkt or (jkt_sessao is None and get_settings().dpop_obrigatorio):
+        raise HTTPException(status_code=401, detail="Esta sessão pertence a outro aparelho. Entre de novo.")
     registro = repo.obter_refresh(security.hash_refresh(refresh_token))
     if not registro:
         raise HTTPException(status_code=401, detail="Sessão não reconhecida.")
@@ -207,7 +224,7 @@ def renovar(repo: Repositorio, *, refresh_token: str, ip: str | None = None, dis
         if disp["bloqueado"]:
             raise HTTPException(status_code=401, detail="Aparelho bloqueado.")
     novos = emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dispositivo_hash if disp else None,
-                          ip=ip, user_agent=user_agent, sessao_id=registro["sessao_id"] or payload.get("sid"))
+                          ip=ip, user_agent=user_agent, sessao_id=registro["sessao_id"] or payload.get("sid"), jkt=jkt)
     novo_payload = security.decodificar_token(novos["refresh_token"], "refresh")
     repo.revogar_refresh(payload["jti"], substituido_por=novo_payload["jti"])
     return novos

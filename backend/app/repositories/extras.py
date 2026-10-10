@@ -7,6 +7,7 @@ sessão/ORM; o que precisa ser atômico (aprovação dupla, aceite de convite) m
 aqui, com UPDATE condicional / SELECT ... FOR UPDATE.
 """
 
+import random
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
@@ -22,6 +23,7 @@ from app.db.models import (
     Dispositivo,
     Empresa,
     Funcionario,
+    JtiDpop,
     LogAuditoria,
     OperacaoPendente,
     PapelVinculo,
@@ -459,3 +461,18 @@ class RepositorioExtras:
             return [{"id": l.id, "ator": l.ator, "acao": l.acao, "usuario_id": l.usuario_id, "empresa_id": l.empresa_id,
                      "ip": l.ip, "detalhe": l.detalhe, "criado_em": _utc(l.criado_em)} for l in logs]
 
+    # ------------------------------------------------------------------ DPoP
+
+    def registrar_jti_dpop(self, jti: str, *, expira_em: datetime) -> bool:
+        """True se o jti é novo (e fica guardado); False se já foi usado.
+        A chave primária garante uso único mesmo com requisições simultâneas."""
+        with self._sf() as s:
+            if random.random() < 0.05:  # limpeza ocasional das vencidas
+                s.query(JtiDpop).filter(JtiDpop.expira_em < tempo.agora()).delete(synchronize_session=False)
+            s.add(JtiDpop(jti=jti, expira_em=expira_em))
+            try:
+                s.commit()
+                return True
+            except IntegrityError:
+                s.rollback()
+                return False

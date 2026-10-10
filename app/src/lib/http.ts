@@ -6,10 +6,16 @@
  * - Manda sempre: `Authorization: Bearer`, `X-Dispositivo-Id` (id fixo deste
  *   aparelho, guardado no localStorage) e `X-Conta` (conta em uso — PF ou a PJ
  *   escolhida no seletor).
- * - Em 401 tenta renovar a sessão uma vez com o refresh token.
+ * - Manda também `DPoP`: prova assinada pela chave não exportável deste aparelho
+ *   (src/lib/dpop.ts). O servidor só aceita o token junto com essa prova.
+ * - Em 401 tenta renovar a sessão uma vez com o refresh token (uma renovação por
+ *   vez: duas em paralelo com o mesmo refresh seriam vistas como reuso e o
+ *   servidor derrubaria a sessão).
  * - Dinheiro vem como string ("1500.00"); quem converte para número (só para
  *   exibir) é api.ts via `num()`. Nenhuma conta de dinheiro é feita no app.
  */
+
+import { criarProva } from "./dpop";
 
 export const API_URL: string | undefined =
   (import.meta.env["VITE_API_URL"] as string | undefined)?.replace(/\/$/, "") || undefined;
@@ -82,12 +88,19 @@ export function dispositivoId(): string {
 
 export const num = (v: string | number | null | undefined): number => (v == null ? 0 : Number(v));
 
-async function renovar(): Promise<boolean> {
+let renovando: Promise<boolean> | null = null;
+
+async function renovarAgora(): Promise<boolean> {
   if (!tokens?.refresh_token) return false;
-  // A sessão é presa ao aparelho: o refresh só vale com o mesmo X-Dispositivo-Id.
-  const r = await fetch(`${API_URL}/auth/refresh`, {
+  // A sessão é presa ao aparelho: o refresh só vale com a mesma chave (DPoP).
+  const url = `${API_URL}/auth/refresh`;
+  const r = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Dispositivo-Id": dispositivoId() },
+    headers: {
+      "Content-Type": "application/json",
+      "X-Dispositivo-Id": dispositivoId(),
+      DPoP: await criarProva("POST", url),
+    },
     body: JSON.stringify({ refresh_token: tokens.refresh_token }),
   });
   if (!r.ok) {
@@ -96,6 +109,13 @@ async function renovar(): Promise<boolean> {
   }
   salvarTokens((await r.json()) as Tokens);
   return true;
+}
+
+function renovar(): Promise<boolean> {
+  renovando ??= renovarAgora().finally(() => {
+    renovando = null;
+  });
+  return renovando;
 }
 
 export interface Resposta<T> {
@@ -115,10 +135,12 @@ export async function requisitar<T>(
   if (corpo !== undefined) headers["Content-Type"] = "application/json";
   if (!anonimo && tokens?.access_token) headers["Authorization"] = `Bearer ${tokens.access_token}`;
   if (!anonimo && contaNumero) headers["X-Conta"] = contaNumero;
+  const url = `${API_URL}${caminho}`;
+  if (!anonimo) headers["DPoP"] = await criarProva(metodo, url, tokens?.access_token);
 
   let r: Response;
   try {
-    r = await fetch(`${API_URL}${caminho}`, {
+    r = await fetch(url, {
       method: metodo,
       headers,
       body: corpo === undefined ? null : JSON.stringify(corpo),

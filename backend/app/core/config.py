@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     jwt_audience: str = Field(default="astro-app", alias="JWT_AUDIENCE")
     # Token intermediário do login (senha ok, falta o rosto). Curto de propósito.
     mfa_token_exp_min: int = Field(default=5, alias="MFA_TOKEN_EXP_MIN")
+    # Prova de posse da chave (DPoP, RFC 9449 -- app/core/dpop.py). Obrigatória no
+    # login de pessoas; proibido desligar em produção. A janela tolera relógio
+    # de aparelho levemente adiantado/atrasado.
+    dpop_obrigatorio: bool = Field(default=True, alias="DPOP_OBRIGATORIO")
+    dpop_janela_seg: int = Field(default=60, alias="DPOP_JANELA_SEG")
     # Access token curto (minutos): se vazar, a janela de uso é pequena.
     access_token_exp_min: int = Field(default=15, alias="ACCESS_TOKEN_EXP_MIN")
     # Refresh token longo (dias): rotacionado a cada uso (ver auth_service).
@@ -233,6 +238,8 @@ def get_settings() -> Settings:
         raise RuntimeError("DOCUMENTO_PROVEDOR=stub não pode ser usado em produção (aceita o que foi declarado).")
     if not s.kyc_documento_obrigatorio and s.em_producao:
         raise RuntimeError("KYC_DOCUMENTO_OBRIGATORIO=0 não pode ser usado em produção.")
+    if not s.dpop_obrigatorio and s.em_producao:
+        raise RuntimeError("DPOP_OBRIGATORIO=0 não pode ser usado em produção (token roubado voltaria a servir).")
     if s.biometria_motor not in ("opencv", "deepface"):
         raise RuntimeError(f"BIOMETRIA_MOTOR desconhecido: {s.biometria_motor!r} (use opencv ou deepface).")
     return s
