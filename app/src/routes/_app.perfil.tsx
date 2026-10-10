@@ -1,11 +1,23 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { BadgeCheck, ChevronRight, LogOut, Settings, ShieldCheck, Smartphone } from "lucide-react";
-import { aparelhoAtual, minhaConta } from "@/lib/api";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import {
+  BadgeCheck,
+  Clock,
+  CircleX,
+  ChevronRight,
+  LogOut,
+  Settings,
+  ShieldCheck,
+  Smartphone,
+} from "lucide-react";
+import { aparelhoAtual, minhaConta, minhaVerificacao, reenviarDocumento } from "@/lib/api";
+import type { DocumentoIdentidade, TipoDocumentoPessoa } from "@/lib/types";
+import { DocumentoPessoa } from "@/components/payflow/documento-pessoa";
 import { PAPEIS, PORTES, REGIMES_APURACAO } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, iniciais } from "@/lib/format";
-import { PageTitle } from "@/components/payflow/ui";
+import { ErrorBox, PageTitle } from "@/components/payflow/ui";
 
 export const Route = createFileRoute("/_app/perfil")({
   head: () => ({ meta: [{ title: "Meu perfil — Astro" }] }),
@@ -20,6 +32,38 @@ function Perfil() {
   const ehPJ = sessao?.tipo === "PJ";
   const c = conta.data;
   const confiavel = aparelho.data?.confiavel ?? true;
+  const cache = useQueryClient();
+  const verificacao = useQuery({ queryKey: ["identidade"], queryFn: minhaVerificacao });
+  const [enviando, setEnviando] = useState(false);
+  const [tipoDoc, setTipoDoc] = useState<TipoDocumentoPessoa>("cnh");
+  const [frente, setFrente] = useState<string | null>(null);
+  const [verso, setVerso] = useState<string | null>(null);
+  const envio = useMutation({
+    mutationFn: reenviarDocumento,
+    onSuccess: async (resultado) => {
+      // O reenvio pode ser recusado sem mudar o status da pessoa no servidor.
+      const atual = await minhaVerificacao();
+      cache.setQueryData(["identidade"], {
+        ...atual,
+        caso: { id: resultado.caso_id, status: resultado.status, motivos: resultado.motivos },
+      });
+      setEnviando(false);
+      setFrente(null);
+      setVerso(null);
+    },
+  });
+  const status = verificacao.data?.status;
+  const verificada = status === "aprovado";
+  const recusada = status === "reprovado";
+  const rotulo = verificada
+    ? "Verificada"
+    : recusada
+      ? "Recusada"
+      : status === "em_analise"
+        ? "Em análise"
+        : "Pendente";
+  const cor = verificada ? "text-pos" : recusada ? "text-errt" : "text-pending";
+  const Icone = verificada ? BadgeCheck : recusada ? CircleX : Clock;
 
   return (
     <div className="enter space-y-7">
@@ -35,8 +79,15 @@ function Perfil() {
           <p className="truncate text-sm text-mut2">
             {ehPJ ? "Conta empresa (PJ)" : "Conta pessoa física"}
           </p>
-          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-[color-mix(in_oklab,var(--pos)_14%,transparent)] px-2.5 py-0.5 text-xs font-medium text-pos">
-            <BadgeCheck size={13} /> Identidade verificada
+          <span
+            className={`mt-1 inline-flex items-center gap-1 rounded-full bg-tint px-2.5 py-0.5 text-xs font-medium ${cor}`}
+          >
+            <Icone size={13} />{" "}
+            {verificacao.isPending
+              ? "Carregando verificação…"
+              : verificacao.isError
+                ? "Verificação indisponível"
+                : rotulo}
           </span>
         </div>
       </section>
@@ -68,6 +119,93 @@ function Perfil() {
           )}
           <Dado label="Agência / conta" valor={`${c?.agencia ?? "0001"} / ${c?.numero ?? "—"}`} />
         </ul>
+      </section>
+
+      <section className="surface space-y-4 p-5">
+        <h2 className="text-lg text-ink">Verificação de identidade</h2>
+        {verificacao.isPending ? (
+          <p className="text-sm text-mut3">Carregando verificação…</p>
+        ) : verificacao.isError ? (
+          <>
+            <ErrorBox>{verificacao.error.message}</ErrorBox>
+            <button className="btn btn-ghost" onClick={() => void verificacao.refetch()}>
+              Tentar novamente
+            </button>
+          </>
+        ) : (
+          <>
+            <p className={`flex items-center gap-2 font-medium ${cor}`}>
+              <Icone size={20} />
+              {rotulo}
+            </p>
+            {!!verificacao.data?.caso?.motivos.length && (
+              <ul className="space-y-2 text-sm text-mut3">
+                {verificacao.data.caso.motivos.map((motivo, i) => (
+                  <li key={i}>{motivoSimples(motivo)}</li>
+                ))}
+              </ul>
+            )}
+            {!verificada && !enviando && (
+              <button
+                className="btn btn-ink w-full"
+                onClick={() => {
+                  envio.reset();
+                  setEnviando(true);
+                }}
+              >
+                Enviar documento
+              </button>
+            )}
+            {!verificada && enviando && (
+              <form
+                className="space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (!frente || (tipoDoc !== "passaporte" && !verso)) return;
+                  const documento: DocumentoIdentidade = {
+                    tipo: tipoDoc,
+                    frente,
+                    ...(tipoDoc !== "passaporte" && verso ? { verso } : {}),
+                  };
+                  envio.mutate(documento);
+                }}
+              >
+                <p className="text-sm text-mut3">
+                  Foto nítida, sem reflexo, com o documento inteiro. As imagens não ficam guardadas.
+                </p>
+                <fieldset disabled={envio.isPending} className="space-y-4">
+                  <DocumentoPessoa
+                    tipo={tipoDoc}
+                    frente={frente}
+                    verso={verso}
+                    onTipo={setTipoDoc}
+                    onFrente={setFrente}
+                    onVerso={setVerso}
+                  />
+                </fieldset>
+                {envio.error && <ErrorBox>{envio.error.message}</ErrorBox>}
+                <button
+                  className="btn btn-ink w-full"
+                  disabled={envio.isPending || !frente || (tipoDoc !== "passaporte" && !verso)}
+                >
+                  {envio.isPending ? "Enviando…" : "Enviar para verificação"}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost w-full"
+                  disabled={envio.isPending}
+                  onClick={() => {
+                    setEnviando(false);
+                    setFrente(null);
+                    setVerso(null);
+                  }}
+                >
+                  Cancelar
+                </button>
+              </form>
+            )}
+          </>
+        )}
       </section>
 
       {/* Segurança do aparelho */}
@@ -109,6 +247,19 @@ function Perfil() {
       </button>
     </div>
   );
+}
+
+function motivoSimples(motivo: string): string {
+  if (/sem OCR/i.test(motivo)) return "Precisamos analisar os dados do documento com mais cuidado.";
+  if (/MRZ.*nascimento|nascimento.*MRZ/i.test(motivo))
+    return "A data de nascimento do documento não confere com o cadastro.";
+  if (/MRZ|leitura mecânica/i.test(motivo))
+    return "Não conseguimos confirmar os códigos de segurança do documento.";
+  if (/faixa de dúvida/i.test(motivo))
+    return "Precisamos conferir se a foto do documento corresponde ao seu rosto.";
+  if (/sem selfie/i.test(motivo))
+    return "Não temos sua foto de verificação para comparar com o documento.";
+  return motivo;
 }
 
 /** CPF mascarado como no Pix: •••.456.789-•• */

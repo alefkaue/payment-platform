@@ -51,6 +51,9 @@ import type {
   EtapaRecuperacao,
   Fatura,
   KycResultado,
+  DocumentoIdentidade,
+  DocumentoReenvioResultado,
+  VerificacaoIdentidade,
   Limites,
   LoginEtapaMfa,
   LoginPayload,
@@ -1942,6 +1945,30 @@ export async function decidirPendente(
 }
 
 export { VIGENCIA_ATUAL };
+
+let verificacaoDemo: VerificacaoIdentidade = { status: "aprovado", caso: null };
+
+export async function minhaVerificacao(): Promise<VerificacaoIdentidade> {
+  if (MODO_API) return get("/identidade/kyc");
+  return structuredClone(verificacaoDemo);
+}
+
+export async function reenviarDocumento(
+  doc: DocumentoIdentidade,
+): Promise<DocumentoReenvioResultado> {
+  const pedido = {
+    tipo: doc.tipo,
+    frente: doc.frente,
+    ...(doc.tipo !== "passaporte" && doc.verso ? { verso: doc.verso } : {}),
+  };
+  if (MODO_API) return post("/identidade/documentos", pedido);
+  if (!pedido.frente) throw new ApiError("Envie a foto da frente do documento.");
+  if (pedido.tipo !== "passaporte" && !pedido.verso)
+    throw new ApiError("Envie a foto do verso do documento.");
+  const caso = { id: genId(), status: "em_analise" as const, motivos: [] };
+  verificacaoDemo = { status: caso.status, caso };
+  return { status: caso.status, motivos: [], caso_id: caso.id };
+}
 
 // Folha: nenhum pedido recebe conta de destino.
 const funcionariosDemo = new Map<number, Funcionario[]>();
