@@ -118,12 +118,13 @@ def pagar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | 
     total = sum((Decimal(r["valor"]) for r in resolvidos), Decimal("0"))
     rotulo = descricao or f"Salário {tempo.hoje_brt():%m/%Y}"
 
+    chave = _chave_da_folha(conta, rotulo, resolvidos, idempotency_key)
     motivo = pagamento_service.motivo_aprovacao(repo, conta, usuario, total)
     if motivo:
         p = pagamento_service.criar_pendente(
             repo, conta=conta, usuario=usuario, tipo="folha", valor=total, ip=ip, motivo=motivo,
             descricao=f"{rotulo} — {len(resolvidos)} funcionário(s)",
-            payload={"itens": resolvidos, "descricao": rotulo},
+            payload={"itens": resolvidos, "descricao": rotulo}, idempotency_key=chave,
         )
         return {"pendente": p}
 
@@ -132,7 +133,7 @@ def pagar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | 
         verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="folha")
     return {"resultados": executar(repo, usuario=usuario, conta=conta, dispositivo=dispositivo, itens=resolvidos,
                                    descricao=rotulo, ip=ip, verificacao=verificacao,
-                                   chave_base=_chave_da_folha(conta, rotulo, resolvidos, idempotency_key))}
+                                   chave_base=chave)}
 
 
 def executar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, itens: list[dict],

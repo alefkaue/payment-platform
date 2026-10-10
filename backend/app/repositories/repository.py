@@ -780,6 +780,11 @@ class Repositorio(RepositorioExtras):
                 or 0
             ) > 0
 
+    def transacao_por_chave(self, idempotency_key: str) -> Optional[dict]:
+        with self._sf() as s:
+            t = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
+            return self._transacao_dict(s, t) if t else None
+
     def obter_transacao(self, transacao_id: int) -> Optional[dict]:
         """Uma transação (comprovante), com a contestação (MED) dela, se houver."""
         with self._sf() as s:
@@ -1076,13 +1081,36 @@ class Repositorio(RepositorioExtras):
     # =========================================================================
 
     def criar_pendente(self, *, empresa_id: int, tipo: str, valor: Decimal, payload: dict, criado_por: int,
-                       descricao: Optional[str] = None, aprovacoes_necessarias: int = 1) -> dict:
+                       descricao: Optional[str] = None, aprovacoes_necessarias: int = 1,
+                       idempotency_key: Optional[str] = None) -> dict:
+        """Com chave: o reenvio devolve a pendência que já existe (C2-05); a mesma chave
+        para outra operação (tipo ou valor diferentes) é IdempotenciaConflitanteError."""
+        def existente(s: Session) -> Optional[dict]:
+            if not idempotency_key:
+                return None
+            ja = s.scalar(select(OperacaoPendente).where(OperacaoPendente.empresa_id == empresa_id,
+                                                         OperacaoPendente.idempotency_key == idempotency_key))
+            if ja is None:
+                return None
+            if ja.tipo != tipo or ja.valor != valor:
+                raise IdempotenciaConflitanteError()
+            return {**self._pendente_dict(ja), "_entregas": [], "_repetida": True}
+
         with self._sf() as s:
+            if (ja := existente(s)) is not None:
+                return ja
             p = OperacaoPendente(empresa_id=empresa_id, tipo=tipo, valor=valor, payload=payload, criado_por_usuario_id=criado_por,
                                  descricao=descricao, aprovacoes_necessarias=aprovacoes_necessarias, aprovacoes=[],
-                                 criado_em=tempo.agora())
+                                 criado_em=tempo.agora(), idempotency_key=idempotency_key)
             s.add(p)
-            s.flush()
+            try:
+                s.flush()
+            except IntegrityError:
+                # Mesma chave gravada por outra requisição ao mesmo tempo.
+                s.rollback()
+                if (ja := existente(s)) is not None:
+                    return ja
+                raise
             # Outbox: o aviso "operacao.pendente" nasce no mesmo commit da pendência.
             entregas = self._enfileirar_webhooks(s, (empresa_id, "operacao.pendente", {
                 "operacao_id": p.id, "tipo": tipo, "valor": valor}))

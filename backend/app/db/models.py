@@ -422,6 +422,8 @@ class OperacaoPendente(Base):
     decidido_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     resultado: Mapped[dict | None] = mapped_column(JSONTipo, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Chave de idempotência do pedido que gerou a pendência: reenviar não cria outra (C2-05).
+    idempotency_key: Mapped[str | None] = mapped_column(String(140), nullable=True)
 
 
 class Contestacao(Base):
@@ -788,6 +790,10 @@ for _nome, _regras in UNIQUES.items():
 for _nome, _regras in INDEXES.items():
     for _indice, _colunas in _regras:
         Index(_indice, *(Base.metadata.tables[_nome].c[c] for c in _colunas))
+
+# Uma pendência por chave de idempotência por empresa (C2-05).
+Index("uq_pendente_empresa_chave", OperacaoPendente.empresa_id, OperacaoPendente.idempotency_key, unique=True,
+      postgresql_where=text("idempotency_key IS NOT NULL"), sqlite_where=text("idempotency_key IS NOT NULL"))
 
 # MFA intermediário só pode concluir um login, inclusive em paralelo.
 Index("uq_mfa_usado_referencia", SessaoMfa.referencia, unique=True,

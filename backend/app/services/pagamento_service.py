@@ -32,7 +32,7 @@ from app.core import tempo
 from app.core.config import get_settings
 from app.db.models import AuthMetodo, PapelVinculo
 from app.deps import chave_do_cliente, exigir_papel, exigir_pj
-from app.repositories.exceptions import SaldoInsuficienteError
+from app.repositories.exceptions import IdempotenciaConflitanteError, SaldoInsuficienteError
 from app.repositories.repository import Repositorio
 from app.services import pix_service, seguranca_service, webhook_service
 from app.services.split_service import sem_split
@@ -112,7 +112,8 @@ def _checar_alcada_diaria(conta: dict, usuario: dict, valor: Decimal, checar_lim
 
 
 def criar_pendente(repo: Repositorio, *, conta: dict, usuario: dict, tipo: str, valor: Decimal, payload: dict,
-                   ip: str | None, descricao: str | None = None, motivo: str | None = None) -> dict:
+                   ip: str | None, descricao: str | None = None, motivo: str | None = None,
+                   idempotency_key: str | None = None) -> dict:
     """Operação que precisa de OUTRA pessoa. Quantas aprovações: a política do porte
     (2 na Grande acima do limite), menos 1 se quem lançou já assina por este valor."""
     from app.services import politica_pj
@@ -124,9 +125,16 @@ def criar_pendente(repo: Repositorio, *, conta: dict, usuario: dict, tipo: str, 
         necessarias = politica_pj.aprovacoes_necessarias(porte, Decimal(valor))
         if _assina(conta, Decimal(valor)):
             necessarias = max(1, necessarias - 1)
-    p = repo.criar_pendente(empresa_id=conta["empresa_id"], tipo=tipo, valor=valor,
-                            payload={**payload, "motivo": motivo} if motivo else payload,
-                            criado_por=usuario["id"], descricao=descricao, aprovacoes_necessarias=necessarias)
+    try:
+        p = repo.criar_pendente(empresa_id=conta["empresa_id"], tipo=tipo, valor=valor,
+                                payload={**payload, "motivo": motivo} if motivo else payload,
+                                criado_por=usuario["id"], descricao=descricao, aprovacoes_necessarias=necessarias,
+                                idempotency_key=f"{conta['carteira_id']}:{idempotency_key}" if idempotency_key else None)
+    except IdempotenciaConflitanteError:
+        raise HTTPException(status_code=409, detail="Esta chave de idempotência já foi usada em outra operação.") from None
+    if p.pop("_repetida", False):
+        p.pop("_entregas", None)
+        return p  # reenvio: a mesma pendência, sem novo aviso nem nova trilha
     repo.registrar_log(ator=usuario["email"], acao="operacao_pendente", ip=ip, usuario_id=usuario["id"],
                        empresa_id=conta["empresa_id"],
                        detalhe={"operacao_id": p["id"], "tipo": tipo, "valor": str(valor), "motivo": motivo,
@@ -169,7 +177,7 @@ def transferir(
             descricao=f"Pix para {destino.get('nome') or 'conta'}"[:200], payload={
                 "destino_carteira_id": destino["carteira_id"], "valor": str(valor), "descricao": descricao,
                 "idempotency_key": idempotency_key,
-            })}
+            }, idempotency_key=idempotency_key)}
 
     if not pular_alcada:
         motivo = motivo_aprovacao(repo, conta, usuario, valor)

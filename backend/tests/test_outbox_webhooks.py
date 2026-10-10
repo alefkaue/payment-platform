@@ -35,7 +35,8 @@ def test_pagamento_grava_o_evento_junto_e_repetir_nao_duplica(cliente, loja):
     [c] = _cobrar(cliente, dono, n, valor="10.00")
     h = {**pf.h(), "Idempotency-Key": "pagar-uma-vez"}
     assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=h).status_code == 200
-    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=h).status_code == 409  # já paga
+    reenvio = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=h)  # devolve o original (C2-04)
+    assert reenvio.status_code == 200
     assert [e["evento"] for e in _entregas(cliente, dono, n)] == ["cobranca.paga"]
     assert cliente.post("/admin/jobs/webhooks", headers=admin_h(cliente)).json()["processadas"] == 1
     assert len(enviados) == 1

@@ -88,7 +88,6 @@ def test_header_em_rota_sem_contrato_nao_promete_idempotencia(cliente):
     assert cliente.get("/contas/atual", headers={**a.h(), "Idempotency-Key": "ignorada"}).status_code == 200
 
 
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="ACHADO C2-04: cobrança já paga retorna 409 antes de consultar a chave idempotente")
 def test_cobranca_reenvio_header_retorna_mesmo_pagamento(cliente, loja):
     dono, n, _ = loja
     pf = Pessoa(cliente, "c2.cob@ex.com")
@@ -142,7 +141,6 @@ def test_sem_header_soma_teto_e_pj_tem_regra_propria(cliente):
 
 
 @pytest.mark.parametrize("tipo", ["pix", "folha", "cobranca"])
-@pytest.mark.xfail(strict=True, raises=AssertionError, reason="ACHADO C2-05: reenvio com mesma chave cria outra pendência em vez de devolver a intenção existente")
 def test_reenvio_pendente_mesma_chave_nao_duplica(cliente, pendente, tipo):
     dono, n, op, _, _ = pendente
     forn = Pessoa(cliente, "c2.pendente.destino@ex.com")

@@ -152,6 +152,12 @@ def pagar(
     cob = repo.obter_cobranca(txid=txid)
     if not cob:
         raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
+    if cob["status"] == "paga" and idempotency_key and cob.get("transacao_id"):
+        # Reenvio do mesmo pedido (resposta perdida na rede): devolve o pagamento original
+        # em vez de 409 -- só se a chave, desta conta, é a da transação que pagou (C2-04).
+        t = repo.transacao_por_chave(chave_idempotencia(conta, idempotency_key))
+        if t and t["id"] == cob["transacao_id"]:
+            return {"transacao": t}
     if cob["status"] != "aberta":
         raise HTTPException(status_code=409, detail=f"Cobrança está '{cob['status']}'.")
     if cob["recebedor"]["carteira_id"] == conta["carteira_id"]:
@@ -166,7 +172,7 @@ def pagar(
         motivo = None if pular_alcada else motivo_aprovacao(repo, conta, usuario, valor)
         if motivo:
             p = criar_pendente(repo, conta=conta, usuario=usuario, tipo="pagamento_cobranca", valor=valor, ip=ip,
-                               payload={"txid": txid}, motivo=motivo)
+                               payload={"txid": txid}, motivo=motivo, idempotency_key=idempotency_key)
             return {"pendente": p}
 
     verificacao = verificacao_previa
