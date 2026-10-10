@@ -1,6 +1,6 @@
 # Astro — inventário de endpoints
 
-> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (107 rotas).
+> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (108 rotas).
 > Não edite à mão: rode o script de novo quando a API mudar.
 
 - **pública**: sem login (as de autenticação têm limite por IP e/ou DPoP).
@@ -57,6 +57,7 @@
 | `POST` | `/pagamentos/lote` | login + DPoP | X-Conta | PJ: admin/aprovador/operador; alçada, alçada diária e assinatura conjunta → pendente (por item); até 100 itens |
 | `GET` | `/pagamentos/transacoes` | login + DPoP | X-Conta |  |
 | `GET` | `/pagamentos/transacoes/{transacao_id}` | login + DPoP | X-Conta |  |
+| `POST` | `/pagamentos/transacoes/{transacao_id}/devolver` | login + DPoP | X-Conta | Só quem recebeu; até 90 dias; parcial ou total, nunca acima do recebido (somando MED); rosto acima de R$ 500; idempotente |
 | `POST` | `/pagamentos/transacoes/{transacao_id}/contestar` | login + DPoP | X-Conta | Só transação da conta em uso (MED) |
 | `POST` | `/pagamentos/pendentes/{operacao_id}/decidir` | login + DPoP | X-Conta | Aprovar: admin/aprovador ≠ quem lançou, dentro da alçada, rosto; cancelar: quem lançou |
 | `GET` | `/pagamentos/split/simular` | pública |  |  |

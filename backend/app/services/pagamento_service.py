@@ -426,6 +426,41 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
 # =============================================================================
 
 
+def devolver_pix(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, transacao_id: int,
+                 valor: Decimal | None, biometria, idempotency_key: str | None, ip: str | None) -> dict:
+    """Devolução voluntária: quem recebeu um Pix devolve tudo ou parte (R1-13). Não é MED:
+    é decisão do recebedor. Mesmas travas de quem movimenta: papel, aparelho, rosto acima
+    do limite facial, idempotência."""
+    exigir_papel(conta, *PODE_MOVIMENTAR)
+    seguranca_service.exigir_dispositivo(dispositivo)
+    t = repo.obter_transacao(transacao_id)
+    if not t or t["destino"]["carteira_id"] != conta["carteira_id"]:
+        raise HTTPException(status_code=404, detail="Transação não encontrada nesta conta.")
+    teto = Decimal(valor) if valor is not None else t["liquido"]
+    verificacao, metodo = None, AuthMetodo.SENHA
+    if teto > _limite_facial():
+        verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="devolucao")
+        metodo = AuthMetodo.SELFIE
+    try:
+        dev = repo.devolver_voluntario(
+            transacao_id=transacao_id, recebedor_carteira_id=conta["carteira_id"],
+            valor=Decimal(valor) if valor is not None else None, autor_usuario_id=usuario["id"], auth_metodo=metodo,
+            idempotency_key=chave_idempotencia(conta, idempotency_key), verificacao_facial=verificacao,
+            prazo_dias=get_settings().devolucao_prazo_dias)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Transação não encontrada nesta conta.") from None
+    except SaldoInsuficienteError:
+        raise HTTPException(status_code=400, detail="Saldo insuficiente para devolver.") from None
+    except IdempotenciaConflitanteError:
+        raise HTTPException(status_code=409, detail="Esta chave de idempotência já foi usada em outra operação.") from None
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    repo.registrar_log(ator=usuario["email"], acao="pix_devolvido", ip=ip, usuario_id=usuario["id"],
+                       empresa_id=conta.get("empresa_id"),
+                       detalhe={"transacao_id": transacao_id, "devolucao_id": dev["id"], "valor": str(dev["valor_bruto"])})
+    return dev
+
+
 def contestar(repo: Repositorio, *, usuario: dict, conta: dict, transacao_id: int, motivo: str, ip: str | None) -> dict:
     t = repo.obter_transacao(transacao_id)
     if not t or t["origem"]["carteira_id"] != conta["carteira_id"]:

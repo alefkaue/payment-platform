@@ -9,6 +9,7 @@ from app.repositories.repository import Repositorio
 from app.schemas.comum import PendenteResponse, TransacaoResponse
 from app.schemas.pagamentos import (
     ContestacaoCreate,
+    DevolucaoCreate,
     DecisaoPendente,
     LoteCreate,
     LoteItemResultado,
@@ -77,6 +78,23 @@ def comprovante(transacao_id: int, conta: dict = Depends(conta_atual), repo: Rep
     if not t or conta["carteira_id"] not in (t["origem"]["carteira_id"], t["destino"]["carteira_id"]):
         raise HTTPException(status_code=404, detail="Transação não encontrada.")
     return t
+
+
+@router.post("/transacoes/{transacao_id}/devolver", response_model=TransacaoResponse, status_code=201)
+def devolver(
+    transacao_id: int,
+    dados: DevolucaoCreate,
+    usuario: dict = Depends(usuario_atual),
+    conta: dict = Depends(conta_atual),
+    dispositivo: dict | None = Depends(dispositivo_atual),
+    repo: Repositorio = Depends(get_repo),
+    ip: str | None = Depends(ip_cliente),
+    chave_header: str | None = Depends(chave_idempotencia),
+):
+    """Quem recebeu um Pix devolve tudo (sem `valor`) ou parte, até 90 dias (não é MED)."""
+    return pagamento_service.devolver_pix(
+        repo, usuario=usuario, conta=conta, dispositivo=dispositivo, transacao_id=transacao_id, valor=dados.valor,
+        biometria=dados.biometria, idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip)
 
 
 @router.post("/transacoes/{transacao_id}/contestar", status_code=201)

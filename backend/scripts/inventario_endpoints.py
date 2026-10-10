@@ -63,6 +63,7 @@ REGRAS = {
     ("GET", "/pix/consultar/{chave}"): "Nome mascarado; 60 consultas/hora por pessoa",
     ("POST", "/admin/depositar"): "Admin; IP na lista ADMIN_IPS_PERMITIDOS (sem lista: desligado em produção)",
     ("POST", "/admin/jobs/conciliar-pendentes"): "Admin; fecha operação presa em executando conferindo a chave de idempotência; nunca reexecuta",
+    ("POST", "/pagamentos/transacoes/{transacao_id}/devolver"): "Só quem recebeu; até 90 dias; parcial ou total, nunca acima do recebido (somando MED); rosto acima de R$ 500; idempotente",
 }
 
 

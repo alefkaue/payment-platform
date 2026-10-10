@@ -41,6 +41,14 @@ class DepositoRequest(BaseModel):
     valor: Dinheiro
 
 
+class DevolucaoCreate(BaseModel):
+    """Quem recebeu um Pix devolve tudo (valor vazio) ou parte dele ao pagador."""
+
+    valor: Dinheiro | None = None
+    biometria: ProvaBiometrica | None = None
+    idempotency_key: str | None = Field(default=None, max_length=80)
+
+
 class ContestacaoCreate(BaseModel):
     motivo: str = Field(..., min_length=5, max_length=280)
 

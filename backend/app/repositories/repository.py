@@ -14,7 +14,7 @@ passarem as duas pelo mesmo limite.
 
 import json
 from contextlib import nullcontext
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Callable, Optional
 
@@ -597,7 +597,10 @@ class Repositorio(RepositorioExtras):
                 return {"valor_devolvido": ZERO, "transacao": None}
             if not valor_maximo.is_finite() or valor_maximo <= 0:
                 raise ValueError("Valor de devolução inválido.")
-            valor_maximo = min(valor_maximo, t.liquido)
+            # Nunca devolve mais que o recebido, somando o que já voltou (devolução voluntária).
+            valor_maximo = min(valor_maximo, t.liquido - self._ja_devolvido(s, t.id))
+            if valor_maximo <= 0:
+                return {"valor_devolvido": ZERO, "transacao": None}
             ids = sorted({t.origem_carteira_id, t.destino_carteira_id})
             stmt = select(Carteira).where(Carteira.id.in_(ids)).order_by(Carteira.id)
             if usando_postgres():
@@ -632,6 +635,66 @@ class Repositorio(RepositorioExtras):
             if _sessao is None:
                 s.commit()
             return {"valor_devolvido": total, "transacao": self._transacao_dict(s, dev)}
+
+    @staticmethod
+    def _ja_devolvido(s: Session, transacao_id: int) -> Decimal:
+        return Decimal(s.scalar(select(func.coalesce(func.sum(Transacao.valor_bruto), 0)).where(
+            Transacao.transacao_original_id == transacao_id, Transacao.tipo == "devolucao")) or 0)
+
+    def devolver_voluntario(self, *, transacao_id: int, recebedor_carteira_id: int, valor: Optional[Decimal],
+                            autor_usuario_id: int, auth_metodo: AuthMetodo, idempotency_key: Optional[str],
+                            verificacao_facial: Optional[dict], prazo_dias: int) -> dict:
+        """Quem RECEBEU um Pix devolve tudo ou parte ao pagador (devolução Pix, até o prazo).
+        A soma das devoluções nunca passa do valor recebido; tudo com as carteiras travadas."""
+        with self._sf() as s:
+            if idempotency_key:
+                ja = s.scalar(select(Transacao).where(Transacao.idempotency_key.in_(_chaves_equivalentes(idempotency_key))))
+                if ja is not None:
+                    if ja.tipo != "devolucao" or ja.transacao_original_id != transacao_id or (
+                            valor is not None and ja.valor_bruto != valor):
+                        raise IdempotenciaConflitanteError()
+                    return self._transacao_dict(s, ja)
+            t = s.scalar(select(Transacao).where(Transacao.id == transacao_id).with_for_update())
+            if t is None or t.destino_carteira_id != recebedor_carteira_id:
+                raise LookupError("Transação não encontrada nesta conta.")
+            if t.tipo != "transferencia":
+                raise ValueError("Só um Pix recebido pode ser devolvido por aqui (cobrança tem estorno).")
+            if t.status == StatusTransacao.RETIDA:
+                raise ValueError("Este valor está em análise de segurança; a devolução fica disponível depois.")
+            if tempo.agora() - t.criado_em.replace(tzinfo=t.criado_em.tzinfo or timezone.utc) > timedelta(days=prazo_dias):
+                raise ValueError(f"O prazo de devolução ({prazo_dias} dias) terminou.")
+            restante = t.liquido - self._ja_devolvido(s, t.id)
+            valor = restante if valor is None else valor
+            if restante <= 0:
+                raise ValueError("Este Pix já foi devolvido por inteiro.")
+            if not valor.is_finite() or valor <= 0 or valor != valor.quantize(Decimal("0.01")) or valor > restante:
+                raise ValueError(f"Valor de devolução inválido (pode devolver até {restante}).")
+            ids = sorted({t.origem_carteira_id, t.destino_carteira_id})
+            stmt = select(Carteira).where(Carteira.id.in_(ids)).order_by(Carteira.id)
+            if usando_postgres():
+                stmt = stmt.with_for_update().execution_options(populate_existing=True)
+            cs = {c.id: c for c in s.scalars(stmt).all()}
+            pagador, recebedor = cs[t.origem_carteira_id], cs[t.destino_carteira_id]
+            if recebedor.saldo < valor:
+                raise SaldoInsuficienteError()
+            self._mover(s, recebedor, -valor, motivo="devolucao")
+            self._mover(s, pagador, valor, motivo="devolucao")
+            dev = Transacao(
+                origem_carteira_id=recebedor.id, destino_carteira_id=pagador.id, tipo="devolucao",
+                valor_bruto=valor, liquido=valor, cbs=ZERO, ibs=ZERO, tipo_destino=pagador.titular_tipo,
+                aplicou_split=False, auth_metodo=auth_metodo, autor_usuario_id=autor_usuario_id,
+                transacao_original_id=t.id, idempotency_key=idempotency_key, verificacao_facial=verificacao_facial,
+                criado_em=tempo.agora(), descricao="Devolução de Pix",
+            )
+            s.add(dev)
+            s.flush()
+            self._vincular_historico(s, dev.id)
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                raise IdempotenciaConflitanteError() from None
+            return self._transacao_dict(s, dev)
 
     def estornar_cobranca(self, *, cobranca_id: int, autor_usuario_id: int,
                           evento: Optional[Callable[[dict], tuple[Optional[int], str, dict]]] = None) -> dict:

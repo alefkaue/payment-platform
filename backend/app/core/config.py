@@ -128,6 +128,8 @@ class Settings(BaseSettings):
     bloqueio_cautelar_horas: int = Field(default=72, alias="BLOQUEIO_CAUTELAR_HORAS")
     # Prazo para o pagador contestar uma transação (MED).
     contestacao_prazo_dias: int = Field(default=80, alias="CONTESTACAO_PRAZO_DIAS")
+    # Devolução de Pix por quem recebeu (Regulamento Pix): integral ou parcial, até este prazo.
+    devolucao_prazo_dias: int = Field(default=90, ge=1, le=365, alias="DEVOLUCAO_PRAZO_DIAS")
 
     # ---------- Rate limit por IP ----------
     login_max_tentativas_ip: int = Field(default=30, alias="LOGIN_MAX_TENTATIVAS_IP")
