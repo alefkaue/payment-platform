@@ -123,7 +123,7 @@ def test_dinheiro_nunca_nasce_nem_some(cliente, semente, monkeypatch):
             elif op == "repassar":
                 cliente.post("/admin/tributos/repassar", headers=adm)
             elif op == "rendimento":
-                cliente.post(f"/admin/jobs/rendimento?data=2026-10-{rnd.randint(1, 7):02d}", headers=adm)
+                cliente.post("/admin/jobs/rendimento", headers=adm)  # só o dia corrente (R1-20)
             feitos += 1
         except (KeyError, ValueError):
             pass  # resposta de erro com outro formato: a invariante abaixo é o que importa

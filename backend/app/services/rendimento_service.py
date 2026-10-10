@@ -30,7 +30,12 @@ def taxa_diaria() -> Decimal:
 
 
 def processar(repo: Repositorio, *, data: date | None = None) -> dict:
-    d = data or tempo.hoje_brt()
+    hoje = tempo.hoje_brt()
+    d = data or hoje
+    # O cálculo usa o saldo ATUAL: creditar outro dia (passado ou futuro) inventaria juros
+    # sobre um saldo que a carteira não tinha naquele dia (relatório R1-20).
+    if d != hoje:
+        raise HTTPException(status_code=400, detail="Rendimento só é creditado no próprio dia (o saldo de outro dia não é conhecido).")
     if not tempo.dia_util(d):
         raise HTTPException(status_code=400, detail="Rendimento só é creditado em dia útil.")
     taxa = taxa_diaria()

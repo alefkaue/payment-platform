@@ -203,6 +203,8 @@ def test_rendimento_diario(cliente, relogio):
     assert cliente.post("/admin/jobs/rendimento?data=2026-10-07", headers=adm).json()["carteiras"] == 0
     # fim de semana não rende
     assert cliente.post("/admin/jobs/rendimento?data=2026-10-10", headers=adm).status_code == 400
+    # R1-20: não credita dia passado sobre o saldo de hoje
+    assert cliente.post("/admin/jobs/rendimento?data=2026-10-06", headers=adm).status_code == 400
     assert pf.saldo() == str(10000 + esperado)
 
 
