@@ -187,3 +187,13 @@ def test_extrato_so_da_propria_conta(cliente):
 def test_valor_com_mais_de_duas_casas(cliente):
     a, b = Pessoa(cliente, "a@ex.com"), Pessoa(cliente, "b@ex.com")
     assert a.transferir(conta_ref(b.numero), "0.001").status_code == 422
+
+
+def test_comprovante_mostra_que_ja_tem_contestacao(cliente):
+    a, b = Pessoa(cliente, "med.a@ex.com"), Pessoa(cliente, "med.b@ex.com")
+    depositar(cliente, a.numero, 100)
+    tid = a.transferir(conta_ref(b.numero), "30.00").json()["id"]
+    assert cliente.get(f"/pagamentos/transacoes/{tid}", headers=a.h()).json()["contestacao"] is None
+    r = cliente.post(f"/pagamentos/transacoes/{tid}/contestar", json={"motivo": "golpe do falso parente"}, headers=a.h())
+    assert r.status_code in (200, 201), r.text
+    assert cliente.get(f"/pagamentos/transacoes/{tid}", headers=a.h()).json()["contestacao"]["status"] == "aberta"

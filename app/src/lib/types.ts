@@ -122,7 +122,7 @@ export interface Transacao {
   auth_metodo: "senha" | "selfie" | "aprovacao" | "automatico" | "sistema";
   /** concluida | retida (bloqueio cautelar) | devolvida | devolvida_parcial */
   status?: string;
-  /** Estado local do MED na demonstração; a API não expõe a contestação no extrato. */
+  /** Já existe contestação (MED) desta transação; vem no comprovante (API e demonstração). */
   contestacao_aberta?: boolean;
   categoria: CategoriaTx;
   /** Rótulo humano: "Padaria Aurora", "Voo GRU → GIG", "Pix para João". */

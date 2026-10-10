@@ -766,9 +766,14 @@ class Repositorio(RepositorioExtras):
             ) > 0
 
     def obter_transacao(self, transacao_id: int) -> Optional[dict]:
+        """Uma transação (comprovante), com a contestação (MED) dela, se houver."""
         with self._sf() as s:
             t = s.get(Transacao, transacao_id)
-            return self._transacao_dict(s, t) if t else None
+            if not t:
+                return None
+            c = s.scalar(select(Contestacao).where(Contestacao.transacao_id == t.id))
+            return {**self._transacao_dict(s, t),
+                    "contestacao": {"status": c.status, "criado_em": _utc(c.criado_em)} if c else None}
 
     def listar_transacoes(self, *, carteira_id: Optional[int] = None, limite: int = 50, offset: int = 0) -> list[dict]:
         with self._sf() as s:

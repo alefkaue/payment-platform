@@ -670,7 +670,10 @@ export async function transacaoPorId(id: number): Promise<Transacao> {
   await delay(200);
   if (MODO_API) {
     const c = await get<ContaApi>("/contas/atual");
-    return mapTransacao(await get<TransacaoApi>(`/pagamentos/transacoes/${id}`), c.carteira_id);
+    const t = await get<TransacaoApi & { contestacao?: { status: string } | null }>(
+      `/pagamentos/transacoes/${id}`,
+    );
+    return { ...mapTransacao(t, c.carteira_id), contestacao_aberta: Boolean(t.contestacao) };
   }
   await sincronizar();
   const t = todasTransacoes().find((x) => x.id === id);

@@ -83,6 +83,8 @@ class TransacaoResponse(BaseModel):
     descricao: str | None = None
     transacao_original_id: int | None = None
     data_hora: datetime
+    # Só no comprovante (GET /pagamentos/transacoes/{id}): MED aberta/decidida.
+    contestacao: dict | None = None
 
 
 class PendenteResponse(BaseModel):
