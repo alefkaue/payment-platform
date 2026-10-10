@@ -1,7 +1,7 @@
 # Astro — relatório da rodada "só celular" e do trabalho Claude + Codex (10/10/2026)
 
 > Arquivo de passagem de bastão. Escrito pelo Claude Code e atualizado ao longo do trabalho,
-> para o Alef ler ao voltar. **Estado: ver a seção 5 (andamento).**
+> para o Alef ler ao voltar. **Estado: tudo concluído e no GitHub (seção 5).**
 
 ## 1. Como o trabalho foi organizado
 
@@ -62,14 +62,31 @@ Você pediu para tirar a web e deixar só celular, e deixou as decisões comigo:
 |---|---|
 | Gradle (dois APKs), CI com Release, Azure só com página de download, plugins | ✅ feito (commit `b11075c`); **build dos dois APKs passou no CI do GitHub** |
 | `RODAR-NO-PC.md`, `PENTEST.md`, `MOBILE.md`, `AZURE.md`, README | ✅ feito (commit `2ca6549`) |
-| App se comportar como Android (botão Voltar, áreas seguras, teclado, rede ruim, câmera traseira) | ⏳ com a Codex (cartão M1) |
-| Tag `apk-v1.0` (primeiro Release com os APKs) | ⏳ depois do M1 |
+| App se comportar como Android (botão Voltar, áreas seguras, teclado, rede ruim, câmera traseira) | ✅ feito pela Codex, revisado e juntado (commit `8e6baa2`); app 157 testes |
+| Tag `apk-v1.0` (primeiro Release com os APKs) | ✅ [Release apk-v1.0](https://github.com/alefkaue/payment-platform/releases/tag/apk-v1.0) com `Astro.apk`, `Astro-Lab.apk` e `SHA256SUMS.txt` |
+
+### Detalhes do M1 (app com comportamento de Android)
+
+- **Botão Voltar**: fecha primeiro o que está aberto (menu "Mais", câmera, confirmações); senão
+  volta a tela; no Início/Login pede um segundo toque para sair.
+- **Áreas seguras** (notch e barra de gestos) e barra de status na cor do app.
+- **Teclado certo** em cada campo (numérico em valores/CPF, e-mail em e-mail) sem cobrir o botão.
+- **Sem conexão**: faixa no topo e botões que movem dinheiro desabilitados.
+- **Câmera**: traseira no documento, frontal na prova de vida.
+- **Sessão no celular só na memória**: se o Android fechar o app, entra de novo com senha e
+  rosto (como os bancos reais).
 
 ## 6. O que depende de você
 
-- **Ver o CI** depois do envio (aba Actions do GitHub): o build Android com os dois sabores e o
-  Release não puderam ser testados nesta máquina (não há Android SDK nem `az`/Bicep aqui).
+- O CI do GitHub **passou**: backend (com Postgres), build dos dois APKs e o Release. O que não
+  pôde ser testado aqui: o app rodando num emulador/celular de verdade e o Bicep compilado (não há
+  Android SDK nem `az`/Bicep nesta máquina).
 - **Testar num emulador** seguindo `RODAR-NO-PC.md` (principalmente a prova de vida pela webcam).
-- **Azure**: subir o ambiente (`AZURE.md`) com `ATESTACAO_EXIGIDA=0` e preencher a variável
-  `ASTRO_API_URL` no GitHub, senão o APK sai em modo demonstração.
+- **Importante — os APKs do `apk-v1.0` estão em modo demonstração** (dados fictícios no próprio
+  aparelho, sem API) e assinados com a chave de debug: a Azure ainda não está no ar, então não
+  existe `ASTRO_API_URL`. Quando subir a Azure (`AZURE.md`, com `ATESTACAO_EXIGIDA=0`):
+  1. GitHub → Settings → Variables → `ASTRO_API_URL` = a `apiUrl` do Front Door;
+  2. (recomendado) secrets da chave de assinatura (`AZURE.md` §4, `chave_apk.py`);
+  3. `git tag apk-v1.1 && git push origin apk-v1.1` → sai o Release ligado à API de verdade.
+  Os links `releases/latest/download/...` do `RODAR-NO-PC.md` passam a apontar para ele sozinhos.
 - Preencher período e contato no `PENTEST.md`.
