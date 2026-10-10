@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Rede do APK (SEGURANCA.md item 10). Este é o arquivo BASE: só HTTPS e só as CAs do
+  sistema (CA instalada pelo usuário não vale, então um proxy "de bolso" não lê o tráfego).
+  O CI troca este arquivo pelo gerado em app/scripts/pinos.mjs, que acrescenta o
+  certificate pinning do domínio da API.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -122,6 +122,18 @@ class Settings(BaseSettings):
     # Consultas de chave Pix por usuário por hora (anti-varredura, como no DICT).
     consulta_chave_max_hora: int = Field(default=60, alias="CONSULTA_CHAVE_MAX_HORA")
 
+    # ---------- Atestação do aparelho (APK Android, SEGURANCA.md item 10) ----------
+    # Pacote do app que pode pedir a chave no Keystore.
+    atestacao_pacote: str = Field(default="com.payflow.app", alias="ATESTACAO_PACOTE")
+    # SHA-256 (hex, vírgula) do certificado que assina o APK. Vazio = não confere a
+    # assinatura (APK de debug do CI, que muda de chave a cada build).
+    atestacao_assinaturas: str = Field(default="", alias="ATESTACAO_ASSINATURAS")
+    # 1 = login só com chave atestada em hardware (ambiente só de APK; desliga PWA/web).
+    atestacao_exigida: bool = Field(default=False, alias="ATESTACAO_EXIGIDA")
+    # Lista de revogação da Google (chaves de atestação vazadas). Vazio = não confere.
+    atestacao_status_url: str = Field(default="https://android.googleapis.com/attestation/status",
+                                      alias="ATESTACAO_STATUS_URL")
+
     # ---------- Biometria ----------
     # Quantas análises faciais rodam ao mesmo tempo. O resto espera até
     # BIOMETRIA_ESPERA_SEG e recebe 503 -- não deixa a biometria ocupar todas as
@@ -222,6 +234,10 @@ class Settings(BaseSettings):
     def proxies_confiaveis_redes(self) -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
         # strict=False: "10.0.0.1" vira 10.0.0.1/32 e "10.20.0.5/23" não derruba o boot.
         return [ipaddress.ip_network(p.strip(), strict=False) for p in self.proxies_confiaveis.split(",") if p.strip()]
+
+    @property
+    def atestacao_assinaturas_lista(self) -> set[str]:
+        return {a.strip().lower().replace(":", "") for a in self.atestacao_assinaturas.split(",") if a.strip()}
 
     @property
     def admin_ips_lista(self) -> set[str]:

@@ -680,7 +680,8 @@ class Repositorio(RepositorioExtras):
             s.refresh(lim)
             return self._limite_dict(lim)
 
-    def registrar_dispositivo(self, *, usuario_id: int, id_hash: str, nome: Optional[str], confiavel: bool = False) -> dict:
+    def registrar_dispositivo(self, *, usuario_id: int, id_hash: str, nome: Optional[str], confiavel: bool = False,
+                              atestacao: Optional[str] = None, atualizar_atestacao: bool = False) -> dict:
         with self._sf() as s:
             d = s.scalar(select(Dispositivo).where(Dispositivo.usuario_id == usuario_id, Dispositivo.id_hash == id_hash))
             agora = tempo.agora()
@@ -693,6 +694,8 @@ class Repositorio(RepositorioExtras):
             d.ultimo_uso = agora
             if nome:
                 d.nome = nome
+            if atualizar_atestacao:
+                d.atestacao, d.atestacao_em = atestacao, agora if atestacao else None
             s.commit()
             s.refresh(d)
             return self._dispositivo_dict(d)
@@ -1367,7 +1370,8 @@ class Repositorio(RepositorioExtras):
     def _dispositivo_dict(d: Dispositivo) -> dict:
         return {"id": d.id, "nome": d.nome, "confiavel": d.confiavel and not d.bloqueado,
                 "confiavel_em": _utc(d.confiavel_em), "bloqueado": d.bloqueado, "bloqueado_em": _utc(d.bloqueado_em),
-                "ultimo_uso": _utc(d.ultimo_uso), "criado_em": _utc(d.criado_em)}
+                "ultimo_uso": _utc(d.ultimo_uso), "criado_em": _utc(d.criado_em),
+                "atestacao": d.atestacao, "atestacao_em": _utc(d.atestacao_em)}
 
     def _transacao_dict(self, s: Session, t: Transacao) -> dict:
         origem = s.get(Carteira, t.origem_carteira_id)

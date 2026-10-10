@@ -2,6 +2,11 @@ name: Build APK (Astro)
 
 # Gera o .apk do app (Capacitor) na nuvem — sem Android SDK local e sem Expo.
 # O APK sai como "artefato" da execução (aba Actions do GitHub).
+#
+# Segurança do APK (SEGURANCA.md item 10): chave DPoP no Keystore com atestação
+# (plugin ChaveAparelho), certificate pinning da API (scripts/pinos.mjs), sem
+# backup, sem print de tela e sem depuração do WebView. Com a chave de assinatura
+# nos secrets (ANDROID_KEYSTORE_B64 etc.), sai também o APK release assinado.
 
 on:
   push:
@@ -59,8 +64,19 @@ jobs:
           rm -rf android/app/src/main/assets/public
           mkdir -p android/app/src/main/assets/public
           cp -r www/. android/app/src/main/assets/public/
-          printf '%s' '{"appId":"com.payflow.app","appName":"Astro","webDir":"www","backgroundColor":"#0A0A0A"}' > android/app/src/main/assets/capacitor.config.json
+          # webContentsDebuggingEnabled: false — nem o APK de debug abre o WebView no chrome://inspect
+          # (quem controla o JavaScript do app pede assinaturas à chave do Keystore).
+          printf '%s' '{"appId":"com.payflow.app","appName":"Astro","webDir":"www","backgroundColor":"#0A0A0A","android":{"webContentsDebuggingEnabled":false}}' > android/app/src/main/assets/capacitor.config.json
           echo "conteúdo de assets/public:" && ls android/app/src/main/assets/public | head
+
+      # Pins das CAs da API (falha se a API estiver configurada e não responder).
+      - name: Certificate pinning da API
+        working-directory: app
+        env:
+          VITE_API_URL: ${{ vars.ASTRO_API_URL }}
+        run: |
+          node scripts/pinos.mjs
+          cat android/app/src/main/res/xml/network_security_config.xml
 
       - name: Gerar APK de debug
         working-directory: app/android
@@ -81,4 +97,37 @@ jobs:
         with:
           name: Astro-debug-apk
           path: app/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      # Release assinado: só com a chave nos secrets. A impressão SHA-256 do certificado
+      # vai no resumo da execução: é o valor de ATESTACAO_ASSINATURAS no backend.
+      - name: Gerar APK release assinado
+        id: release
+        working-directory: app/android
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ASTRO_KEYSTORE_SENHA: ${{ secrets.ANDROID_KEYSTORE_SENHA }}
+          ASTRO_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ASTRO_KEY_SENHA: ${{ secrets.ANDROID_KEY_SENHA }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "Sem ANDROID_KEYSTORE_B64 nos secrets: só o APK de debug." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          export ASTRO_KEYSTORE="$RUNNER_TEMP/astro.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$ASTRO_KEYSTORE"
+          ./gradlew assembleRelease --no-daemon
+          rm -f "$ASTRO_KEYSTORE"
+          APK=app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/certs.txt
+          SHA=$(grep -m1 "SHA-256 digest" /tmp/certs.txt | awk '{print $NF}')
+          echo "ATESTACAO_ASSINATURAS=$SHA" >> "$GITHUB_STEP_SUMMARY"
+          echo "gerado=1" >> "$GITHUB_OUTPUT"
+
+      - name: Publicar o APK release
+        if: steps.release.outputs.gerado == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Astro-release-apk
+          path: app/android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error

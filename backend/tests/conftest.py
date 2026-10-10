@@ -27,6 +27,8 @@ os.environ["DOCUMENTO_PROVEDOR"] = "stub"
 os.environ["DPOP_OBRIGATORIO"] = "0"
 # Loja/Viagens: desligados por padrão; test_beneficios.py testa o módulo ligado.
 os.environ["BENEFICIOS_HABILITADOS"] = "1"
+# Atestação: sem baixar a lista de revogação da Google nos testes.
+os.environ["ATESTACAO_STATUS_URL"] = ""
 
 
 @pytest.fixture()

@@ -57,7 +57,7 @@ def login_mfa(
     """Etapa 2 (rosto com prova de vida). No mesmo aparelho e com a mesma chave da etapa 1."""
     return auth_service.concluir_login(repo, mfa_token=dados.mfa_token, prova=dados.biometria, ip=ip,
                                        dispositivo_hash=_dev(x_dispositivo_id), user_agent=_ua(request),
-                                       jkt=_jkt(request, dpop, repo))
+                                       jkt=_jkt(request, dpop, repo), atestacao=dados.atestacao)
 
 
 @router.post("/login/mfa/desafio", status_code=201)

@@ -11,9 +11,21 @@
  * sessão) o hash do access token. O servidor amarra os tokens à impressão da
  * chave no login; um token copiado para outra máquina não serve sem ela.
  *
- * No app nativo (Capacitor) o WebView tem o mesmo WebCrypto/IndexedDB; o passo
- * seguinte é guardar a chave no Keystore/Keychain (SEGURANCA.md item 10).
+ * No APK (Capacitor) a chave fica no Android Keystore, em hardware (StrongBox ou
+ * TEE), pelo plugin nativo `ChaveAparelho` (android/.../ChaveAparelhoPlugin.java):
+ * o JavaScript só pede assinaturas. O Keystore também entrega a cadeia de
+ * atestação, que vai no login para o servidor conferir que a chave está mesmo em
+ * hardware, no nosso app, num aparelho íntegro (SEGURANCA.md item 10).
  */
+
+import { Capacitor, registerPlugin } from "@capacitor/core";
+
+interface ChaveAparelhoPlugin {
+  chavePublica(): Promise<{ jwk: JsonWebKey; atestacao: string[] }>;
+  assinar(opcoes: { dados: string }): Promise<{ assinatura: string }>;
+}
+
+const ChaveAparelho = registerPlugin<ChaveAparelhoPlugin>("ChaveAparelho");
 
 const BANCO = "astro-chaves";
 const LOJA = "chaves";
@@ -24,7 +36,15 @@ interface ParChaves {
   publicKey: CryptoKey;
 }
 
-let emMemoria: Promise<{ par: ParChaves; jwk: JsonWebKey }> | null = null;
+interface Chave {
+  jwk: JsonWebKey;
+  /** Assina o texto e devolve r||s em base64url (formato do JWS ES256). */
+  assinar(entrada: string): Promise<string>;
+  /** Cadeia de atestação do Keystore (só no APK). */
+  atestacao?: string[] | undefined;
+}
+
+let emMemoria: Promise<Chave> | null = null;
 
 const sutil = () => globalThis.crypto.subtle;
 
@@ -61,7 +81,19 @@ async function gravarPar(par: ParChaves): Promise<void> {
   });
 }
 
-async function carregar(): Promise<{ par: ParChaves; jwk: JsonWebKey }> {
+const nativa = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("ChaveAparelho");
+
+async function carregarNativa(): Promise<Chave> {
+  const { jwk, atestacao } = await ChaveAparelho.chavePublica();
+  return {
+    jwk,
+    atestacao: atestacao.length ? atestacao : undefined,
+    assinar: async (dados) => (await ChaveAparelho.assinar({ dados })).assinatura,
+  };
+}
+
+async function carregar(): Promise<Chave> {
+  if (nativa()) return carregarNativa();
   let par: ParChaves | null = null;
   try {
     par = await lerPar();
@@ -86,12 +118,32 @@ async function carregar(): Promise<{ par: ParChaves; jwk: JsonWebKey }> {
     x = "",
     y = "",
   } = await sutil().exportKey("jwk", par.publicKey);
-  return { par, jwk: { kty, crv, x, y } };
+  const privada = par.privateKey;
+  return {
+    jwk: { kty, crv, x, y },
+    // WebCrypto devolve a assinatura ECDSA já no formato r||s que o JWS ES256 usa.
+    assinar: async (entrada) =>
+      b64url(
+        await sutil().sign(
+          { name: "ECDSA", hash: "SHA-256" },
+          privada,
+          new TextEncoder().encode(entrada),
+        ),
+      ),
+  };
 }
 
 function chave() {
-  emMemoria ??= carregar();
+  emMemoria ??= carregar().catch((e: unknown) => {
+    emMemoria = null; // tenta de novo na próxima requisição
+    throw e;
+  });
   return emMemoria;
+}
+
+/** Cadeia de atestação da chave (APK Android) para o login; no navegador, nada. */
+export async function atestacaoDoAparelho(): Promise<string[] | undefined> {
+  return (await chave()).atestacao;
 }
 
 const b64url = (bytes: ArrayBuffer | Uint8Array) => {
@@ -112,7 +164,7 @@ export async function criarProva(
   url: string,
   accessToken?: string,
 ): Promise<string> {
-  const { par, jwk } = await chave();
+  const { jwk, assinar } = await chave();
   const cabecalho = { typ: "dpop+jwt", alg: "ES256", jwk };
   const corpo: Record<string, string | number> = {
     jti: crypto.randomUUID(),
@@ -122,11 +174,5 @@ export async function criarProva(
   };
   if (accessToken) corpo["ath"] = await sha256(accessToken);
   const entrada = `${b64urlTexto(JSON.stringify(cabecalho))}.${b64urlTexto(JSON.stringify(corpo))}`;
-  // WebCrypto devolve a assinatura ECDSA já no formato r||s que o JWS ES256 usa.
-  const assinatura = await sutil().sign(
-    { name: "ECDSA", hash: "SHA-256" },
-    par.privateKey,
-    new TextEncoder().encode(entrada),
-  );
-  return `${entrada}.${b64url(assinatura)}`;
+  return `${entrada}.${await assinar(entrada)}`;
 }

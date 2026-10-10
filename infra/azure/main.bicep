@@ -34,6 +34,9 @@ param adminEmail string = 'admin@astro.app'
 @description('Origens além do app web liberadas no CORS. https://localhost é o APK (Capacitor no Android).')
 param origensExtras array = ['https://localhost']
 
+@description('SHA-256 do certificado que assina o APK release (resumo do workflow "Build APK"). Vazio = não confere.')
+param assinaturasApk string = ''
+
 // ---------- Segredos (gerados fora, ver AZURE.md; vão para o Key Vault) ----------
 @secure()
 @minLength(32)
@@ -289,6 +292,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
             // é reconhecido pelo id do perfil (app/deps.py:ip_cliente).
             { name: 'PROXIES_CONFIAVEIS', value: redeApi }
             { name: 'FRONT_DOOR_ID', value: fd!.properties.frontDoorId }
+            { name: 'ATESTACAO_ASSINATURAS', value: assinaturasApk }
             { name: 'DATABASE_URL', secretRef: 'database-url' }
             { name: 'JWT_SECRET', secretRef: 'jwt-secret' }
             { name: 'EMBEDDING_KEY', secretRef: 'embedding-key' }

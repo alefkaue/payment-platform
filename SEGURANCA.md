@@ -58,7 +58,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 | 7 | **Front**: CSP e cabeçalhos no host (Static Web Apps), overlay de debug só em dev, build de produção recusa modo demonstração | A5 | ✅ |
 | 8 | **Segredos e config**: tirar a derivação de segredos e o CORS `*.netlify.app`; Key Vault no Azure | A6 | ✅ (Key Vault entra com a infra, item 9) |
 | 9 | **Azure + WAF + `PENTEST.md`** (escopo, regras, contas de teste, como reportar) e APK Android pelo CI | objetivo do pentest | 🟡 escrito, falta subir (precisa da conta Azure) |
-| 10 | **App nativo**: tokens no Keystore/Keychain, certificate pinning, Play Integrity / App Attest | A7 | ⬜ (depois do APK existir) |
+| 10 | **App nativo**: chave DPoP no Keystore com **atestação de hardware** conferida no servidor (no lugar do Play Integrity), certificate pinning, sem backup/print/depuração, APK release assinado | A7 | 🟡 escrito e testado no backend; falta compilar no CI e testar num celular |
 
 ## 4. Como os outros grupos vão fazer o pentest (proposta)
 
@@ -205,6 +205,25 @@ justamente ver se alguém burla.
   escopo, regras (Microsoft RoE, ≤10 req/s, só contas próprias), contas, como gerar DPoP, o que já sabemos,
   modelo de relatório. **Não testado de verdade**: build da imagem e o deploy (fazer com `AZURE.md`).
 
+- 10/10 (5ª sessão) — **Item 10 escrito.** **Chave no Keystore**: plugin nativo `ChaveAparelho`
+  (`app/android/.../ChaveAparelhoPlugin.java`) gera a chave DPoP P-256 no Android Keystore (StrongBox se houver,
+  senão TEE), assina as provas (DER → r||s) e devolve a **cadeia de atestação**; `src/lib/dpop.ts` usa o plugin no
+  APK e o WebCrypto no navegador/PWA. **Atestação no lugar do Play Integrity** (que exige app na Play Store,
+  projeto no Google Cloud e chamada à Google a cada login): `app/core/atestacao.py` confere a cadeia até as raízes
+  da Google (fixadas pelo SPKI em `raizes_atestacao.pem`: RSA e "Key Attestation CA1"), a lista de revogação da
+  Google (cache de 24 h; pega keybox vazada), que a chave atestada **é a chave DPoP** da sessão, o desafio, o pacote
+  e (com `ATESTACAO_ASSINATURAS`) o certificado que assina o APK. Resultado no aparelho (`dispositivos.atestacao` =
+  `strongbox`/`tee`/nulo; migração `c3d4e5f6a7b8`): atestação forjada/de outra chave/de outro app → 403; emulador,
+  root ou bootloader aberto → sem nível (403 só com `ATESTACAO_EXIGIDA=1`). Testes: `test_atestacao.py` (14, com
+  cadeia de teste na mesma estrutura; 203 no backend). **Pinning**: `res/xml/network_security_config.xml` base (só
+  HTTPS, só CAs do sistema) e `scripts/pinos.mjs` no CI fixa as CAs da cadeia real da API + raízes reserva
+  DigiCert/Microsoft, com validade de 180 dias (teste em `src/lib/pinos.test.ts`). **APK**: `allowBackup=false` e
+  regras de extração (Android 12+), `FLAG_SECURE` (sem print/gravação/espelhamento: trojans bancários), WebView sem
+  depuração mesmo no debug; release assinado com chave estável quando os secrets existem (`app/scripts/chave_apk.py`
+  gera o PKCS12) e o SHA-256 do certificado sai no resumo do workflow. **Tokens** ficam onde estavam (memória/
+  sessionStorage do WebView, privados do app): presos à chave do Keystore, copiados não servem.
+  **Não verificado**: o Java só compila no CI (sem SDK nesta máquina) e nada rodou num celular. Ficou de fora: CSP
+  dentro do APK (o Capacitor injeta script inline em alguns aparelhos; testar antes) e iPhone nativo (é PWA).
 ### Próximos passos detalhados (itens 9 e 10)
 
 - ~~**7. Front**~~ (feito, ver diário): (a) quando o refresh falhar (401), limpar a sessão e ir para `/login` com o motivo (hoje só

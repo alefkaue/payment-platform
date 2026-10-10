@@ -16,10 +16,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // APK release assinado sempre com a MESMA chave (vem dos secrets do CI, ver android.yml):
+    // atualiza por cima da versão anterior e o servidor confere a assinatura na atestação
+    // (ATESTACAO_ASSINATURAS). Sem a chave no ambiente, só o debug é gerado.
+    signingConfigs {
+        release {
+            if (System.getenv("ASTRO_KEYSTORE")) {
+                storeFile file(System.getenv("ASTRO_KEYSTORE"))
+                storePassword System.getenv("ASTRO_KEYSTORE_SENHA")
+                keyAlias System.getenv("ASTRO_KEY_ALIAS")
+                keyPassword System.getenv("ASTRO_KEY_SENHA")
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig System.getenv("ASTRO_KEYSTORE") ? signingConfigs.release : null
         }
     }
 }

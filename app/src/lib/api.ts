@@ -10,6 +10,7 @@
  * Cartão virtual e contas a pagar ainda não têm endpoint no backend: no modo API
  * continuam com dados de demonstração.
  */
+import { atestacaoDoAparelho } from "./dpop";
 import { calcularSplit, semSplit, VIGENCIA_ATUAL } from "./split";
 import {
   ApiError,
@@ -331,6 +332,8 @@ export async function concluirLogin(
     const tk = await post<{ access_token: string; refresh_token: string }>("/auth/login/mfa", {
       mfa_token: etapa.mfa_token,
       biometria: prova,
+      // APK: prova de que a chave DPoP está em hardware, no nosso app (SEGURANCA.md item 10).
+      atestacao: await atestacaoDoAparelho(),
     });
     salvarTokens(tk);
     const { pessoa, contas } = await contasDaPessoa();

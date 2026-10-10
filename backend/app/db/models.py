@@ -458,6 +458,10 @@ class Dispositivo(Base):
     bloqueado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     bloqueado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     ultimo_uso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Atestação da chave no último login: "strongbox" / "tee" (chave em hardware, app
+    # nosso, boot verificado) ou nulo (navegador, PWA, emulador, aparelho com root).
+    atestacao: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    atestacao_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

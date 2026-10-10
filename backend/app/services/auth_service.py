@@ -150,12 +150,39 @@ def novo_desafio_mfa(repo: Repositorio, *, mfa_token: str, dispositivo_hash: str
     return biometria_service.criar_desafio(repo, usuario_id=usuario["id"], modo="login")
 
 
+def _conferir_atestacao(repo: Repositorio, usuario: dict, certificados: list[str] | None, *, jkt: str | None,
+                        ip: str | None) -> str | None:
+    """Nível da atestação da chave (APK Android) ou None. Atestação forjada, de outra
+    chave ou de outro app derruba o login; aparelho com root/emulador só fica sem nível
+    (e é recusado se ATESTACAO_EXIGIDA)."""
+    from app.core import atestacao
+
+    s = get_settings()
+    motivo = "sem atestação (navegador ou PWA)"
+    nivel = None
+    if certificados:
+        try:
+            r = atestacao.verificar(certificados, jkt=jkt)
+        except atestacao.AtestacaoInvalida as e:
+            repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=usuario["email"], ip=ip,
+                                      usuario_id=usuario["id"], detalhe={"etapa": "atestacao", "motivo": str(e)})
+            raise HTTPException(status_code=403, detail="Não foi possível confirmar a segurança deste aparelho.") from None
+        nivel, motivo = r.nivel, r.motivo
+    if nivel is None and s.atestacao_exigida:
+        repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=usuario["email"], ip=ip,
+                                  usuario_id=usuario["id"], detalhe={"etapa": "atestacao", "motivo": motivo})
+        raise HTTPException(status_code=403, detail="Entre pelo app Astro num aparelho sem root e com o sistema original.")
+    return nivel
+
+
 def concluir_login(repo: Repositorio, *, mfa_token: str, prova, ip: str | None, dispositivo_hash: str | None,
-                   user_agent: str | None, jkt: str | None = None) -> dict:
+                   user_agent: str | None, jkt: str | None = None, atestacao: list[str] | None = None) -> dict:
     from app.services import seguranca_service
 
     usuario, payload = _usuario_do_mfa(repo, mfa_token, dispositivo_hash, jkt)
     ref = usuario["email"]
+    # Antes do rosto: aparelho que não passa nem gasta tentativa de biometria.
+    nivel_atestacao = _conferir_atestacao(repo, usuario, atestacao, jkt=jkt, ip=ip)
     try:
         verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=prova, ip=ip, tipo="login")
     except HTTPException:
@@ -172,10 +199,10 @@ def concluir_login(repo: Repositorio, *, mfa_token: str, prova, ip: str | None, 
     if dispositivo_hash:
         # Rosto verificado NESTE aparelho = aparelho cadastrado/confiável.
         disp = repo.registrar_dispositivo(usuario_id=usuario["id"], id_hash=dispositivo_hash, nome=_nome_aparelho(user_agent),
-                                          confiavel=True)
+                                          confiavel=True, atestacao=nivel_atestacao, atualizar_atestacao=True)
     repo.registrar_log(ator=usuario["email"], acao="login", ip=ip, usuario_id=usuario["id"],
                        detalhe={"fatores": ["senha", "rosto"], "similaridade": verificacao.get("similaridade"),
-                                "dispositivo_id": disp["id"] if disp else None})
+                                "dispositivo_id": disp["id"] if disp else None, "atestacao": nivel_atestacao})
     return emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dispositivo_hash, ip=ip, user_agent=user_agent,
                          jkt=jkt)
 

@@ -1,5 +1,7 @@
 from datetime import datetime
 
+from typing import Annotated
+
 from pydantic import BaseModel, Field
 
 from app.schemas.comum import ProvaBiometrica
@@ -13,6 +15,8 @@ class LoginRequest(BaseModel):
 class LoginMfaRequest(BaseModel):
     mfa_token: str = Field(..., min_length=20, max_length=2000)
     biometria: ProvaBiometrica
+    # APK Android: cadeia de atestação da chave DPoP (base64 DER, folha primeiro).
+    atestacao: list[Annotated[str, Field(max_length=8000)]] | None = Field(default=None, max_length=8)
 
 
 class MfaDesafioRequest(BaseModel):

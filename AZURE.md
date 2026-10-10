@@ -130,7 +130,21 @@ Daí em diante, cada push no `main` que mexa em `backend/` ou `app/`:
 - **front**: `npm run build` com `VITE_API_URL=ASTRO_API_URL` (gera a CSP com a URL da API) e
   publica no Static Web Apps.
 
-O `android.yml` usa a mesma `ASTRO_API_URL`: o APK do CI passa a falar com o Front Door.
+O `android.yml` usa a mesma `ASTRO_API_URL`: o APK do CI passa a falar com o Front Door, com
+certificate pinning das CAs que o Front Door apresenta (gerado no build, `app/scripts/pinos.mjs`).
+
+**APK release (chave de assinatura estável)**, uma vez:
+
+```sh
+backend/.venv/Scripts/python.exe app/scripts/chave_apk.py   # cria ~/astro-release.p12 e imprime os secrets
+gh secret set ANDROID_KEYSTORE_B64   # cole a linha base64
+gh secret set ANDROID_KEYSTORE_SENHA
+gh secret set ANDROID_KEY_SENHA
+gh secret set ANDROID_KEY_ALIAS -b astro
+```
+
+Depois rode o passo 2 do deploy com `-p assinaturasApk=<ATESTACAO_ASSINATURAS impresso>`: a API passa
+a recusar a atestação de um APK assinado por outra chave (reempacotado).
 
 ## 5. Conferências depois do deploy
 
