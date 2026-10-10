@@ -369,6 +369,9 @@ export interface MembroEquipe {
   /** Alçada por operação em R$; null = sem limite. */
   alcada: number | null;
   status: StatusVinculo;
+  alcada_diaria?: number | null;
+  aguardando_aprovacao?: boolean;
+  operacao_id?: number | null;
   ativo: boolean;
   ultimo_acesso_em?: string | null;
   /** É a pessoa logada neste momento. */

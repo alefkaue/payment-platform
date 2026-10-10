@@ -20,6 +20,7 @@ import {
   get,
   MODO_API,
   num,
+  patch,
   post,
   postAnonimo,
   requisitar,
@@ -1557,6 +1558,9 @@ interface VinculoApi {
   cargo: string | null;
   papel: MembroEquipe["papel"];
   alcada: string | null;
+  alcada_diaria?: string | null;
+  aguardando_aprovacao?: boolean;
+  operacao_id?: number | null;
   status: MembroEquipe["status"];
   ativo: boolean;
   ultimo_acesso_em: string | null;
@@ -1572,6 +1576,9 @@ function mapVinculo(v: VinculoApi): MembroEquipe {
     cargo: v.cargo,
     papel: v.papel,
     alcada: v.alcada == null ? null : num(v.alcada),
+    alcada_diaria: v.alcada_diaria == null ? null : num(v.alcada_diaria),
+    aguardando_aprovacao: v.aguardando_aprovacao ?? false,
+    operacao_id: v.operacao_id ?? null,
     status: v.status,
     ativo: v.ativo,
     ultimo_acesso_em: v.ultimo_acesso_em,
@@ -1645,6 +1652,84 @@ export async function convidarMembro(p: ConvidarPayload): Promise<MembroEquipe> 
 }
 
 export type AcaoMembro = "suspender" | "reativar" | "revogar";
+
+export interface VinculoMudancas {
+  papel?: MembroEquipe["papel"];
+  alcada?: string;
+  alcada_diaria?: string;
+  sem_limite?: boolean;
+}
+
+/** Compara as permissões efetivas, inclusive a diária que herda a alçada. */
+export function aumentaPoder(m: MembroEquipe, novo: MembroEquipe): boolean {
+  const poderoso = (p: MembroEquipe["papel"]) => p === "admin" || p === "aprovador";
+  const maior = (antes: number | null, depois: number | null) =>
+    antes !== null && (depois === null || depois > antes);
+  return (
+    (poderoso(novo.papel) && !poderoso(m.papel)) ||
+    (novo.papel === "admin" && m.papel !== "admin") ||
+    (novo.papel !== "consulta" && maior(m.alcada, novo.alcada)) ||
+    (m.alcada !== null && novo.alcada !== null && novo.alcada > m.alcada) ||
+    (novo.papel !== "consulta" &&
+      maior(m.alcada_diaria ?? m.alcada, novo.alcada_diaria ?? novo.alcada))
+  );
+}
+
+export async function alterarVinculo(
+  id: number,
+  mudancas: VinculoMudancas,
+  biometria?: ProvaBiometrica,
+): Promise<MembroEquipe> {
+  if (MODO_API)
+    return mapVinculo(
+      await patch<VinculoApi>(`/empresas/atual/vinculos/${id}`, {
+        ...mudancas,
+        ...(biometria ? { biometria } : {}),
+      }),
+    );
+  if (sessao.conta.tipo !== "PJ" || sessao.conta.papel !== "admin")
+    throw new ApiError("Só administrador pode alterar acessos.", 403);
+  const lista = listaEquipe();
+  const m = lista.find((v) => v.id === id);
+  if (!m) throw new ApiError("Pessoa não encontrada nesta empresa.", 404);
+  if (m.status === "revogado")
+    throw new ApiError("Acesso encerrado não pode ser alterado. Convide de novo.", 409);
+  const pol = await politicaEmpresa();
+  const papel = mudancas.papel ?? m.papel;
+  if (!(papel === "admin" && m.papel === "admin") && !pol.papeis_convidaveis.includes(papel))
+    throw new ApiError(`Na conta ${pol.porte}, o papel '${papel}' não pode ser concedido.`, 403);
+  const valor = (s: string | undefined, atual: number | null) => {
+    if (s === undefined) return atual;
+    if (!/^\d{1,12}(\.\d{1,2})?$/.test(s)) throw new ApiError("Informe uma alçada válida.");
+    return Number(s);
+  };
+  const alcada =
+    papel === "admin"
+      ? null
+      : papel === "consulta"
+        ? 0
+        : mudancas.sem_limite
+          ? null
+          : valor(mudancas.alcada, m.alcada);
+  const diaria =
+    papel === "admin" || papel === "consulta" || alcada === null
+      ? null
+      : valor(mudancas.alcada_diaria, m.alcada_diaria ?? null);
+  if (papel === "operador" && pol.operador_exige_alcada && alcada === null)
+    throw new ApiError(`Na conta ${pol.porte}, operador precisa de alçada definida.`);
+  if (diaria !== null && alcada !== null && diaria < alcada)
+    throw new ApiError("A alçada diária não pode ser menor que a alçada por operação.");
+  if (
+    m.papel === "admin" &&
+    m.status === "ativo" &&
+    papel !== "admin" &&
+    lista.filter((v) => v.papel === "admin" && v.status === "ativo").length <= 1
+  )
+    throw new ApiError("A empresa precisa de pelo menos um administrador ativo.");
+  Object.assign(m, { papel, alcada, alcada_diaria: diaria });
+  if (m.eu) sessao.conta.papel = papel;
+  return { ...m };
+}
 
 export async function mudarAcessoMembro(
   id: number,
