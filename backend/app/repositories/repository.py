@@ -735,6 +735,21 @@ class Repositorio(RepositorioExtras):
         return Decimal(s.scalar(stmt) or 0)
 
     @staticmethod
+    def soma_saidas_de_aparelhos_nao_confiaveis(s: Session, carteira_id: int, desde: datetime) -> Decimal:
+        """Saídas da carteira feitas de QUALQUER aparelho ainda não confirmado (ou sem aparelho).
+        O teto diário de aparelho novo do Pix é agregado entre esses aparelhos: trocar de
+        aparelho não abre outro teto."""
+        nao_confiaveis = select(Dispositivo.id).where(or_(Dispositivo.confiavel.is_(False), Dispositivo.bloqueado.is_(True)))
+        stmt = select(func.coalesce(func.sum(Transacao.valor_bruto), 0)).where(
+            Transacao.origem_carteira_id == carteira_id,
+            Transacao.tipo.in_(["transferencia", "cobranca"]),
+            Transacao.status != StatusTransacao.DEVOLVIDA,
+            Transacao.criado_em >= desde,
+            or_(Transacao.dispositivo_id.is_(None), Transacao.dispositivo_id.in_(nao_confiaveis)),
+        )
+        return Decimal(s.scalar(stmt) or 0)
+
+    @staticmethod
     def soma_saidas_do_usuario(s: Session, carteira_id: int, usuario_id: int, desde: datetime) -> Decimal:
         """O que ESTA pessoa tirou desta carteira desde `desde`, sem contar o que foi
         executado por aprovação (já passou por outra pessoa) nem o que foi devolvido."""

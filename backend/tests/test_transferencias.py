@@ -197,3 +197,24 @@ def test_comprovante_mostra_que_ja_tem_contestacao(cliente):
     r = cliente.post(f"/pagamentos/transacoes/{tid}/contestar", json={"motivo": "golpe do falso parente"}, headers=a.h())
     assert r.status_code in (200, 201), r.text
     assert cliente.get(f"/pagamentos/transacoes/{tid}", headers=a.h()).json()["contestacao"]["status"] == "aberta"
+
+
+def test_teto_de_aparelho_novo_soma_todos_os_aparelhos(cliente):
+    """R1-07: trocar de aparelho não confirmado não abre outro teto diário de R$ 1.000."""
+    a, b = Pessoa(cliente, "multi.a@ex.com"), Pessoa(cliente, "multi.b@ex.com")
+    depositar(cliente, a.numero, 5000)
+    tokens = {}
+    for aparelho in ("celular-1", "celular-2"):
+        tokens[aparelho] = login(cliente, a.email, SENHA, aparelho)
+        desconfiar_aparelho(aparelho)
+
+    def pix(aparelho, valor):
+        a.token = tokens[aparelho]
+        return a.transferir(conta_ref(b.numero), valor, dispositivo=aparelho)
+
+    for _ in range(5):
+        assert pix("celular-1", 200).status_code == 200
+    r = pix("celular-2", 50)
+    assert r.status_code == 403 and "somando todos" in r.json()["detail"]
+    a.dispositivo = "celular-2"
+    assert a.saldo() == "4000.00"

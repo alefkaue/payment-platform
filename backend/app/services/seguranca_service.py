@@ -66,13 +66,13 @@ def checador_de_limites(*, valor: Decimal, titular_tipo: str, dispositivo: dict 
                     status_code=403,
                     detail=f"Neste aparelho novo o limite é {_brl(teto_tx)} por transação. Confirme o aparelho com verificação facial para liberar.",
                 )
-            if dispositivo is not None:
-                usado_dia = Repositorio.soma_saidas(sessao, origem.id, tempo.inicio_do_dia(agora), dispositivo_id=dispositivo["id"])
-                if usado_dia + valor > teto_dia:
-                    raise HTTPException(
-                        status_code=403,
-                        detail=f"Neste aparelho novo o limite é {_brl(teto_dia)} por dia. Confirme o aparelho com verificação facial para liberar.",
-                    )
+            # Agregado entre todos os aparelhos não confirmados (Pix: IN BCB 491/2024, art. 9 -- R1-07).
+            usado_dia = Repositorio.soma_saidas_de_aparelhos_nao_confiaveis(sessao, origem.id, tempo.inicio_do_dia(agora))
+            if usado_dia + valor > teto_dia:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Em aparelhos novos o limite é {_brl(teto_dia)} por dia, somando todos eles. Confirme o aparelho com verificação facial para liberar.",
+                )
 
     return checar
 
