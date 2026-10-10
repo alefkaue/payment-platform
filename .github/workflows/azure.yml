@@ -9,6 +9,7 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "app/**"
       - "download/**"
       - ".github/workflows/azure.yml"
   workflow_dispatch: {}
@@ -70,13 +71,31 @@ jobs:
           az containerapp revision list -g "$RG" -n astro-api \
             --query "[?properties.active].{revisao:name, saude:properties.healthState}" -o table
 
-  # O Astro é só app Android: o Static Web Apps publica a PÁGINA DE DOWNLOAD do APK
-  # (download/), não o app bancário. Não há mais versão web do banco.
+  # App web (o mesmo do APK) para a equipe testar mais fácil, com a página de download do
+  # APK em /baixar. O produto principal é o app Android (Release no GitHub).
   front:
-    if: vars.AZURE_CLIENT_ID != ''
+    if: vars.AZURE_CLIENT_ID != '' && vars.ASTRO_API_URL != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Instalar dependências
+        working-directory: app
+        run: npm ci
+
+      # Gera também o staticwebapp.config.json com a CSP (scripts/cabecalhos.mjs).
+      - name: Build (SPA + cabeçalhos de segurança) e página de download em /baixar
+        working-directory: app
+        env:
+          VITE_API_URL: ${{ vars.ASTRO_API_URL }}
+        run: |
+          npm run build
+          mkdir -p dist/client/baixar
+          cp ../download/index.html ../download/estilo.css dist/client/baixar/
 
       - uses: azure/login@v2
         with:
@@ -96,6 +115,6 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
           action: upload
-          app_location: download
+          app_location: app/dist/client
           skip_app_build: true
           skip_api_build: true

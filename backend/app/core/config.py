@@ -179,6 +179,11 @@ class Settings(BaseSettings):
     # Foto de documento é antiga/impressa: o limiar do rosto do documento x selfie é
     # mais baixo (próximo do CALFW/CPLFW) e o caso vai para análise se ficar na faixa.
     face_doc_limiar_cosseno: float = Field(default=0.30, alias="FACE_DOC_LIMIAR_COSSENO")
+    # Qualidade da captura (app/services/qualidade_rosto.py); calibrar em aparelhos reais.
+    rosto_brilho_min: float = Field(default=55.0, alias="ROSTO_BRILHO_MIN")          # 0..255
+    rosto_estourado_max: float = Field(default=0.25, alias="ROSTO_ESTOURADO_MAX")    # fração do rosto
+    rosto_contraluz_max: float = Field(default=85.0, alias="ROSTO_CONTRALUZ_MAX")    # fundo - rosto
+    rosto_oculos_limiar: float = Field(default=2.2, alias="ROSTO_OCULOS_LIMIAR")     # bordas ponte/testa
     # Anti-spoof passivo (MiniFAS): probabilidade mínima de "real". Sem o modelo,
     # produção recusa subir; dev só avisa.
     antispoof_limiar: float = Field(default=0.5, alias="ANTISPOOF_LIMIAR")

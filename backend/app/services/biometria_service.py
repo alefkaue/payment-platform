@@ -143,8 +143,10 @@ def _amostras(n: int, frontais: list[int]) -> list[int]:
     return sorted(set(frontais + [0, n // 2, n - 1]))
 
 
-def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...]) -> dict:
+def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...], *, checar_oculos: bool = False) -> dict:
     import cv2
+
+    from app.services import qualidade_rosto
 
     imagens = [decodificar_imagem(q) for q in quadros]
     sinais = [landmarks_service.extrair(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)) for img in imagens]
@@ -163,6 +165,15 @@ def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...]) -> dict:
     prob_real_min = 1.0
     for i in _amostras(len(imagens), frontais):
         rosto = m.rosto_unico(imagens[i], score_minimo=0.75)
+        if i in frontais:
+            # Luz ruim e óculos atrapalham o reconhecimento (e a luz ruim esconde fraude):
+            # orienta a pessoa em vez de reprovar sem dizer o porquê. Óculos: só no
+            # cadastro, que grava o rosto de referência.
+            q = qualidade_rosto.medir(imagens[i], (int(rosto.x), int(rosto.y), int(rosto.w), int(rosto.h)),
+                                      sinais[i].pontos)
+            msg = qualidade_rosto.problema(q, checar_oculos=checar_oculos)
+            if msg:
+                raise HTTPException(status_code=400, detail=msg)
         real, prob = m.anti_spoof(imagens[i], rosto)
         prob_real_min = min(prob_real_min, prob)
         if not real:
@@ -206,7 +217,7 @@ def cadastrar(repo, prova, *, usuario_id: int | None = None) -> dict:
         logger.warning("BIOMETRIA_STUB ligado -- cadastro NÃO confere o rosto (modo de teste).")
         return {"vetor": list(_EMBEDDING_STUB), "modelo": MODELO_STUB}
 
-    r = _executar(_analisar_sequencia, prova.quadros, passos)
+    r = _executar(lambda q, p: _analisar_sequencia(q, p, checar_oculos=True), prova.quadros, passos)
     return {"vetor": r["templates"][0], "modelo": r["modelo"], "prob_real_min": r["prob_real_min"]}
 
 

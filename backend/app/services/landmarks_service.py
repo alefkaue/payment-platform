@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import math
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import HTTPException
 
@@ -60,6 +60,7 @@ class SinaisQuadro:
     blink: float = 0.0      # max(eyeBlinkLeft, eyeBlinkRight) (0..1)
     smile: float = 0.0      # média mouthSmileLeft/Right (0..1)
     yaw: float = 0.0        # >0 nariz à direita da imagem (sem espelho)
+    pontos: object = field(default=None, repr=False, compare=False)  # landmarks (qualidade_rosto)
 
 
 _local = threading.local()
@@ -141,4 +142,5 @@ def extrair(imagem_rgb) -> SinaisQuadro:
         blink=max(_blendshape(cats, "eyeBlinkLeft"), _blendshape(cats, "eyeBlinkRight")),
         smile=(_blendshape(cats, "mouthSmileLeft") + _blendshape(cats, "mouthSmileRight")) / 2.0,
         yaw=yaw,
+        pontos=pts,
     )

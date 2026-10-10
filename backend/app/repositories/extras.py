@@ -395,6 +395,15 @@ class RepositorioExtras:
             s.commit()
             return "parcial"
 
+    def documento_ja_usado(self, sha256: str | None) -> bool:
+        """As mesmas imagens de documento já estão ligadas a uma conta existente?"""
+        if not sha256:
+            return False
+        with self._sf() as s:
+            return s.scalar(select(func.count(DocumentoIdentidade.id)).join(
+                CasoKyc, CasoKyc.id == DocumentoIdentidade.caso_id).where(
+                DocumentoIdentidade.sha256 == sha256, CasoKyc.usuario_id.is_not(None))) > 0
+
     def pendentes_executando(self, iniciadas_antes: datetime) -> list[dict]:
         """Operações que ficaram em "executando" (aprovadas, mas o resultado nunca foi
         gravado: queda do processo no meio da execução)."""

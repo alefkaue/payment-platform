@@ -30,26 +30,6 @@ android {
             }
         }
     }
-    buildFeatures {
-        buildConfig = true
-    }
-    // Dois apps (PENTEST.md): "astro" é o endurecido (pinning, atestação, sem print, sem
-    // depuração); "lab" é o de laboratório para os grupos atacarem a LÓGICA sem passar dias
-    // quebrando a blindagem -- aceita a CA do Burp, permite print e depurar o WebView e não
-    // manda atestação (entra como aparelho sem atestação, igual a um emulador).
-    flavorDimensions = ["canal"]
-    productFlavors {
-        astro {
-            dimension "canal"
-            buildConfigField "boolean", "LAB", "false"
-        }
-        lab {
-            dimension "canal"
-            applicationIdSuffix ".lab"
-            versionNameSuffix "-lab"
-            buildConfigField "boolean", "LAB", "true"
-        }
-    }
     buildTypes {
         release {
             minifyEnabled false

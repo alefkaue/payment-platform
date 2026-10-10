@@ -71,6 +71,9 @@ def criar_pessoa(repo: Repositorio, *, nome: str, email: str, senha: str, cpf: s
             tipo=documento.tipo, frente_b64=documento.frente, verso_b64=documento.verso, nome=nome, cpf=cpf,
             data_nascimento=data_nascimento, template_selfie=template,
         )
+        if repo.documento_ja_usado(kyc["sha256"]):
+            # As mesmas imagens de documento já abriram outra conta: uma conta por documento.
+            raise HTTPException(status_code=409, detail=_DUPLICADO)
         if kyc["status"] == "reprovado":
             documento_service.registrar_caso_pessoa(repo, kyc, usuario_id=None)
             repo.registrar_log(ator=email.lower().strip(), acao="kyc_reprovado", ip=ip, detalhe={"motivos": kyc["motivos"]})

@@ -83,15 +83,13 @@ jobs:
           node scripts/pinos.mjs
           cat android/app/src/main/res/xml/network_security_config.xml
 
-      # Dois apps (build.gradle, productFlavors): "astro" é o endurecido; "lab" é o de
-      # laboratório do pentest (aceita a CA do Burp, permite depurar, sem atestação).
-      - name: Gerar APKs de debug (Astro e Astro Lab)
+      - name: Gerar APK de debug
         working-directory: app/android
         run: |
           chmod +x ./gradlew
-          ./gradlew assembleAstroDebug assembleLabDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log || true
-          if [ -f app/build/outputs/apk/astro/debug/app-astro-debug.apk ] && [ -f app/build/outputs/apk/lab/debug/app-lab-debug.apk ]; then
-            echo "APKs gerados com sucesso."
+          ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tee /tmp/gradle.log || true
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            echo "APK gerado com sucesso."
           else
             MSG=$(grep -iE "what went wrong|FAILURE:|Caused by|error:|not found|Unsupported|requires|> " /tmp/gradle.log | tail -n 25 | tr '\n\t' '  ' | cut -c1-1600)
             echo "::error::GRADLE_FAIL $MSG"
@@ -99,18 +97,16 @@ jobs:
             exit 1
           fi
 
-      - name: Publicar os APKs de debug como artefato
+      - name: Publicar o APK de debug como artefato
         uses: actions/upload-artifact@v4
         with:
-          name: Astro-debug-apks
-          path: |
-            app/android/app/build/outputs/apk/astro/debug/app-astro-debug.apk
-            app/android/app/build/outputs/apk/lab/debug/app-lab-debug.apk
+          name: Astro-debug-apk
+          path: app/android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
       # Release assinado: só com a chave nos secrets. A impressão SHA-256 do certificado
       # vai no resumo da execução: é o valor de ATESTACAO_ASSINATURAS no backend.
-      - name: Gerar APKs release assinados
+      - name: Gerar APK release assinado
         id: release
         working-directory: app/android
         env:
@@ -120,33 +116,31 @@ jobs:
           ASTRO_KEY_SENHA: ${{ secrets.ANDROID_KEY_SENHA }}
         run: |
           if [ -z "$KEYSTORE_B64" ]; then
-            echo "Sem ANDROID_KEYSTORE_B64 nos secrets: só os APKs de debug." >> "$GITHUB_STEP_SUMMARY"
+            echo "Sem ANDROID_KEYSTORE_B64 nos secrets: só o APK de debug." >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           export ASTRO_KEYSTORE="$RUNNER_TEMP/astro.jks"
           printf '%s' "$KEYSTORE_B64" | base64 -d > "$ASTRO_KEYSTORE"
-          ./gradlew assembleAstroRelease assembleLabRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon
           rm -f "$ASTRO_KEYSTORE"
-          APK=app/build/outputs/apk/astro/release/app-astro-release.apk
+          APK=app/build/outputs/apk/release/app-release.apk
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$APK" | tee /tmp/certs.txt
           SHA=$(grep -m1 "SHA-256 digest" /tmp/certs.txt | awk '{print $NF}')
           echo "ATESTACAO_ASSINATURAS=$SHA" >> "$GITHUB_STEP_SUMMARY"
           echo "gerado=1" >> "$GITHUB_OUTPUT"
 
       # Release do GitHub (só em tag apk-v*): nomes estáveis + SHA-256 para conferir o download.
-      # Com a chave de assinatura, vão os APKs release; sem ela, os de debug.
+      # Com a chave de assinatura, vai o APK release; sem ela, o de debug.
       - name: Montar arquivos do Release
         if: startsWith(github.ref, 'refs/tags/apk-v')
         run: |
           mkdir -p dist-release
           if [ "${{ steps.release.outputs.gerado }}" = "1" ]; then
-            cp app/android/app/build/outputs/apk/astro/release/app-astro-release.apk dist-release/Astro.apk
-            cp app/android/app/build/outputs/apk/lab/release/app-lab-release.apk dist-release/Astro-Lab.apk
+            cp app/android/app/build/outputs/apk/release/app-release.apk dist-release/Astro.apk
           else
-            cp app/android/app/build/outputs/apk/astro/debug/app-astro-debug.apk dist-release/Astro.apk
-            cp app/android/app/build/outputs/apk/lab/debug/app-lab-debug.apk dist-release/Astro-Lab.apk
+            cp app/android/app/build/outputs/apk/debug/app-debug.apk dist-release/Astro.apk
           fi
-          (cd dist-release && sha256sum Astro.apk Astro-Lab.apk > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          (cd dist-release && sha256sum Astro.apk > SHA256SUMS.txt && cat SHA256SUMS.txt)
 
       - name: Publicar o Release
         if: startsWith(github.ref, 'refs/tags/apk-v')
@@ -154,13 +148,10 @@ jobs:
         with:
           name: Astro ${{ github.ref_name }}
           body: |
-            **Astro.apk** — o app endurecido (pinning, atestação, sem print, sem depuração).
-            **Astro-Lab.apk** — o app de laboratório do pentest: aceita a CA do Burp/ZAP, permite
-            print e depurar o WebView, não manda atestação. Os dois falam com a mesma API.
+            **Astro.apk** — o app Android do Astro (pinning, atestação, sem print, sem depuração).
 
             Como rodar no PC (emulador Android): `RODAR-NO-PC.md`. Regras: `PENTEST.md`.
             Confira o download com `SHA256SUMS.txt`.
           files: |
             dist-release/Astro.apk
-            dist-release/Astro-Lab.apk
             dist-release/SHA256SUMS.txt

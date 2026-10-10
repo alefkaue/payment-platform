@@ -148,9 +148,11 @@ def analisar_documento_pessoa(*, tipo: str, frente_b64: str, verso_b64: str | No
                 motivos.append("Semelhança do rosto na faixa de dúvida: análise humana.")
 
     # ---------------------------------------------------------- decisão
+    # Rosto do documento x selfie é só informativo (decisão do grupo: foto de documento
+    # antiga/ruim não pode travar o cadastro no pentest). Fica em `verificacoes` e no caso.
     contradicoes = [v.get("cpf") is False, v.get("nascimento") is False, v.get("validade") is False,
-                    v.get("mrz") is False, rosto_ok is False]
-    conferidos = [v.get("cpf"), v.get("nome"), v.get("nascimento") if data_nascimento else True, rosto_ok]
+                    v.get("mrz") is False]
+    conferidos = [v.get("cpf"), v.get("nome"), v.get("nascimento") if data_nascimento else True]
     if any(contradicoes):
         status, risco = "reprovado", "alto"
     elif all(x is True for x in conferidos):

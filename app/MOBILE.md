@@ -1,21 +1,17 @@
 # Astro — app Android
 
-O Astro é **só app Android** (Capacitor): a interface (Vite + TanStack Router em modo SPA)
-vai embutida no APK e fala com a API na Azure. **Não há versão web publicada.** Os grupos do
-pentest rodam o APK num emulador no PC: `../RODAR-NO-PC.md`.
+O Astro é um **app Android** (Capacitor): a interface (Vite + TanStack Router em modo SPA)
+vai embutida no APK e fala com a API na Azure. A mesma interface também é publicada como
+**app web só para testes** (Static Web Apps, com a página de download em `/baixar`). Os grupos
+do pentest rodam o APK num emulador no PC: `../RODAR-NO-PC.md`.
 
-## Dois apps (productFlavors em `android/app/build.gradle`)
+## APK e Release
 
-| Sabor | Pacote | Para quê |
-|---|---|---|
-| `astro` | `com.payflow.app` | O oficial: pinning (`scripts/pinos.mjs`), atestação da chave no Keystore, sem print (`FLAG_SECURE`), sem depuração do WebView |
-| `lab` | `com.payflow.app.lab` | Pentest: aceita CA do usuário (Burp/ZAP), sem pinning, print e `chrome://inspect` liberados, não manda atestação (`src/lab/`) |
-
-O CI (`.github/workflows/android.yml`) gera os dois. Uma tag `apk-vX.Y` publica um
-**GitHub Release** com `Astro.apk`, `Astro-Lab.apk` e `SHA256SUMS.txt`:
+O CI (`.github/workflows/android.yml`) gera o APK. Uma tag `apk-vX.Y` publica um
+**GitHub Release** com `Astro.apk` e `SHA256SUMS.txt`:
 
 ```bash
-git tag apk-v1.0 && git push origin apk-v1.0
+git tag apk-v1.1 && git push origin apk-v1.1
 ```
 
 ## Desenvolver

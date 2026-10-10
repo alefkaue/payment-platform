@@ -59,8 +59,7 @@ public class ChaveAparelhoPlugin extends Plugin {
             // aí não mandamos nada (o servidor trata como aparelho sem atestação).
             JSArray cadeia = new JSArray();
             Certificate[] certs = ks.getCertificateChain(ALIAS);
-            // Astro Lab (pentest) não manda atestação: entra como aparelho sem atestação.
-            if (!BuildConfig.LAB && certs != null && certs.length > 1) {
+            if (certs != null && certs.length > 1) {
                 for (Certificate c : certs) cadeia.put(Base64.encodeToString(c.getEncoded(), Base64.NO_WRAP));
             }
 
