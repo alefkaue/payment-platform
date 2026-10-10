@@ -674,8 +674,13 @@ export async function transacaoPorId(id: number): Promise<Transacao> {
   }
   await sincronizar();
   const t = todasTransacoes().find((x) => x.id === id);
-  if (!t) throw new ApiError("Transação não encontrada.", 404);
-  return t;
+  const minha = sessao.conta.carteira_id;
+  if (!t || (t.origem_carteira_id !== minha && t.destino_carteira_id !== minha))
+    throw new ApiError("Transação não encontrada.", 404);
+  return {
+    ...t,
+    contestacao_aberta: Boolean(banco().contestacoes?.some((c) => c.transacao_id === id)),
+  };
 }
 
 /** Contesta uma transação (golpe/erro) — espelha o MED do Pix. */
@@ -685,6 +690,26 @@ export async function contestar(id: number, motivo: string): Promise<void> {
     return;
   }
   await delay();
+  await sincronizar();
+  const t = todasTransacoes().find((x) => x.id === id);
+  if (!t || t.origem_carteira_id !== sessao.conta.carteira_id)
+    throw new ApiError("Transação não encontrada nesta conta.", 404);
+  if (sessao.conta.tipo === "PJ" && sessao.conta.papel !== "admin")
+    throw new ApiError("Só administradores podem contestar pela empresa.", 403);
+  if (!["transferencia", "cobranca"].includes(t.categoria))
+    throw new ApiError("Só transferências e pagamentos podem ser contestados.");
+  if (t.status !== "concluida" && t.status !== "retida")
+    throw new ApiError("Esta transação não pode ser contestada.");
+  if (Date.now() - new Date(t.criado_em).getTime() > 80 * 86400000)
+    throw new ApiError("Prazo de contestação encerrado.");
+  if (motivo.length < 5 || motivo.length > 280)
+    throw new ApiError("O motivo deve ter de 5 a 280 caracteres.", 422);
+  const b = banco();
+  b.contestacoes ??= [];
+  if (b.contestacoes.some((c) => c.transacao_id === id))
+    throw new ApiError("Esta transação já tem uma contestação.", 409);
+  b.contestacoes.push({ transacao_id: id, motivo, criado_em: new Date().toISOString() });
+  salvar(b);
 }
 
 /**
@@ -1266,12 +1291,61 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
 
 /** Cobranças emitidas pela conta em uso (no modo demonstração ficam em memória). */
 const minhasCobrancasDemo = () =>
-  cobrancasDemo.filter((c) => c.recebedor_nome === sessao.conta.nome);
+  cobrancasDemo.filter((c) => c.recebedor_carteira_id === sessao.conta.carteira_id);
 
 export async function listarCobrancas(): Promise<Cobranca[]> {
   await delay(300);
   if (MODO_API) return (await get<CobrancaApi[]>("/cobrancas?limite=100")).map(mapCobranca);
   return minhasCobrancasDemo().sort((a, b) => b.id - a.id);
+}
+
+/** Devolve o bruto de uma cobrança paga; o servidor confere emissão, papel e saldo. */
+export async function estornarCobranca(txid: string): Promise<Transacao> {
+  if (MODO_API) {
+    const t = await post<TransacaoApi>(`/cobrancas/${encodeURIComponent(txid)}/estornar`);
+    return mapTransacao(t, t.origem.carteira_id);
+  }
+  await delay();
+  await sincronizar();
+  if (sessao.conta.tipo !== "PJ" || sessao.conta.papel !== "admin")
+    throw new ApiError("Só administradores da empresa podem estornar cobranças.", 403);
+  const c = minhasCobrancasDemo().find((cob) => cob.txid === txid);
+  if (!c) throw new ApiError("Cobrança não encontrada.", 404);
+  if (c.status !== "paga") throw new ApiError("Só cobranças pagas podem ser estornadas.", 409);
+  const original = todasTransacoes().find((t) => t.id === c.transacao_id);
+  if (!original || original.destino_carteira_id !== sessao.conta.carteira_id)
+    throw new ApiError("Pagamento da cobrança não encontrado.", 409);
+  const b = banco();
+  const empresa = b.contas[sessao.conta.carteira_id];
+  const pagador = b.contas[original.origem_carteira_id];
+  if (!empresa || !pagador) throw new ApiError("Conta do pagamento não encontrada.", 404);
+  // A demonstração devolve o bruto da empresa, sem simular repasse fiscal externo.
+  const valor = centavosFolha(c.valor.toFixed(2));
+  const saldo = centavosFolha(empresa.saldo.toFixed(2));
+  if (saldo < valor) throw new ApiError("Saldo insuficiente para devolver o valor ao pagador.");
+  const t: Transacao = {
+    id: genId(),
+    origem_carteira_id: empresa.carteira_id,
+    destino_carteira_id: pagador.carteira_id,
+    valor_bruto: c.valor,
+    liquido: c.valor,
+    cbs: 0,
+    ibs: 0,
+    aplicou_split: false,
+    tipo_destino: pagador.tipo,
+    auth_metodo: "senha",
+    status: "concluida",
+    categoria: "estorno",
+    descricao: `Estorno de cobrança ${txid}`,
+    criado_em: new Date().toISOString(),
+  };
+  empresa.saldo = num(decimalFolha(saldo - valor));
+  pagador.saldo = num(decimalFolha(centavosFolha(pagador.saldo.toFixed(2)) + valor));
+  b.transacoes.push(t);
+  salvar(b);
+  c.status = "estornada";
+  sessao.conta = { ...empresa };
+  return t;
 }
 
 /** A empresa cobra um cliente. Com a nota fiscal, o pagamento retém a CBS e o IBS dela. */
@@ -1310,6 +1384,7 @@ export async function criarCobranca(p: CobrancaPayload): Promise<Cobranca[]> {
     parcelas_total: 1,
     vai_reter_imposto: Boolean(p.nota_fiscal && p.nota_fiscal.cbs + p.nota_fiscal.ibs > 0),
     recebedor_nome: sessao.conta.nome,
+    recebedor_carteira_id: sessao.conta.carteira_id,
   };
   cobrancasDemo.push(c);
   return [c];
@@ -1327,6 +1402,7 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
         const imposto = c.vai_reter_imposto ? num(c.cbs) + num(c.ibs) : 0;
         return {
           id: c.id,
+          txid: c.txid,
           direcao: "receber" as const,
           contraparte:
             c.descricao || (c.pagador_documento ? `Doc. ${c.pagador_documento}` : "Cliente"),
@@ -1340,21 +1416,24 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
         };
       });
   }
-  const criadas: Fatura[] = minhasCobrancasDemo().map((c) => {
-    const imposto = c.vai_reter_imposto ? c.cbs + c.ibs : 0;
-    return {
-      id: c.id,
-      direcao: "receber",
-      contraparte: c.descricao || "Cliente",
-      nf: c.nfe_chave ? `NF-e …${c.nfe_chave.slice(-8)}` : "Sem nota",
-      valor_bruto: c.valor,
-      imposto,
-      liquido: r2(c.valor - imposto),
-      credito_gerado: 0,
-      vencimento: c.vencimento ?? new Date().toISOString(),
-      status: "pendente",
-    };
-  });
+  const criadas: Fatura[] = minhasCobrancasDemo()
+    .filter((c) => c.status === "aberta" || c.status === "paga")
+    .map((c) => {
+      const imposto = c.vai_reter_imposto ? c.cbs + c.ibs : 0;
+      return {
+        id: c.id,
+        txid: c.txid,
+        direcao: "receber",
+        contraparte: c.descricao || "Cliente",
+        nf: c.nfe_chave ? `NF-e …${c.nfe_chave.slice(-8)}` : "Sem nota",
+        valor_bruto: c.valor,
+        imposto,
+        liquido: r2(c.valor - imposto),
+        credito_gerado: 0,
+        vencimento: c.vencimento ?? new Date().toISOString(),
+        status: c.status === "paga" ? "liquidado" : "pendente",
+      };
+    });
   return [...(ehContaDoRoteiro() ? faturas : []), ...criadas]
     .filter((f) => !direcao || f.direcao === direcao)
     .sort((a, b) => a.vencimento.localeCompare(b.vencimento));

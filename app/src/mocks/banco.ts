@@ -33,6 +33,7 @@ interface BancoDemo {
   contas: Record<string, Conta>;
   chaves: ChaveDemo[];
   transacoes: Transacao[];
+  contestacoes?: { transacao_id: number; motivo: string; criado_em: string }[];
 }
 
 const KEY = "astro-demo-banco";
