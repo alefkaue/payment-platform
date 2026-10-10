@@ -52,13 +52,21 @@ administrador" no [HANDOFF.md](HANDOFF.md#node-sem-administrador).
 
 ## Regras principais
 
-- **PF tem Loja, Viagens e pontos** (1 ponto por real; passagens resgatadas com pontos). **PJ tem o split.**
+- **PJ tem o split.** (Loja, Viagens e pontos do PF estão arquivados: `BENEFICIOS_HABILITADOS=0`.)
 - **Transferência nunca tem imposto retido.** O split só acontece no pagamento de
   uma **cobrança com nota fiscal**, e só para empresas do regime regular.
+- **Transição honesta do split** (LC 214/2025): 2026 é ano de teste — a cobrança mostra o
+  imposto destacado na nota, mas a empresa recebe o valor inteiro. A retenção começa em
+  `SPLIT_RETENCAO_DESDE` (padrão 2027-01-01). `SPLIT_DEMONSTRACAO=1` liga a retenção para
+  apresentação, com selo "Simulação" no app (proibido em produção).
 - Alíquotas seguem a **transição** 2026–2033 (2026: CBS 0,9% + IBS 0,1%; IBS
-  pleno só em 2033). O banco retém o que **a nota** diz.
+  pleno só em 2033). Quando retém, o banco retém o que **a nota** diz.
 - Login é da **pessoa**; empresas são operadas por vínculo (papel + alçada), com
   **dupla aprovação** acima da alçada.
 - Limites diurno/noturno, regra de **aparelho novo** do Banco Central, bloqueio
   cautelar e contestação (MED) rodam no servidor.
 - Dinheiro trafega como **string decimal** (`"1500.00"`).
+- **Idempotência** em tudo que move dinheiro (Pix, cobrança, folha, lote, devolução,
+  pendências): header `Idempotency-Key` ou campo `idempotency_key`; o app gera uma chave
+  por intenção de pagamento. Reenvio devolve o resultado original.
+- Segurança e auditoria: `SECURITY.md` (índice) e `relatorios/AUDITORIA-2-SEGURANCA.md`.

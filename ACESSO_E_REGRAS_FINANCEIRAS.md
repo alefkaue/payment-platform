@@ -79,9 +79,23 @@ PJ R$ 50.000 / R$ 200.000 / R$ 20.000. Aumento de limite só vale depois de 24 h
 - Dinheiro em `Decimal` / `NUMERIC(14,2)`; entrada: positivo, até 2 casas, até 12 dígitos.
 - Débito, crédito, histórico de saldo, split e baixa da cobrança na **mesma transação**
   do banco, com as carteiras travadas (`SELECT … FOR UPDATE`) em ordem fixa.
-- **Idempotência**: `Idempotency-Key` por conta, única no banco. Repetir devolve a mesma
-  transação; usar a mesma chave para outro valor ou destino → 409.
-- Transação concluída não tem rota de edição: só **contestação** (MED, até 80 dias) e
-  estorno de cobrança, ambos gerando transações novas ligadas à original.
+- **Idempotência**: `Idempotency-Key` (header ou corpo; os dois diferentes = 400; em branco
+  = 400) por conta, única no banco. A chave do cliente ganha o prefixo `u:` e nunca colide
+  com as chaves internas (`pendente-`, `folha-`, `lote-`, `recorrencia-`). Repetir devolve a
+  mesma transação (ou a mesma pendência, ou o comprovante da cobrança já paga); a mesma
+  chave para outra operação → 409. Folha e lote sem chave usam chave derivada (mesma
+  competência/itens = não paga de novo).
+- Transação concluída não tem rota de edição: só **devolução** por quem recebeu (Pix, até
+  90 dias, parcial ou total), **contestação** (MED, até 80 dias) e estorno de cobrança, todos
+  gerando transações novas ligadas à original. A soma do que volta nunca passa do valor
+  recebido (devolução voluntária + MED inclusive).
 - Split (Reforma Tributária): só no pagamento de cobrança com NF-e; CBS/IBS calculados
-  no servidor a partir da nota, nunca do valor enviado pelo cliente.
+  no servidor a partir da nota, nunca do valor enviado pelo cliente. A mesma NF-e não vira
+  duas cobranças. Fases (`split_fase`): `informativo` até `SPLIT_RETENCAO_DESDE`
+  (2026: mostra, não retém), `retencao` depois, `demonstracao` só em apresentação.
+- Pix Automático respeita os limites de valor do pagador. O teto de aparelho novo
+  (R$ 200/R$ 1.000 por dia) soma todos os aparelhos não confirmados.
+- Rendimento só é creditado no próprio dia (nunca retroativo sobre o saldo atual).
+- Operação aprovada que ficou "executando" (queda no meio) é fechada pelo job
+  `/admin/jobs/conciliar-pendentes`, que confere no banco se o dinheiro saiu (nunca reexecuta).
+- Avisos de webhook nascem na mesma transação do dinheiro (outbox).

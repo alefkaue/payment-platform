@@ -130,9 +130,31 @@ O CI agora roda **a suíte inteira no Postgres** e confere que as migrações ba
 1. Conferir o resultado do CI depois do último push (backend e APK).
 2. Subir o ambiente na Azure (`AZURE.md`) e fazer as configurações manuais de
    `SECURITY_AUDIT.md` §6.
-3. Segundo fator para o admin da plataforma; troca e recuperação de senha.
+3. ~~Segundo fator para o admin; troca e recuperação de senha~~ (feito na 2ª rodada, abaixo).
 4. Testar o APK num celular (Keystore, atestação, pinning) e a facial em mais aparelhos.
 5. Definir as contas PJ de teste do pentest e preencher período/contato no `PENTEST.md`.
+
+## 7.1 Segunda rodada (10/10, tarde) — Claude + Codex
+
+Trabalho em equipe (Claude Code coordenando e cuidando do backend; Codex no frontend, nos
+ataques à API e na revisão independente). Instruções dos agentes: `GPT.md` e `GEMINI.md`.
+
+- **Segurança**: auditoria 2 completa em `relatorios/AUDITORIA-2-SEGURANCA.md` — 30 achados
+  corrigidos com teste (pagamento duplicado em folha/lote/Pix/pendências, colisão de chave
+  interna que aprovava pendência não executada, teto de aparelho novo contornável, Pix
+  Automático sem limite, NF-e repetida, MED devolvendo em dobro…), revisão cruzada,
+  fuzz de invariantes (o dinheiro nunca nasce nem some) e concorrência real no Postgres.
+- **Autenticação**: troca/recuperação de senha com rosto (A-16) e TOTP do admin (A-15).
+- **Telas novas**: Segurança (aparelhos/sessões/atividade), editar acesso na Equipe, Folha,
+  Auditoria da empresa, Contestar e Estornar, KYC no perfil, "Esqueci minha senha".
+- **Lógica bancária** (`relatorios/R1-logica-bancaria.md`): split com transição honesta
+  (2026 não retém), devolução de Pix por quem recebeu, apuração do mês de verdade, "A
+  receber" sem cobranças pagas, saldo bloqueado visível, rendimento não retroativo,
+  conciliação de operações presas, outbox de webhooks.
+- **Números**: backend 454 testes (SQLite) / 457 (Postgres, rodada anterior), app 146.
+- **Ainda falta do R1**: comprovante com E2E e QR Code real (exigem SPI/DICT ou parceiro),
+  IR/IOF no rendimento, Pix Agendado, KYB completo (beneficiário final), encerramento de
+  conta, exportação do extrato.
 
 ## 8. Rodar localmente para testar (sem documento em mãos)
 

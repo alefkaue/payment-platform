@@ -233,6 +233,14 @@ justamente ver se alguém burla.
   paginação (A-11), front por papel (A-03), compose só em 127.0.0.1 (A-14), logs JSON com request_id e trilha que
   não derruba Pix (logs). CI `backend.yml` com Postgres para concorrência e migrações. Pendentes: 2º fator do admin
   (A-15), troca/recuperação de senha (A-16), papel de banco com menor privilégio.
+- 10/10 (7ª sessão, Claude + Codex) — **Auditoria 2** (`relatorios/AUDITORIA-2-SEGURANCA.md`): ciclos de
+  diagnóstico, correção, revisão cruzada e ataque às correções. Corrigidos com teste: pagamento duplicado
+  em reenvio (folha, lote, header `Idempotency-Key` ignorado, pendências, chave por tentativa no app),
+  colisão de chave do cliente com chave interna (aprovava pendência não executada), teto de aparelho novo
+  por aparelho, Pix Automático sem limites, NF-e repetida, rendimento retroativo, MED + devolução em dobro,
+  erro 500 por chave longa no Postgres, sessão no front (logout e refresh). A-15 (TOTP do admin) e A-16
+  (troca/recuperação de senha) feitos. Fuzz de invariantes e concorrência real no Postgres.
+
 ### Próximos passos detalhados (itens 9 e 10)
 
 - ~~**7. Front**~~ (feito, ver diário): (a) quando o refresh falhar (401), limpar a sessão e ir para `/login` com o motivo (hoje só

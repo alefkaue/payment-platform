@@ -91,7 +91,9 @@ Montadoras/autopeças = regime **padrão** e **muito crédito** de insumo. Hist�
 "você cobra com a nota, recebe já líquido, o imposto sai conciliado à nota, os
 créditos aparecem para a apuração, e cada pessoa opera com alçada e dupla aprovação".
 Usar as alíquotas do ANO (2026 = 1%) e mostrar a projeção de 2033 separada.
-Cronograma: split opcional em 2027, obrigatório no B2B a partir de 2028.
+Cronograma (LC 214/2025): 2026 é ano de teste (destaque na nota, recolhimento dispensado —
+o Astro mostra, não retém); o split começa em 2027 e a transição vai até 2033. Na
+apresentação, ligar `SPLIT_DEMONSTRACAO=1` mostra a retenção com o selo "Simulação".
 
 ## 9. Roadmap priorizado
 

@@ -504,3 +504,23 @@ Resumo do que mudou desde a §12:
   app ligado ao v9 (login, cadastro com KYC, equipe, convites, aprovações) e o merge de
   `fix/pj-login-facial` (sem certificado digital no login PJ).
 - Falta: telas de folha, segurança (aparelhos/sessões) e auditoria; infra Azure; `SECURITY.md`.
+
+## 14. Rodada de 10/10 (tarde) — Claude + Codex
+
+**Estado atual: ver `RELATORIO-10-10-2026.md` §7.1 e `relatorios/AUDITORIA-2-SEGURANCA.md`.**
+
+- Trabalho em equipe: o Claude Code coordena e faz o backend; a Codex faz frontend, ataques à
+  API e revisa o código do Claude (instruções em `GPT.md`). A Codex roda por `C:\codex\codex.cmd`
+  (a instalação padrão tem caminho longo demais para o sandbox do Windows). A Gemini (`GEMINI.md`)
+  ficou sem cota no plano gratuito da chave de API.
+- Split com **transição honesta**: `SPLIT_RETENCAO_DESDE` (2027-01-01) e `SPLIT_DEMONSTRACAO`
+  (apresentação, selo "Simulação"; proibido em produção). Para a apresentação com backend,
+  ligar `SPLIT_DEMONSTRACAO=1`; no modo demonstração do app a fase padrão já é a simulação
+  (`VITE_SPLIT_FASE`).
+- Migrações novas: `b9e1c2d3f4a5` (chave de idempotência na pendência) e `c4d5e6f7a8b9`
+  (`transacoes.idempotency_key` 200). Ambas não destrutivas, testadas no Postgres.
+- Rotas novas: `POST /auth/senha`, `/auth/recuperacao(/concluir)`, `/auth/login/totp`,
+  `/pagamentos/transacoes/{id}/devolver`, `/admin/jobs/conciliar-pendentes` (agendar a cada
+  5 min). Inventário: `ENDPOINTS.md`.
+- Testes: backend 454 (SQLite), app 146. Concorrência e migrações rodam no CI com Postgres.
+- Branches: `main`, `apresentacao-interativa` e `arquivo-mvp-ago2026` (o antigo `master`).
