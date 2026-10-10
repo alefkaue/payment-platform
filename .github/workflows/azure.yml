@@ -9,7 +9,7 @@ on:
     branches: [main]
     paths:
       - "backend/**"
-      - "app/**"
+      - "download/**"
       - ".github/workflows/azure.yml"
   workflow_dispatch: {}
 
@@ -70,26 +70,13 @@ jobs:
           az containerapp revision list -g "$RG" -n astro-api \
             --query "[?properties.active].{revisao:name, saude:properties.healthState}" -o table
 
+  # O Astro é só app Android: o Static Web Apps publica a PÁGINA DE DOWNLOAD do APK
+  # (download/), não o app bancário. Não há mais versão web do banco.
   front:
-    if: vars.AZURE_CLIENT_ID != '' && vars.ASTRO_API_URL != ''
+    if: vars.AZURE_CLIENT_ID != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Instalar dependências
-        working-directory: app
-        run: npm ci
-
-      # Gera também o staticwebapp.config.json com a CSP (scripts/cabecalhos.mjs).
-      - name: Build (SPA + cabeçalhos de segurança)
-        working-directory: app
-        env:
-          VITE_API_URL: ${{ vars.ASTRO_API_URL }}
-        run: npm run build
 
       - uses: azure/login@v2
         with:
@@ -109,6 +96,6 @@ jobs:
         with:
           azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
           action: upload
-          app_location: app/dist/client
+          app_location: download
           skip_app_build: true
           skip_api_build: true

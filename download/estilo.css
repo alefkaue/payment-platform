@@ -1,0 +1,18 @@
+:root { --preto: #0a0a0a; --branco: #fff; --cinza: #9a9a9a; --linha: #2a2a2a; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--preto); color: var(--branco);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; display: flex; justify-content: center; }
+main { width: 100%; max-width: 460px; padding: 56px 24px 40px; }
+.marca { letter-spacing: .35em; font-weight: 700; font-size: 22px; margin: 0 0 40px; }
+h1 { font-size: 30px; line-height: 1.15; margin: 0 0 12px; }
+h2 { font-size: 18px; margin: 0 0 8px; }
+.sub, .nota, section p, .rodape { color: var(--cinza); }
+.botao { display: block; text-align: center; margin-top: 28px; padding: 15px; border-radius: 999px;
+  background: var(--branco); color: var(--preto); font-weight: 600; text-decoration: none; }
+.botao.secundario { background: transparent; color: var(--branco); border: 1px solid var(--linha); margin-top: 16px; }
+.nota { font-size: 13px; text-align: center; margin: 8px 0 0; }
+section { margin-top: 44px; padding-top: 28px; border-top: 1px solid var(--linha); }
+ul { padding-left: 18px; margin: 20px 0 0; }
+li { margin: 6px 0; }
+a { color: var(--branco); }
+.rodape { font-size: 12px; margin-top: 48px; }

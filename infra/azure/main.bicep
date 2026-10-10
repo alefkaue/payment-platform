@@ -31,7 +31,7 @@ param replicasMax int = 3
 
 param adminEmail string = 'admin@astro.app'
 
-@description('Origens além do app web liberadas no CORS. https://localhost é o APK (Capacitor no Android).')
+@description('Origens liberadas no CORS. O Astro é só app Android: https://localhost é o APK (Capacitor). Não há app web.')
 param origensExtras array = ['https://localhost']
 
 @description('SHA-256 do certificado que assina o APK release (resumo do workflow "Build APK"). Vazio = não confere.')
@@ -222,7 +222,7 @@ resource kvBanco 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   }
 }
 
-// ---------- Front (app web) ----------
+// ---------- Página de download do APK (não é o app: o banco é só no celular) ----------
 resource front 'Microsoft.Web/staticSites@2023-12-01' = {
   name: 'swa-${nome}-${sufixo}'
   location: localFront
@@ -292,7 +292,8 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
             { name: 'CNPJ_PROVEDOR', value: 'brasilapi' }
             { name: 'DOCUMENTO_PROVEDOR', value: 'tesseract' }
             { name: 'ADMIN_EMAIL', value: adminEmail }
-            { name: 'CORS_ORIGINS', value: join(concat(['https://${front.properties.defaultHostname}'], origensExtras), ',') }
+            // Só o APK chama a API pelo navegador embutido; a página de download não chama a API.
+            { name: 'CORS_ORIGINS', value: join(origensExtras, ',') }
             // O proxy de entrada do Container Apps fica na sub-rede da API; o Front Door
             // é reconhecido pelo id do perfil (app/deps.py:ip_cliente).
             { name: 'PROXIES_CONFIAVEIS', value: redeApi }

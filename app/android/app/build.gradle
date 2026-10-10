@@ -7,8 +7,9 @@ android {
         applicationId "com.payflow.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        // Cada execução do CI gera uma versão maior: o Android atualiza por cima da anterior.
+        versionCode((System.getenv("GITHUB_RUN_NUMBER") ?: "1") as int)
+        versionName "1.0." + (System.getenv("GITHUB_RUN_NUMBER") ?: "0")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -27,6 +28,26 @@ android {
                 keyAlias System.getenv("ASTRO_KEY_ALIAS")
                 keyPassword System.getenv("ASTRO_KEY_SENHA")
             }
+        }
+    }
+    buildFeatures {
+        buildConfig = true
+    }
+    // Dois apps (PENTEST.md): "astro" é o endurecido (pinning, atestação, sem print, sem
+    // depuração); "lab" é o de laboratório para os grupos atacarem a LÓGICA sem passar dias
+    // quebrando a blindagem -- aceita a CA do Burp, permite print e depurar o WebView e não
+    // manda atestação (entra como aparelho sem atestação, igual a um emulador).
+    flavorDimensions = ["canal"]
+    productFlavors {
+        astro {
+            dimension "canal"
+            buildConfigField "boolean", "LAB", "false"
+        }
+        lab {
+            dimension "canal"
+            applicationIdSuffix ".lab"
+            versionNameSuffix "-lab"
+            buildConfigField "boolean", "LAB", "true"
         }
     }
     buildTypes {

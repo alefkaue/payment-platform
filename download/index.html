@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Astro — baixar o app</title>
+  <meta name="description" content="O Astro é um banco para celular Android. Baixe o app.">
+  <link rel="stylesheet" href="estilo.css">
+</head>
+<body>
+  <main>
+    <p class="marca">ASTRO</p>
+    <h1>O Astro é um banco de celular.</h1>
+    <p class="sub">Não existe versão web: a conta funciona só no app Android.
+      No computador, rode o app num emulador Android.</p>
+
+    <a class="botao" href="https://github.com/alefkaue/payment-platform/releases/latest/download/Astro.apk">Baixar Astro (Android)</a>
+    <p class="nota">O app oficial, com todas as proteções ligadas.</p>
+
+    <section>
+      <h2>Vai fazer o pentest?</h2>
+      <p>Use o <strong>Astro Lab</strong>: o mesmo app, falando com a mesma API, mas aceita o certificado
+        do Burp/ZAP, permite print e depurar o WebView e não usa a atestação do aparelho.
+        Ele existe para vocês atacarem a lógica do banco sem gastar dias quebrando a blindagem
+        — que também está no escopo, no app oficial.</p>
+      <a class="botao secundario" href="https://github.com/alefkaue/payment-platform/releases/latest/download/Astro-Lab.apk">Baixar Astro Lab</a>
+      <ul>
+        <li><a href="https://github.com/alefkaue/payment-platform/blob/main/RODAR-NO-PC.md">Como rodar no PC (emulador Android)</a></li>
+        <li><a href="https://github.com/alefkaue/payment-platform/blob/main/PENTEST.md">Regras do pentest</a></li>
+        <li><a href="https://github.com/alefkaue/payment-platform/releases/latest/download/SHA256SUMS.txt">SHA-256 dos arquivos</a> (confira antes de instalar)</li>
+      </ul>
+    </section>
+
+    <p class="rodape">Projeto acadêmico. Não movimenta dinheiro real. iPhone: fora do escopo por enquanto.</p>
+  </main>
+</body>
+</html>
