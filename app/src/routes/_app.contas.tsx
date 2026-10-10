@@ -2,7 +2,9 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Copy, FileText, Plus } from "lucide-react";
-import { criarCobranca, estornarCobranca, listarFaturas, MODO_API } from "@/lib/api";
+import { apuracaoPJ, criarCobranca, estornarCobranca, listarFaturas, MODO_API } from "@/lib/api";
+import { TEXTO_INFORMATIVO } from "@/lib/split-fase";
+import { SplitAviso } from "@/components/payflow/split-aviso";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, parseValor } from "@/lib/format";
 import type { Cobranca, Fatura } from "@/lib/types";
@@ -38,6 +40,13 @@ function ContasEmpresa() {
     },
   });
   const q = useQuery({ queryKey: ["faturas", conta?.numero], queryFn: () => listarFaturas() });
+  const apuracao = useQuery({
+    queryKey: ["apuracao-pj", conta?.numero],
+    queryFn: apuracaoPJ,
+    enabled: conta?.tipo === "PJ",
+  });
+  const fase = apuracao.data?.split_fase;
+  const informativo = fase === "informativo";
 
   // Contas a pagar/receber são um recurso da conta Empresa.
   if (conta && conta.tipo !== "PJ") return <Navigate to="/inicio" replace />;
@@ -53,12 +62,31 @@ function ContasEmpresa() {
 
   return (
     <div className="enter">
-      <PageTitle sub="Faturas B2B conciliadas com a nota fiscal (NF-e). O imposto da nota é separado no ato.">
+      <PageTitle
+        sub={
+          informativo
+            ? "Imposto destacado nas suas notas"
+            : "Faturas B2B conciliadas com a nota fiscal (NF-e)."
+        }
+      >
         Contas
       </PageTitle>
+      <SplitAviso fase={fase} />
+      {apuracao.data && (
+        <MetricTile
+          label={informativo ? "Imposto destacado nas suas notas" : "Imposto separado para o Fisco"}
+          value={fmtBRL(
+            informativo ? apuracao.data.imposto_destacado : apuracao.data.imposto_retido,
+          )}
+        />
+      )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <MetricTile label="A receber (líquido)" value={fmtBRL(totReceber)} tone="pos" />
+        <MetricTile
+          label={informativo ? "A receber (valor inteiro)" : "A receber (líquido)"}
+          value={fmtBRL(totReceber)}
+          tone="pos"
+        />
         <MetricTile label="A pagar" value={MODO_API ? "Ainda indisponível" : fmtBRL(totPagar)} />
         <MetricTile
           label="Crédito a gerar"
@@ -69,7 +97,7 @@ function ContasEmpresa() {
       </div>
 
       {nova ? (
-        <NovaCobranca onFechar={() => setNova(false)} />
+        <NovaCobranca fase={fase} onFechar={() => setNova(false)} />
       ) : (
         <button className="btn btn-ink mt-5 w-full gap-2" onClick={() => setNova(true)}>
           <Plus size={18} /> Cobrar um cliente
@@ -178,16 +206,24 @@ function ContasEmpresa() {
       <div className="mt-4 flex items-start gap-3 rounded-[16px] bg-tax-bg px-4 py-3.5 text-sm text-tax2">
         <FileText size={18} className="mt-0.5 shrink-0" />
         <p>
-          {aba !== "pagar"
-            ? "Cada recebimento é conciliado com a NF-e e o IBS/CBS da nota é separado no ato — você recebe o líquido e a apuração já sai pronta para conferir."
-            : "Toda compra de insumo com nota gera crédito de IBS/CBS, que abate o imposto das suas vendas na apuração."}
+          {informativo
+            ? TEXTO_INFORMATIVO
+            : aba !== "pagar"
+              ? "Cada recebimento é conciliado com a NF-e e o IBS/CBS da nota é separado no ato — você recebe o líquido e a apuração já sai pronta para conferir."
+              : "Toda compra de insumo com nota gera crédito de IBS/CBS, que abate o imposto das suas vendas na apuração."}
         </p>
       </div>
     </div>
   );
 }
 
-function NovaCobranca({ onFechar }: { onFechar: () => void }) {
+function NovaCobranca({
+  onFechar,
+  fase,
+}: {
+  onFechar: () => void;
+  fase: import("@/lib/types").SplitFase | undefined;
+}) {
   const qc = useQueryClient();
   const [valorStr, setValorStr] = useState("");
   const [descricao, setDescricao] = useState("");
@@ -253,10 +289,13 @@ function NovaCobranca({ onFechar }: { onFechar: () => void }) {
         </h2>
         {primeira && (
           <>
+            <SplitAviso fase={primeira.split_fase} />
             <p className="text-sm text-mut2">
-              {primeira.vai_reter_imposto
-                ? `No pagamento, ${fmtBRL(criadas.reduce((a, c) => a + c.cbs + c.ibs, 0))} de CBS/IBS da nota vão direto ao Fisco e você recebe o líquido.`
-                : "Sem retenção de imposto nesta cobrança."}
+              {primeira.split_fase === "informativo"
+                ? `Imposto destacado na nota: ${fmtBRL(criadas.reduce((a, c) => a + c.cbs + c.ibs, 0))} (não retido em 2026). Você recebe o valor inteiro: ${fmtBRL(criadas.reduce((a, c) => a + c.valor, 0))}.`
+                : primeira.vai_reter_imposto
+                  ? `No pagamento, ${fmtBRL(criadas.reduce((a, c) => a + c.cbs + c.ibs, 0))} de CBS/IBS da nota são separados para o Fisco e você recebe o líquido.`
+                  : "Sem retenção de imposto nesta cobrança."}
             </p>
             <div>
               <p className="text-xs text-mut3">
@@ -337,7 +376,9 @@ function NovaCobranca({ onFechar }: { onFechar: () => void }) {
 
       <label className="flex items-center gap-2 text-sm text-ink">
         <input type="checkbox" checked={comNota} onChange={(e) => setComNota(e.target.checked)} />
-        Vincular nota fiscal (o imposto da nota é separado no pagamento)
+        {fase === "informativo"
+          ? "Vincular nota fiscal (imposto destacado, sem desconto em 2026)"
+          : "Vincular nota fiscal (o imposto da nota é separado no pagamento)"}
       </label>
       {comNota && (
         <div className="space-y-4 rounded-[16px] border border-line2 p-4">

@@ -110,6 +110,8 @@ export interface Conta {
 }
 
 export interface Transacao {
+  /** Fase identificada nos dados de apresentação; na API vale aplicou_split. */
+  split_fase?: SplitFase;
   id: number;
   origem_carteira_id: number;
   destino_carteira_id: number;
@@ -293,18 +295,22 @@ export interface ResumoVendasPJ {
 }
 
 /**
- * Tributos da conta Empresa — o coração do pitch B2B. No split "inteligente"
- * (modo atual), o banco retém a CBS e o IBS destacados na nota de cada venda
- * paga por cobrança. Os créditos da empresa são abatidos pelo fisco na
- * apuração; a restituição prevista é uma estimativa.
+ * Tributos da conta Empresa. A fase distingue destaque sem retenção,
+ * separação no recebimento e simulação de apresentação.
  */
+export type SplitFase = "informativo" | "retencao" | "demonstracao";
+
 export interface ApuracaoPJ {
+  split_fase: SplitFase;
+  imposto_destacado: number;
+  observacao: string;
+  split_retencao_desde: string;
   periodo: string; // "Outubro de 2026"
   faturamento: number; // vendas com nota recebidas no período (bruto)
   cbs_retido: number;
   ibs_retido: number;
   imposto_retido: number; // cbs + ibs retidos no ato
-  a_repassar: number; // na conta transitória, vai ao fisco em D+1
+  a_repassar: number; // na conta transitória interna; integração fiscal ainda pendente
   repassado: number;
   creditos_informados: number;
   restituicao_prevista: number; // estimativa: min(créditos, retido)
@@ -313,6 +319,7 @@ export interface ApuracaoPJ {
 
 /** Cobrança emitida pela empresa (Pix com QR dinâmico + boleto). */
 export interface Cobranca {
+  split_fase?: SplitFase;
   id: number;
   txid: string;
   /** Vínculo com o pagamento no banco de demonstração. */
@@ -475,6 +482,7 @@ export type StatusFatura = "liquidado" | "pendente" | "agendado";
  * Em "pagar", a compra de insumo gera crédito de IBS/CBS para a apuração.
  */
 export interface Fatura {
+  split_fase?: SplitFase;
   id: number;
   txid?: string;
   direcao: DirecaoFatura;

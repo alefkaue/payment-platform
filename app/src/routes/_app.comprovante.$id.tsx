@@ -2,7 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Check } from "lucide-react";
-import { ApiError, contestar, transacaoPorId } from "@/lib/api";
+import { ApiError, apuracaoPJ, contestar, listarCobrancas, transacaoPorId } from "@/lib/api";
+import { SplitAviso } from "@/components/payflow/split-aviso";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, fmtData, fmtId } from "@/lib/format";
 import type { CategoriaTx, Transacao } from "@/lib/types";
@@ -44,6 +45,17 @@ function Comprovante() {
     queryKey: ["tx", conta?.numero, id],
     queryFn: () => transacaoPorId(Number(id)),
   });
+  const apuracao = useQuery({
+    queryKey: ["apuracao-pj", conta?.numero],
+    queryFn: apuracaoPJ,
+    enabled: conta?.tipo === "PJ",
+  });
+  // No informativo a transação tem tributos zerados; o destaque continua na cobrança.
+  const cobrancas = useQuery({
+    queryKey: ["cobrancas", conta?.numero],
+    queryFn: listarCobrancas,
+    enabled: conta?.tipo === "PJ" && q.data?.categoria === "recebimento" && !q.data.aplicou_split,
+  });
 
   if (q.isLoading)
     return <div className="mx-auto mt-10 h-64 max-w-md animate-pulse rounded-[22px] bg-card" />;
@@ -57,6 +69,8 @@ function Comprovante() {
       </div>
     );
   const t = q.data;
+  const cobranca = cobrancas.data?.find((c) => c.transacao_id === t.id);
+  const impostoDestacado = cobranca ? cobranca.cbs + cobranca.ibs : t.cbs + t.ibs;
 
   return (
     <div className="enter mx-auto max-w-md text-center">
@@ -72,14 +86,27 @@ function Comprovante() {
       </p>
 
       <section className="surface mt-8 p-5 text-left md:p-6">
-        <SplitBar liquido={t.liquido} imposto={t.cbs + t.ibs} />
+        <SplitAviso fase={t.split_fase ?? apuracao.data?.split_fase} />
+        <SplitBar
+          liquido={t.aplicou_split ? t.liquido : t.valor_bruto}
+          imposto={t.aplicou_split ? t.cbs + t.ibs : 0}
+        />
         <div className="mt-3 divide-y divide-border">
           <ValueRow label="Você pagou" value={t.valor_bruto} />
-          {t.aplicou_split && <ValueRow label="CBS da nota → Fisco" value={t.cbs} tax />}
-          {t.aplicou_split && <ValueRow label="IBS da nota → Fisco" value={t.ibs} tax />}
+          {t.aplicou_split && (
+            <ValueRow label="CBS da nota separado para o Fisco" value={t.cbs} tax />
+          )}
+          {t.aplicou_split && (
+            <ValueRow label="IBS da nota separado para o Fisco" value={t.ibs} tax />
+          )}
+          {!t.aplicou_split && impostoDestacado > 0 && (
+            <p className="py-2 text-sm text-mut2">
+              Imposto destacado na nota: {fmtBRL(impostoDestacado)} (não retido em 2026)
+            </p>
+          )}
           <ValueRow
             label={t.aplicou_split ? "Destino recebe (líquido)" : "Destino recebe"}
-            value={t.liquido}
+            value={t.aplicou_split ? t.liquido : t.valor_bruto}
             strong
           />
         </div>

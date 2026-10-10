@@ -14,6 +14,7 @@ import { atestacaoDoAparelho } from "./dpop";
 import { centavosFolha, decimalFolha } from "./folha";
 import type { Funcionario, FuncionarioCreate, FolhaItem, ResultadoFolha } from "./types";
 import { calcularSplit, semSplit, VIGENCIA_ATUAL } from "./split";
+import { faseSplitDemo, TEXTO_INFORMATIVO, TEXTO_DEMONSTRACAO } from "./split-fase";
 import {
   ApiError,
   definirConta,
@@ -165,6 +166,8 @@ interface TransacaoApi {
 }
 
 interface CobrancaApi {
+  transacao_id?: number | null;
+  split_fase?: import("./types").SplitFase;
   id: number;
   txid: string;
   valor: string;
@@ -256,6 +259,8 @@ function mapTransacao(t: TransacaoApi, minha: number): Transacao {
 
 function mapCobranca(c: CobrancaApi): Cobranca {
   return {
+    ...(c.transacao_id != null ? { transacao_id: c.transacao_id } : {}),
+    split_fase: c.split_fase ?? "informativo",
     id: c.id,
     txid: c.txid,
     valor: num(c.valor),
@@ -780,8 +785,14 @@ function registrarPagamento(args: {
   if (valor > LIMITE_SELFIE && !comBiometria)
     throw new ApiError("Valores acima de R$ 500,00 exigem verificação facial.", 400);
   // Transferência nunca tem split; compra com nota (loja/viagens) tem.
-  const s = categoria === "transferencia" ? semSplit(valor) : calcularSplit(valor, destino.tipo);
+  const estimativa =
+    categoria === "transferencia" ? semSplit(valor) : calcularSplit(valor, destino.tipo);
+  const s =
+    faseSplitDemo() === "informativo"
+      ? { ...estimativa, liquido: valor, aplicou_split: false }
+      : estimativa;
   const t: Transacao = {
+    split_fase: faseSplitDemo(),
     id: genId(),
     origem_carteira_id: sessao.conta.carteira_id,
     destino_carteira_id: destino.carteira_id,
@@ -1279,6 +1290,10 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
   await delay(400);
   if (MODO_API) {
     const t = await get<{
+      split_fase: import("./types").SplitFase;
+      imposto_destacado: string;
+      observacao: string;
+      split_retencao_desde: string;
       cbs_retido: string;
       ibs_retido: string;
       cbs_repassado: string;
@@ -1292,9 +1307,16 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
     }>("/empresas/atual/tributos");
     // O servidor apura o MÊS (AAAA-MM) e soma o faturamento; o app só formata (R1-41).
     const [ano = 0, m = 1] = t.periodo.split("-").map(Number);
-    const mes = new Date(ano, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    const mes = new Date(ano, m - 1, 1).toLocaleDateString("pt-BR", {
+      month: "long",
+      year: "numeric",
+    });
     return {
       periodo: mes.charAt(0).toUpperCase() + mes.slice(1),
+      split_fase: t.split_fase,
+      imposto_destacado: num(t.imposto_destacado),
+      observacao: t.observacao,
+      split_retencao_desde: t.split_retencao_desde,
       faturamento: num(t.faturamento),
       cbs_retido: num(t.cbs_retido),
       ibs_retido: num(t.ibs_retido),
@@ -1306,11 +1328,34 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
       vendas_com_split: t.transacoes_com_split,
     };
   }
-  if (ehContaDoRoteiro()) return { ...apuracaoDemo };
+  if (ehContaDoRoteiro()) {
+    const fase = faseSplitDemo();
+    return {
+      ...apuracaoDemo,
+      split_fase: fase,
+      observacao:
+        fase === "informativo"
+          ? TEXTO_INFORMATIVO
+          : fase === "demonstracao"
+            ? TEXTO_DEMONSTRACAO
+            : "Imposto separado para o Fisco no recebimento.",
+      ...(fase === "informativo"
+        ? {
+            cbs_retido: 0,
+            ibs_retido: 0,
+            imposto_retido: 0,
+            a_repassar: 0,
+            repassado: 0,
+            restituicao_prevista: 0,
+            vendas_com_split: 0,
+          }
+        : {}),
+    };
+  }
   // Conta criada agora: apura só as vendas com nota que ela recebeu de fato.
   const minha = sessao.conta.carteira_id;
   const vendas = todasTransacoes().filter(
-    (t) => t.destino_carteira_id === minha && t.aplicou_split,
+    (t) => t.destino_carteira_id === minha && t.cbs + t.ibs > 0,
   );
   const soma = (f: (t: Transacao) => number) => r2(vendas.reduce((a, t) => a + f(t), 0));
   const cbs = soma((t) => t.cbs);
@@ -1319,15 +1364,24 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
   const mes = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
   return {
     periodo: mes.charAt(0).toUpperCase() + mes.slice(1),
+    split_fase: faseSplitDemo(),
+    imposto_destacado: r2(cbs + ibs),
+    observacao:
+      faseSplitDemo() === "informativo"
+        ? TEXTO_INFORMATIVO
+        : faseSplitDemo() === "demonstracao"
+          ? TEXTO_DEMONSTRACAO
+          : "Imposto separado para o Fisco no recebimento.",
+    split_retencao_desde: "2027-01-01",
     faturamento: soma((t) => t.valor_bruto),
-    cbs_retido: cbs,
-    ibs_retido: ibs,
-    imposto_retido: r2(cbs + ibs),
-    a_repassar: r2(cbs + ibs),
+    cbs_retido: faseSplitDemo() === "informativo" ? 0 : cbs,
+    ibs_retido: faseSplitDemo() === "informativo" ? 0 : ibs,
+    imposto_retido: faseSplitDemo() === "informativo" ? 0 : r2(cbs + ibs),
+    a_repassar: faseSplitDemo() === "informativo" ? 0 : r2(cbs + ibs),
     repassado: 0,
     creditos_informados: creditos,
-    restituicao_prevista: Math.min(creditos, r2(cbs + ibs)),
-    vendas_com_split: vendas.length,
+    restituicao_prevista: faseSplitDemo() === "informativo" ? 0 : Math.min(creditos, r2(cbs + ibs)),
+    vendas_com_split: faseSplitDemo() === "informativo" ? 0 : vendas.length,
   };
 }
 
@@ -1411,6 +1465,7 @@ export async function criarCobranca(p: CobrancaPayload): Promise<Cobranca[]> {
     throw new ApiError("CBS + IBS da nota não podem passar do valor cobrado.");
   const txid = crypto.randomUUID().replace(/-/g, "");
   const c: Cobranca = {
+    split_fase: faseSplitDemo(),
     id: genId(),
     txid,
     valor: p.valor,
@@ -1424,7 +1479,9 @@ export async function criarCobranca(p: CobrancaPayload): Promise<Cobranca[]> {
     status: "aberta",
     parcela_numero: 1,
     parcelas_total: 1,
-    vai_reter_imposto: Boolean(p.nota_fiscal && p.nota_fiscal.cbs + p.nota_fiscal.ibs > 0),
+    vai_reter_imposto:
+      faseSplitDemo() !== "informativo" &&
+      Boolean(p.nota_fiscal && p.nota_fiscal.cbs + p.nota_fiscal.ibs > 0),
     recebedor_nome: sessao.conta.nome,
     recebedor_carteira_id: sessao.conta.carteira_id,
   };
@@ -1441,8 +1498,10 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
     return cobs
       .filter((c) => c.status === "aberta" || c.status === "paga")
       .map((c) => {
-        const imposto = c.vai_reter_imposto ? num(c.cbs) + num(c.ibs) : 0;
+        const imposto = num(c.cbs) + num(c.ibs);
+        const retido = c.split_fase !== "informativo" && c.vai_reter_imposto ? imposto : 0;
         return {
+          ...(c.split_fase ? { split_fase: c.split_fase } : {}),
           id: c.id,
           txid: c.txid,
           direcao: "receber" as const,
@@ -1451,7 +1510,7 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
           nf: c.nfe_chave ? `NF-e …${c.nfe_chave.slice(-8)}` : "Sem nota",
           valor_bruto: num(c.valor),
           imposto,
-          liquido: r2(num(c.valor) - imposto),
+          liquido: r2(num(c.valor) - retido),
           credito_gerado: 0,
           vencimento: c.vencimento ?? "",
           status: c.status === "paga" ? ("liquidado" as const) : ("pendente" as const),
@@ -1461,8 +1520,9 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
   const criadas: Fatura[] = minhasCobrancasDemo()
     .filter((c) => c.status === "aberta" || c.status === "paga")
     .map((c) => {
-      const imposto = c.vai_reter_imposto ? c.cbs + c.ibs : 0;
+      const imposto = c.cbs + c.ibs;
       return {
+        split_fase: c.split_fase ?? faseSplitDemo(),
         id: c.id,
         txid: c.txid,
         direcao: "receber",
@@ -1470,13 +1530,17 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
         nf: c.nfe_chave ? `NF-e …${c.nfe_chave.slice(-8)}` : "Sem nota",
         valor_bruto: c.valor,
         imposto,
-        liquido: r2(c.valor - imposto),
+        liquido: c.vai_reter_imposto ? r2(c.valor - imposto) : c.valor,
         credito_gerado: 0,
         vencimento: c.vencimento ?? "",
         status: c.status === "paga" ? "liquidado" : "pendente",
       };
     });
-  return [...(ehContaDoRoteiro() ? faturas : []), ...criadas]
+  const roteiro =
+    faseSplitDemo() === "informativo"
+      ? faturas.map((f) => ({ ...f, split_fase: faseSplitDemo(), liquido: f.valor_bruto }))
+      : faturas.map((f) => ({ ...f, split_fase: faseSplitDemo() }));
+  return [...(ehContaDoRoteiro() ? roteiro : []), ...criadas]
     .filter((f) => !direcao || f.direcao === direcao)
     .sort((a, b) => a.vencimento.localeCompare(b.vencimento));
 }

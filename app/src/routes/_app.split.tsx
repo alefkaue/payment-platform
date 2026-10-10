@@ -37,7 +37,7 @@ function SplitHub() {
 
   return (
     <div className="enter space-y-7">
-      <PageTitle sub="O imposto da Reforma Tributária (IBS/CBS) separado no ato da venda — não depois, na guia.">
+      <PageTitle sub="2026: teste com destaque na nota, sem retenção. 2027: início do split. Transição até 2033.">
         Entenda o split
       </PageTitle>
 
@@ -50,11 +50,12 @@ function SplitHub() {
           <h2 className="text-lg text-ink">O que é o split</h2>
         </div>
         <p className="mt-3 text-sm leading-relaxed text-mut2">
-          Na Reforma (LC 214/2025), quando um cliente paga uma venda{" "}
-          <strong>com nota fiscal</strong>, o banco separa a <strong>CBS</strong> (federal) e o{" "}
-          <strong>IBS</strong> (estados/municípios) que estão destacados na nota e envia direto ao
-          Fisco. A empresa recebe o valor <strong>líquido</strong>. Transferência comum (Pix entre
-          contas, reembolso, empréstimo) <strong>nunca</strong> tem split.
+          Em 2026, ano de teste da Reforma (LC 214/2025), a CBS e o IBS aparecem destacados na nota,
+          sem retenção: a empresa recebe o valor inteiro. A separação automática começa em 2027, com
+          transição até 2033. Quando aplicado a uma venda <strong>com nota fiscal</strong>, o split
+          separa o imposto no recebimento. No Astro, essa separação é interna; o repasse oficial
+          depende da integração com os órgãos fiscais. Transferência comum (Pix entre contas,
+          reembolso, empréstimo) <strong>nunca</strong> tem split.
         </p>
 
         <div className="mt-5 rounded-[16px] bg-tint p-4">
@@ -76,9 +77,9 @@ function SplitHub() {
         <ul className="mt-4 space-y-3">
           {[
             "Não cobra nada além do imposto que já era devido na venda.",
-            "Só recolhe na hora, em vez de depois — a apuração continua, mas sai quase pronta.",
+            "Em 2026, o imposto é destacado na nota, sem desconto no recebimento.",
             "Transferência entre contas (sócio, reembolso) nunca sofre retenção.",
-            "Seus créditos de compras entram na apuração e o que sobrar volta como restituição.",
+            "A apuração continua necessária; créditos e restituições dependem de validação fiscal.",
           ].map((t) => (
             <li key={t} className="flex items-start gap-3 text-sm text-mut2">
               <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-[color-mix(in_oklab,var(--pos)_15%,transparent)] text-pos">
@@ -111,11 +112,11 @@ function SplitHub() {
 
       {ehPJ && (
         <section className="rounded-[20px] bg-ink p-6 text-ink-foreground shadow-lift">
-          <h2 className="text-lg font-semibold">Na sua conta, o split é invisível</h2>
+          <h2 className="text-lg font-semibold">Na sua conta, acompanhe a fase do split</h2>
           <p className="mt-2 text-sm opacity-80">
-            Cada cobrança paga já chega líquida, com o imposto conciliado à nota. Você vê o que foi
-            retido, o que já foi repassado e a projeção de crédito no card “Imposto das suas
-            vendas”.
+            Em 2026, cada cobrança chega inteira e o card mostra o imposto destacado na nota. A
+            partir de 2027, acompanhe a separação no recebimento. No ambiente de apresentação, o
+            selo Simulação identifica os valores de teste.
           </p>
         </section>
       )}
@@ -127,10 +128,10 @@ function ExemploBarra() {
   const r = calcularSplit(10000, "PJ", VIGENCIA_ATUAL, "padrao");
   return (
     <div className="mt-3">
-      <SplitBar liquido={r.liquido} imposto={r.imposto_total} />
+      <SplitBar liquido={r.valor_bruto} imposto={0} />
       <div className="mt-2 flex justify-between text-sm">
-        <span className="font-semibold text-pos">Você recebe {fmtBRL(r.liquido)}</span>
-        <span className="text-tax">IBS/CBS {fmtBRL(r.imposto_total)}</span>
+        <span className="font-semibold text-pos">Em 2026 você recebe {fmtBRL(r.valor_bruto)}</span>
+        <span className="text-tax">IBS/CBS destacado {fmtBRL(r.imposto_total)}</span>
       </div>
       <p className="mt-1 text-[11px] text-mut3">Sobre uma venda de {fmtBRL(r.valor_bruto)}.</p>
     </div>
@@ -197,7 +198,10 @@ function Simulador({ ehPJ, setor }: { ehPJ: boolean; setor: string | undefined }
   return (
     <section className="surface p-6">
       <h2 className="text-lg text-ink">Simule o split</h2>
-      <p className="text-xs text-mut3">Mesmo motor de cálculo do app e do backend.</p>
+      <p className="text-xs text-mut3">
+        Estimativa com alíquotas de referência. Em 2026, apenas destaque na nota; split a partir de
+        2027.
+      </p>
 
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <Field label="Valor da venda (R$)" id="sim-valor">
@@ -258,10 +262,23 @@ function Simulador({ ehPJ, setor }: { ehPJ: boolean; setor: string | undefined }
       </div>
 
       <div className="mt-6 rounded-[16px] bg-tint p-4">
-        <SplitBar liquido={r.liquido} imposto={r.imposto_total} />
+        <SplitBar
+          liquido={ano === 2026 ? r.valor_bruto : r.liquido}
+          imposto={ano === 2026 ? 0 : r.imposto_total}
+        />
         <div className="mt-4 grid grid-cols-2 gap-3">
-          <MetricTile label="Destino recebe (líquido)" value={fmtBRL(r.liquido)} tone="pos" />
-          <MetricTile label="Imposto → Fisco" value={fmtBRL(r.imposto_total)} tone="tax" />
+          <MetricTile
+            label={ano === 2026 ? "Destino recebe (inteiro)" : "Destino recebe (líquido estimado)"}
+            value={fmtBRL(ano === 2026 ? r.valor_bruto : r.liquido)}
+            tone="pos"
+          />
+          <MetricTile
+            label={
+              ano === 2026 ? "Imposto destacado (sem desconto)" : "Imposto separado (estimativa)"
+            }
+            value={fmtBRL(r.imposto_total)}
+            tone="tax"
+          />
           {r.aplicou_split && (
             <>
               <MetricTile label="CBS da nota" value={fmtBRL(r.cbs)} />
