@@ -6,6 +6,7 @@ pentest feito por outros grupos.
 
 | Documento | Para quê |
 |---|---|
+| `RELATORIO-10-10-2026.md` | Resumo de tudo o que foi feito em 10/10/2026 |
 | `SECURITY_AUDIT.md` | Achados da auditoria, gravidade, evidência, correção, pendências e ações manuais de nuvem |
 | `THREAT_MODEL.md` | Ativos, atores, fronteiras de confiança, ameaças e riscos residuais |
 | `ACESSO_E_REGRAS_FINANCEIRAS.md` | Autenticação, papéis, alçadas e regras do dinheiro |

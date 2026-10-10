@@ -118,7 +118,7 @@ Não é falha explorável hoje, mas é lacuna de produto: quem esquece a senha n
 
 | O quê | Resultado |
 |---|---|
-| Backend `pytest` | **247 passaram, 3 pulados** (antes: 203) — os 3 pulados são os de Postgres |
+| Backend `pytest` | **250 passaram, 3 pulados** (antes: 203; inclui 3 da correção da facial) — os 3 pulados são os de Postgres |
 | `test_concorrencia_postgres.py` (saque paralelo, mesma chave em paralelo, alçada diária em paralelo) | **Não rodou aqui** (sem Postgres local). Roda no CI: `.github/workflows/backend.yml` |
 | Migração `d4e5f6a7b8c9` | Não rodada em Postgres aqui; o CI sobe/desce/sobe no Postgres |
 | App `vitest` | 19 passaram, 2 pulados |
