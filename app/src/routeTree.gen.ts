@@ -28,6 +28,7 @@ import { Route as AppNotificacoesRouteImport } from './routes/_app.notificacoes'
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppPerfilRouteImport } from './routes/_app.perfil'
 import { Route as AppPixRouteImport } from './routes/_app.pix'
+import { Route as AppSegurancaRouteImport } from './routes/_app.seguranca'
 import { Route as AppSplitRouteImport } from './routes/_app.split'
 import { Route as AppTransferirRouteImport } from './routes/_app.transferir'
 import { Route as AppComprovanteIdRouteImport } from './routes/_app.comprovante.$id'
@@ -126,6 +127,11 @@ const AppPixRoute = AppPixRouteImport.update({
   path: '/pix',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSegurancaRoute = AppSegurancaRouteImport.update({
+  id: '/seguranca',
+  path: '/seguranca',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppSplitRoute = AppSplitRouteImport.update({
   id: '/split',
   path: '/split',
@@ -161,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/pendentes': typeof AppPendentesRoute
   '/perfil': typeof AppPerfilRoute
   '/pix': typeof AppPixRoute
+  '/seguranca': typeof AppSegurancaRoute
   '/split': typeof AppSplitRoute
   '/transferir': typeof AppTransferirRoute
   '/comprovante/$id': typeof AppComprovanteIdRoute
@@ -184,6 +191,7 @@ export interface FileRoutesByTo {
   '/pendentes': typeof AppPendentesRoute
   '/perfil': typeof AppPerfilRoute
   '/pix': typeof AppPixRoute
+  '/seguranca': typeof AppSegurancaRoute
   '/split': typeof AppSplitRoute
   '/transferir': typeof AppTransferirRoute
   '/comprovante/$id': typeof AppComprovanteIdRoute
@@ -209,6 +217,7 @@ export interface FileRoutesById {
   '/_app/pendentes': typeof AppPendentesRoute
   '/_app/perfil': typeof AppPerfilRoute
   '/_app/pix': typeof AppPixRoute
+  '/_app/seguranca': typeof AppSegurancaRoute
   '/_app/split': typeof AppSplitRoute
   '/_app/transferir': typeof AppTransferirRoute
   '/_app/comprovante/$id': typeof AppComprovanteIdRoute
@@ -234,6 +243,7 @@ export interface FileRouteTypes {
     | '/pendentes'
     | '/perfil'
     | '/pix'
+    | '/seguranca'
     | '/split'
     | '/transferir'
     | '/comprovante/$id'
@@ -257,6 +267,7 @@ export interface FileRouteTypes {
     | '/pendentes'
     | '/perfil'
     | '/pix'
+    | '/seguranca'
     | '/split'
     | '/transferir'
     | '/comprovante/$id'
@@ -281,6 +292,7 @@ export interface FileRouteTypes {
     | '/_app/pendentes'
     | '/_app/perfil'
     | '/_app/pix'
+    | '/_app/seguranca'
     | '/_app/split'
     | '/_app/transferir'
     | '/_app/comprovante/$id'
@@ -430,6 +442,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPixRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/seguranca': {
+      id: '/_app/seguranca'
+      path: '/seguranca'
+      fullPath: '/seguranca'
+      preLoaderRoute: typeof AppSegurancaRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/split': {
       id: '/_app/split'
       path: '/split'
@@ -468,6 +487,7 @@ interface AppRouteChildren {
   AppPendentesRoute: typeof AppPendentesRoute
   AppPerfilRoute: typeof AppPerfilRoute
   AppPixRoute: typeof AppPixRoute
+  AppSegurancaRoute: typeof AppSegurancaRoute
   AppSplitRoute: typeof AppSplitRoute
   AppTransferirRoute: typeof AppTransferirRoute
   AppComprovanteIdRoute: typeof AppComprovanteIdRoute
@@ -487,6 +507,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppPendentesRoute: AppPendentesRoute,
   AppPerfilRoute: AppPerfilRoute,
   AppPixRoute: AppPixRoute,
+  AppSegurancaRoute: AppSegurancaRoute,
   AppSplitRoute: AppSplitRoute,
   AppTransferirRoute: AppTransferirRoute,
   AppComprovanteIdRoute: AppComprovanteIdRoute,

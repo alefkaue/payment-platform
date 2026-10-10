@@ -447,3 +447,32 @@ export interface EtapaRecuperacao {
   token: string;
   desafio: Desafio;
 }
+
+/** Aparelho em que a pessoa já entrou (Segurança > Aparelhos). */
+export interface Aparelho {
+  id: number;
+  nome: string | null;
+  confiavel: boolean;
+  bloqueado: boolean;
+  ultimo_uso: string | null;
+  criado_em: string | null;
+  atual: boolean;
+}
+
+/** Sessão aberta (um login com senha + rosto que ainda vale). */
+export interface SessaoAtiva {
+  sessao_id: string;
+  ip: string | null;
+  aparelho: string | null;
+  ultimo_uso: string | null;
+  atual: boolean;
+}
+
+/** Linha da trilha de atividade da pessoa. */
+export interface Atividade {
+  id: number;
+  acao: string;
+  descricao: string;
+  ip: string | null;
+  criado_em: string;
+}

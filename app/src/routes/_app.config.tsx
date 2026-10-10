@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -244,6 +244,9 @@ function AparelhoSection() {
           <ScanFace size={18} /> Confirmar este aparelho
         </button>
       )}
+      <Link to="/seguranca" className="btn btn-ghost mt-4 w-full gap-2">
+        <Smartphone size={18} /> Aparelhos, sessões e atividade
+      </Link>
       {erro && (
         <div className="mt-3">
           <ErrorBox>{erro}</ErrorBox>

@@ -26,7 +26,10 @@ import {
   salvarTokens,
 } from "./http";
 import type {
+  Aparelho,
   ApuracaoPJ,
+  Atividade,
+  SessaoAtiva,
   Cartao,
   CarteiraInfo,
   Cobranca,
@@ -937,6 +940,194 @@ export async function aparelhoAtual(): Promise<{ confiavel: boolean }> {
 
 export async function confiarAparelho(prova: import("./types").ProvaBiometrica): Promise<void> {
   if (MODO_API) await post("/seguranca/dispositivos/atual/confiar", prova);
+}
+
+// --- Segurança: aparelhos, sessões e atividade ("meu celular foi roubado") ---
+
+interface AparelhoApi {
+  id: number;
+  nome: string | null;
+  confiavel: boolean;
+  bloqueado: boolean;
+  ultimo_uso: string | null;
+  criado_em: string | null;
+}
+
+const agoraMenos = (min: number) => new Date(Date.now() - min * 60_000).toISOString();
+
+// Demonstração: este aparelho + um notebook, guardados só nesta aba.
+let aparelhosDemo: Aparelho[] | null = null;
+function demoAparelhos(): Aparelho[] {
+  aparelhosDemo ??= [
+    {
+      id: 1,
+      nome: "Este navegador",
+      confiavel: true,
+      bloqueado: false,
+      ultimo_uso: agoraMenos(0),
+      criado_em: agoraMenos(60 * 24 * 30),
+      atual: true,
+    },
+    {
+      id: 2,
+      nome: "Chrome — Windows",
+      confiavel: true,
+      bloqueado: false,
+      ultimo_uso: agoraMenos(60 * 26),
+      criado_em: agoraMenos(60 * 24 * 9),
+      atual: false,
+    },
+  ];
+  return aparelhosDemo;
+}
+let sessoesDemo: SessaoAtiva[] | null = null;
+function demoSessoes(): SessaoAtiva[] {
+  sessoesDemo ??= [
+    {
+      sessao_id: "demo-atual",
+      ip: "177.12.40.8",
+      aparelho: "Este navegador",
+      ultimo_uso: agoraMenos(0),
+      atual: true,
+    },
+    {
+      sessao_id: "demo-notebook",
+      ip: "189.33.7.120",
+      aparelho: "Chrome — Windows",
+      ultimo_uso: agoraMenos(60 * 2),
+      atual: false,
+    },
+  ];
+  return sessoesDemo;
+}
+
+export async function meusAparelhos(): Promise<Aparelho[]> {
+  await delay(250);
+  if (MODO_API) {
+    const [lista, atual] = await Promise.all([
+      get<AparelhoApi[]>("/seguranca/dispositivos"),
+      get<{ id: number } | null>("/seguranca/dispositivos/atual").catch(() => null),
+    ]);
+    return lista.map((d) => ({ ...d, atual: d.id === atual?.id }));
+  }
+  return demoAparelhos().map((d) => ({ ...d }));
+}
+
+/** Bloqueia o aparelho e derruba as sessões dele. Desbloquear exige o rosto. */
+export async function bloquearAparelho(id: number): Promise<void> {
+  await delay();
+  if (MODO_API) {
+    await post(`/seguranca/dispositivos/${id}/bloquear`);
+    return;
+  }
+  const d = demoAparelhos().find((x) => x.id === id);
+  if (d) Object.assign(d, { bloqueado: true, confiavel: false });
+}
+
+export async function desbloquearAparelho(id: number, prova: ProvaBiometrica): Promise<void> {
+  await delay();
+  if (MODO_API) {
+    await post(`/seguranca/dispositivos/${id}/desbloquear`, prova);
+    return;
+  }
+  const d = demoAparelhos().find((x) => x.id === id);
+  if (d) Object.assign(d, { bloqueado: false, confiavel: true });
+}
+
+export async function removerAparelho(id: number): Promise<void> {
+  await delay();
+  if (MODO_API) {
+    await del(`/seguranca/dispositivos/${id}`);
+    return;
+  }
+  aparelhosDemo = demoAparelhos().filter((x) => x.id !== id);
+}
+
+export async function minhasSessoes(): Promise<SessaoAtiva[]> {
+  await delay(250);
+  if (MODO_API) {
+    const r = await get<
+      {
+        sessao_id: string;
+        ip: string | null;
+        ultimo_uso: string | null;
+        atual: boolean;
+        dispositivo: { nome: string | null } | null;
+      }[]
+    >("/auth/sessoes");
+    return r.map((s) => ({
+      sessao_id: s.sessao_id,
+      ip: s.ip,
+      aparelho: s.dispositivo?.nome ?? null,
+      ultimo_uso: s.ultimo_uso,
+      atual: s.atual,
+    }));
+  }
+  return demoSessoes().map((s) => ({ ...s }));
+}
+
+export async function encerrarSessao(sessaoId: string): Promise<void> {
+  await delay();
+  if (MODO_API) {
+    await del(`/auth/sessoes/${encodeURIComponent(sessaoId)}`);
+    return;
+  }
+  sessoesDemo = demoSessoes().filter((s) => s.sessao_id !== sessaoId);
+}
+
+export async function encerrarOutrasSessoes(): Promise<number> {
+  await delay();
+  if (MODO_API)
+    return (await post<{ encerradas: number }>("/auth/sessoes/encerrar-outras")).encerradas;
+  const antes = demoSessoes().length;
+  sessoesDemo = demoSessoes().filter((s) => s.atual);
+  return antes - sessoesDemo.length;
+}
+
+/** Texto em português para cada ação da trilha (as que aparecem para a pessoa). */
+const ACOES: Record<string, string> = {
+  login: "Entrou na conta (senha e rosto)",
+  login_aparelho_novo: "Entrou de um aparelho novo",
+  login_bloqueado_tentativas: "Login travado por muitas senhas erradas",
+  refresh_reuso_detectado: "Uso suspeito de sessão: todas foram encerradas",
+  sessao_encerrada: "Encerrou uma sessão",
+  sessoes_encerradas: "Encerrou as outras sessões",
+  senha_alterada: "Trocou a senha",
+  senha_recuperada: "Recuperou a senha com o rosto",
+  recuperacao_senha_pedida: "Pediu para recuperar a senha",
+  dispositivo_confiavel: "Confirmou um aparelho com o rosto",
+  dispositivo_bloqueado: "Bloqueou um aparelho",
+  dispositivo_desbloqueado: "Desbloqueou um aparelho",
+  dispositivo_removido: "Removeu um aparelho",
+  limites_alterados: "Alterou os limites",
+  chave_pix_criada: "Cadastrou uma chave Pix",
+  transferencia: "Fez uma transferência",
+  criar_conta_pf: "Abriu a conta",
+  criar_conta_pj: "Abriu uma conta de empresa",
+  convite_aceito: "Aceitou um convite de empresa",
+  convite_recusado: "Recusou um convite de empresa",
+  contestacao_aberta: "Contestou uma transação",
+  kyc_documento_reenviado: "Reenviou o documento",
+};
+
+export function descreverAcao(acao: string): string {
+  const t = ACOES[acao] ?? acao.replace(/_/g, " ");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+export async function minhaAtividade(): Promise<Atividade[]> {
+  await delay(250);
+  if (MODO_API) {
+    const r = await get<{ id: number; acao: string; ip: string | null; criado_em: string }[]>(
+      "/seguranca/atividade?limite=50",
+    );
+    return r.map((a) => ({ ...a, descricao: descreverAcao(a.acao) }));
+  }
+  return [
+    { id: 3, acao: "login", ip: "177.12.40.8", criado_em: agoraMenos(1) },
+    { id: 2, acao: "login_aparelho_novo", ip: "189.33.7.120", criado_em: agoraMenos(60 * 26) },
+    { id: 1, acao: "criar_conta_pf", ip: "177.12.40.8", criado_em: agoraMenos(60 * 24 * 30) },
+  ].map((a) => ({ ...a, descricao: descreverAcao(a.acao) }));
 }
 
 // =============================================================================

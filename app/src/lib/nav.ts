@@ -54,6 +54,12 @@ const SECUNDARIA_PF: NavItem[] = [
     hint: "Acesso a contas PJ que convidaram você",
   },
   { to: "/perfil", label: "Meu perfil", icon: User, hint: "Dados, documentos e dispositivos" },
+  {
+    to: "/seguranca",
+    label: "Segurança",
+    icon: ShieldCheck,
+    hint: "Aparelhos, sessões e atividade",
+  },
   { to: "/ajuda", label: "Ajuda", icon: CircleHelp, hint: "Dúvidas e suporte" },
 ];
 const SECUNDARIA_PJ: NavItem[] = [
@@ -73,6 +79,12 @@ const SECUNDARIA_PJ: NavItem[] = [
   },
   { to: "/notificacoes", label: "Notificações", icon: Bell, hint: "Avisos e repasses" },
   { to: "/perfil", label: "Meu perfil", icon: User, hint: "Dados e dispositivos" },
+  {
+    to: "/seguranca",
+    label: "Segurança",
+    icon: ShieldCheck,
+    hint: "Aparelhos, sessões e atividade",
+  },
   { to: "/ajuda", label: "Ajuda", icon: CircleHelp, hint: "Dúvidas e suporte" },
 ];
 
