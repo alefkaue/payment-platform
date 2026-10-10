@@ -1266,9 +1266,14 @@ class Repositorio(RepositorioExtras):
             s.commit()
             return {"id": rep.id, "cbs_total": cbs, "ibs_total": ibs, "total": cbs + ibs, "corte": corte, "pernas": len(pernas)}
 
-    def resumo_tributos(self, *, recebedor_carteira_id: Optional[int] = None) -> dict:
+    def resumo_tributos(self, *, recebedor_carteira_id: Optional[int] = None, desde: Optional[datetime] = None,
+                        ate: Optional[datetime] = None) -> dict:
         with self._sf() as s:
             base = select(SplitLiquidacao).where(SplitLiquidacao.natureza.in_(["CBS", "IBS"]), SplitLiquidacao.estornada.is_(False))
+            if desde is not None:
+                base = base.where(SplitLiquidacao.criado_em >= desde)
+            if ate is not None:
+                base = base.where(SplitLiquidacao.criado_em < ate)
             if recebedor_carteira_id is not None:
                 base = base.join(Transacao, Transacao.id == SplitLiquidacao.transacao_id).where(
                     Transacao.destino_carteira_id == recebedor_carteira_id
@@ -1284,6 +1289,13 @@ class Repositorio(RepositorioExtras):
                 "a_repassar": soma("CBS", False) + soma("IBS", False),
                 "transacoes_com_split": len({p.transacao_id for p in pernas}),
             }
+
+    def faturamento_cobrancas(self, recebedor_carteira_id: int, desde: datetime, ate: datetime) -> Decimal:
+        """Soma das cobranças pagas no período (vendas recebidas), calculada no servidor."""
+        with self._sf() as s:
+            return Decimal(s.scalar(select(func.coalesce(func.sum(Cobranca.valor), 0)).where(
+                Cobranca.recebedor_carteira_id == recebedor_carteira_id, Cobranca.status == "paga",
+                Cobranca.paga_em >= desde, Cobranca.paga_em < ate)) or 0).quantize(Decimal("0.01"))
 
     def registrar_credito(self, *, empresa_id: int, tributo: str, valor: Decimal, fonte: str, referencia: Optional[str]) -> dict:
         with self._sf() as s:

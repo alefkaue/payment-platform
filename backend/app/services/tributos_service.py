@@ -12,7 +12,9 @@ Tributos retidos no split: repasse ao fisco, resumo e créditos.
   crédito informado e o que já foi retido. Quem restitui é o fisco, na apuração.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
+
+from fastapi import HTTPException
 from decimal import Decimal
 
 from app.core import tempo
@@ -26,13 +28,32 @@ def repassar(repo: Repositorio, *, corte: datetime | None = None) -> dict:
                  "corte": corte, "pernas": 0}
 
 
-def resumo_empresa(repo: Repositorio, conta: dict) -> dict:
-    r = repo.resumo_tributos(recebedor_carteira_id=conta["carteira_id"])
+def _mes(mes: str | None) -> tuple[datetime, datetime, str]:
+    """Início e fim (exclusivo) do mês em horário de Brasília, em UTC. Padrão: o mês corrente."""
+    if mes:
+        try:
+            ano, m = (int(x) for x in mes.split("-"))
+            inicio = datetime(ano, m, 1, tzinfo=tempo.BRT)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Mês inválido (use AAAA-MM).") from None
+    else:
+        hoje = tempo.hoje_brt()
+        inicio = datetime(hoje.year, hoje.month, 1, tzinfo=tempo.BRT)
+    fim = datetime(inicio.year + (inicio.month == 12), inicio.month % 12 + 1, 1, tzinfo=tempo.BRT)
+    return inicio.astimezone(timezone.utc), fim.astimezone(timezone.utc), f"{inicio:%Y-%m}"
+
+
+def resumo_empresa(repo: Repositorio, conta: dict, mes: str | None = None) -> dict:
+    """Apuração DO MÊS (antes somava tudo desde sempre e o app chamava de mês -- R1-41)."""
+    desde, ate, periodo = _mes(mes)
+    r = repo.resumo_tributos(recebedor_carteira_id=conta["carteira_id"], desde=desde, ate=ate)
     creditos = repo.listar_creditos(conta["empresa_id"])
     total_credito = sum((c["valor"] for c in creditos), Decimal("0.00"))
     retido = r["cbs_retido"] + r["ibs_retido"]
     return {
         **r,
+        "periodo": periodo,
+        "faturamento": repo.faturamento_cobrancas(conta["carteira_id"], desde, ate),
         "creditos_informados": total_credito,
         "restituicao_prevista": min(total_credito, retido),
         "modo_split": "inteligente",

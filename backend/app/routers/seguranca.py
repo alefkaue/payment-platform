@@ -158,9 +158,11 @@ def consultar_chave(chave: str, usuario: dict = Depends(usuario_atual), repo: Re
 
 
 @router.get("/empresas/atual/tributos")
-def tributos_da_empresa(conta: dict = Depends(conta_atual), repo: Repositorio = Depends(get_repo)):
+def tributos_da_empresa(conta: dict = Depends(conta_atual), repo: Repositorio = Depends(get_repo),
+                        mes: str | None = Query(default=None, pattern=r"^\d{4}-(0[1-9]|1[0-2])$")):
+    """Apuração do mês (AAAA-MM; padrão: o mês corrente em Brasília)."""
     exigir_pj(conta)
-    return tributos_service.resumo_empresa(repo, conta)
+    return tributos_service.resumo_empresa(repo, conta, mes)
 
 
 @router.get("/empresas/atual/creditos")

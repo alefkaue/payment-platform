@@ -254,3 +254,17 @@ def test_debito_automatico_respeita_o_limite_do_pagador(cliente, relogio, monkey
     r = cliente.post("/admin/jobs/recorrencias", headers=admin_h(cliente)).json()
     assert r["pagas"] == 0
     assert pagador.saldo() == "5000.00"
+
+
+def test_apuracao_e_do_mes_e_o_faturamento_vem_do_servidor(cliente):
+    """R1-41: a apuração do mês não soma outros meses; o faturamento é calculado no servidor."""
+    dono, n, cnpj = _empresa(cliente)
+    pf = Pessoa(cliente, "apuracao@ex.com")
+    depositar(cliente, pf.numero, 1000)
+    [c] = _cobrar(cliente, dono, n, valor="400.00", nota_fiscal={"chave": gerar_chave_nfe(cnpj), "cbs": "3.60", "ibs": "0.40"})
+    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h()).status_code == 200
+    out = cliente.get("/empresas/atual/tributos", headers=dono.h(n)).json()
+    assert (out["periodo"], out["faturamento"], out["cbs_retido"]) == ("2026-10", "400.00", "3.60")
+    set_ = cliente.get("/empresas/atual/tributos?mes=2026-09", headers=dono.h(n)).json()
+    assert (set_["faturamento"], set_["cbs_retido"], set_["transacoes_com_split"]) == ("0.00", "0.00", 0)
+    assert cliente.get("/empresas/atual/tributos?mes=2026-13", headers=dono.h(n)).status_code == 422

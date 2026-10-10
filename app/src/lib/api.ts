@@ -1285,12 +1285,15 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
       creditos_informados: string;
       restituicao_prevista: string;
       transacoes_com_split: number;
+      periodo: string;
+      faturamento: string;
     }>("/empresas/atual/tributos");
-    const cobs = await get<CobrancaApi[]>("/cobrancas?status=paga&limite=200");
-    const mes = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+    // O servidor apura o MÊS (AAAA-MM) e soma o faturamento; o app só formata (R1-41).
+    const [ano = 0, m = 1] = t.periodo.split("-").map(Number);
+    const mes = new Date(ano, m - 1, 1).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
     return {
       periodo: mes.charAt(0).toUpperCase() + mes.slice(1),
-      faturamento: cobs.reduce((s, c) => s + num(c.valor), 0),
+      faturamento: num(t.faturamento),
       cbs_retido: num(t.cbs_retido),
       ibs_retido: num(t.ibs_retido),
       imposto_retido: num(t.cbs_retido) + num(t.ibs_retido),
