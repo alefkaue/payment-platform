@@ -82,6 +82,12 @@ def _utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def _chaves_equivalentes(chave: str) -> list[str]:
+    """A chave e, para chave de cliente ("{carteira}:u:..."), a forma gravada antes do prefixo
+    "u:" existir: reenvio de um Pix antigo continua sendo reenvio (C3-02)."""
+    return [chave, chave.replace(":u:", ":", 1)] if ":u:" in chave else [chave]
+
+
 class Repositorio(RepositorioExtras):
     def __init__(self, session_factory: sessionmaker):
         self._sf = session_factory
@@ -421,7 +427,7 @@ class Repositorio(RepositorioExtras):
 
         with self._sf() as s:
             if idempotency_key:
-                ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
+                ja = s.scalar(select(Transacao).where(Transacao.idempotency_key.in_(_chaves_equivalentes(idempotency_key))))
                 if ja:
                     return repetida(ja)
 
@@ -443,7 +449,7 @@ class Repositorio(RepositorioExtras):
             if idempotency_key:
                 # De novo, já com a carteira travada: quem chegou antes com a mesma chave
                 # já fez commit enquanto esperávamos o lock (pedidos repetidos em paralelo).
-                ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
+                ja = s.scalar(select(Transacao).where(Transacao.idempotency_key.in_(_chaves_equivalentes(idempotency_key))))
                 if ja:
                     return repetida(ja)
 
@@ -505,7 +511,7 @@ class Repositorio(RepositorioExtras):
                 # Mesma chave gravada por outra conexão no meio do caminho.
                 s.rollback()
                 if idempotency_key:
-                    ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
+                    ja = s.scalar(select(Transacao).where(Transacao.idempotency_key.in_(_chaves_equivalentes(idempotency_key))))
                     if ja:
                         return repetida(ja)
                 raise
@@ -525,7 +531,7 @@ class Repositorio(RepositorioExtras):
             except IntegrityError:
                 s.rollback()
                 if idempotency_key:
-                    ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
+                    ja = s.scalar(select(Transacao).where(Transacao.idempotency_key.in_(_chaves_equivalentes(idempotency_key))))
                     if ja:
                         return repetida(ja)
                 raise
@@ -782,7 +788,7 @@ class Repositorio(RepositorioExtras):
 
     def transacao_por_chave(self, idempotency_key: str) -> Optional[dict]:
         with self._sf() as s:
-            t = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
+            t = s.scalar(select(Transacao).where(Transacao.idempotency_key.in_(_chaves_equivalentes(idempotency_key))))
             return self._transacao_dict(s, t) if t else None
 
     def obter_transacao(self, transacao_id: int) -> Optional[dict]:
@@ -1092,7 +1098,9 @@ class Repositorio(RepositorioExtras):
                                                          OperacaoPendente.idempotency_key == idempotency_key))
             if ja is None:
                 return None
-            if ja.tipo != tipo or ja.valor != valor:
+            # O pedido inteiro tem de ser o mesmo (destino, txid, itens), não só tipo e valor (C3-01).
+            sem_motivo = lambda d: {k: v for k, v in (d or {}).items() if k != "motivo"}
+            if ja.tipo != tipo or ja.valor != valor or sem_motivo(ja.payload) != sem_motivo(payload):
                 raise IdempotenciaConflitanteError()
             return {**self._pendente_dict(ja), "_entregas": [], "_repetida": True}
 

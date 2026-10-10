@@ -415,7 +415,8 @@ class RepositorioExtras:
                 Transacao.idempotency_key.like(f"%:{chave}") | Transacao.idempotency_key.like(f"%:{chave}-%"),
             ).order_by(Transacao.id)).all()
             # O LIKE acha "pendente-1" dentro de "pendente-12": confere a chave exata.
-            return [{"id": t.id, "valor": t.valor_bruto, "destino_carteira_id": t.destino_carteira_id}
+            return [{"id": t.id, "valor": t.valor_bruto, "destino_carteira_id": t.destino_carteira_id,
+                     "auth_metodo": t.auth_metodo.value}
                     for t in ts if t.idempotency_key.split(":", 1)[1] == chave
                     or t.idempotency_key.split(":", 1)[1].startswith(f"{chave}-")]
 

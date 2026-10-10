@@ -268,6 +268,10 @@ _INTERROMPIDA = "A execução foi interrompida antes de mover o dinheiro. Nada f
 def _bate_com(p: dict, t: dict) -> bool:
     """A transação achada pela chave é mesmo a execução desta pendência? (C2-02: defesa
     em profundidade além do espaço de nomes das chaves.)"""
+    # Execução de pendência é sempre gravada como APROVACAO; um Pix comum (inclusive um
+    # antigo, gravado antes do prefixo "u:") nunca tem esse método (C3-03).
+    if t.get("auth_metodo") != AuthMetodo.APROVACAO.value:
+        return False
     if p["tipo"] == "transferencia":
         return (t["valor"] == p["valor"]
                 and t["destino_carteira_id"] == p["payload"].get("destino_carteira_id"))
