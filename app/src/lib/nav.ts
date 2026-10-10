@@ -12,6 +12,7 @@ import {
   QrCode,
   Receipt,
   Scale,
+  ScrollText,
   ShieldCheck,
   ShoppingBag,
   Split,
@@ -73,6 +74,7 @@ const SECUNDARIA_PJ: NavItem[] = [
   },
   { to: "/folha", label: "Folha de pagamento", icon: Banknote, hint: "Funcionários e salários" },
   { to: "/pendentes", label: "Aprovações", icon: Scale, hint: "Operações aguardando 2º aprovador" },
+  { to: "/auditoria", label: "Auditoria", icon: ScrollText, hint: "Atividade e decisões da empresa" },
   {
     to: "/cartoes",
     label: "Cartão corporativo",

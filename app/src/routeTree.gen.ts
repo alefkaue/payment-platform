@@ -16,6 +16,7 @@ import { Route as CriarContaRouteImport } from './routes/criar-conta'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as RecuperarSenhaRouteImport } from './routes/recuperar-senha'
 import { Route as AppAjudaRouteImport } from './routes/_app.ajuda'
+import { Route as AppAuditoriaRouteImport } from './routes/_app.auditoria'
 import { Route as AppCartoesRouteImport } from './routes/_app.cartoes'
 import { Route as AppConfigRouteImport } from './routes/_app.config'
 import { Route as AppContasRouteImport } from './routes/_app.contas'
@@ -66,6 +67,11 @@ const RecuperarSenhaRoute = RecuperarSenhaRouteImport.update({
 const AppAjudaRoute = AppAjudaRouteImport.update({
   id: '/ajuda',
   path: '/ajuda',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAuditoriaRoute = AppAuditoriaRouteImport.update({
+  id: '/auditoria',
+  path: '/auditoria',
   getParentRoute: () => AppRoute,
 } as any)
 const AppCartoesRoute = AppCartoesRouteImport.update({
@@ -161,6 +167,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/recuperar-senha': typeof RecuperarSenhaRoute
   '/ajuda': typeof AppAjudaRoute
+  '/auditoria': typeof AppAuditoriaRoute
   '/cartoes': typeof AppCartoesRoute
   '/config': typeof AppConfigRoute
   '/contas': typeof AppContasRoute
@@ -186,6 +193,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/recuperar-senha': typeof RecuperarSenhaRoute
   '/ajuda': typeof AppAjudaRoute
+  '/auditoria': typeof AppAuditoriaRoute
   '/cartoes': typeof AppCartoesRoute
   '/config': typeof AppConfigRoute
   '/contas': typeof AppContasRoute
@@ -213,6 +221,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/recuperar-senha': typeof RecuperarSenhaRoute
   '/_app/ajuda': typeof AppAjudaRoute
+  '/_app/auditoria': typeof AppAuditoriaRoute
   '/_app/cartoes': typeof AppCartoesRoute
   '/_app/config': typeof AppConfigRoute
   '/_app/contas': typeof AppContasRoute
@@ -240,6 +249,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/recuperar-senha'
     | '/ajuda'
+    | '/auditoria'
     | '/cartoes'
     | '/config'
     | '/contas'
@@ -265,6 +275,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/recuperar-senha'
     | '/ajuda'
+    | '/auditoria'
     | '/cartoes'
     | '/config'
     | '/contas'
@@ -291,6 +302,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/recuperar-senha'
     | '/_app/ajuda'
+    | '/_app/auditoria'
     | '/_app/cartoes'
     | '/_app/config'
     | '/_app/contas'
@@ -368,6 +380,13 @@ declare module '@tanstack/react-router' {
       path: '/ajuda'
       fullPath: '/ajuda'
       preLoaderRoute: typeof AppAjudaRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/auditoria': {
+      id: '/_app/auditoria'
+      path: '/auditoria'
+      fullPath: '/auditoria'
+      preLoaderRoute: typeof AppAuditoriaRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/cartoes': {
@@ -494,6 +513,7 @@ declare module '@tanstack/react-router' {
 
 interface AppRouteChildren {
   AppAjudaRoute: typeof AppAjudaRoute
+  AppAuditoriaRoute: typeof AppAuditoriaRoute
   AppCartoesRoute: typeof AppCartoesRoute
   AppConfigRoute: typeof AppConfigRoute
   AppContasRoute: typeof AppContasRoute
@@ -515,6 +535,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppAjudaRoute: AppAjudaRoute,
+  AppAuditoriaRoute: AppAuditoriaRoute,
   AppCartoesRoute: AppCartoesRoute,
   AppConfigRoute: AppConfigRoute,
   AppContasRoute: AppContasRoute,
