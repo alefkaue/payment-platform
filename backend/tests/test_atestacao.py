@@ -141,11 +141,18 @@ def test_chave_atestada_tem_que_ser_a_do_dpop(cadeia):
         atestacao.verificar(cadeia.para(outra.privada.public_key()), jkt=_jkt(Chave()))
 
 
-def test_raiz_que_nao_e_da_google(monkeypatch):
+def test_raiz_que_nao_e_da_google_fica_sem_nivel(monkeypatch):
+    # Emulador/Keystore em software: cadeia íntegra, raiz de teste. Mesmo dizendo "TEE e
+    # boot travado", não ganha nível (é igual a não ter atestação; ATESTACAO_EXIGIDA recusa).
     chave = Chave()
     falsa = Cadeia()  # sem trocar as raízes confiáveis: vale só a da Google
-    with pytest.raises(atestacao.AtestacaoInvalida, match="raiz da Google"):
-        atestacao.verificar(falsa.para(chave.privada.public_key()), jkt=_jkt(chave))
+    r = atestacao.verificar(falsa.para(chave.privada.public_key(), nivel=2), jkt=_jkt(chave))
+    assert r.nivel is None and "raiz da Google" in r.motivo
+    # ...mas outra chave ou outro app continuam derrubando o login
+    with pytest.raises(atestacao.AtestacaoInvalida, match="não é a chave DPoP"):
+        atestacao.verificar(falsa.para(Chave().privada.public_key()), jkt=_jkt(chave))
+    with pytest.raises(atestacao.AtestacaoInvalida, match="outro app"):
+        atestacao.verificar(falsa.para(chave.privada.public_key(), pacote="com.golpe.app"), jkt=_jkt(chave))
 
 
 def test_folha_assinada_por_outro_intermediario(cadeia):

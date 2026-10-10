@@ -239,7 +239,10 @@ def _assinado_por(cert: x509.Certificate, emissor: x509.Certificate) -> None:
         raise AtestacaoInvalida("Cadeia de atestação com assinatura inválida.") from None
 
 
-def _cadeia(certificados_b64: list[str]) -> list[x509.Certificate]:
+def _cadeia(certificados_b64: list[str]) -> tuple[list[x509.Certificate], bool]:
+    """(cadeia, confiável). Confiável = termina numa raiz da Google. Emulador e Keystore
+    em software assinam com uma raiz de teste: a cadeia é íntegra, mas o que ela diz sobre
+    o aparelho não vale nada -- vira "sem atestação", nunca nível de hardware."""
     if not certificados_b64 or len(certificados_b64) > MAX_CERTIFICADOS:
         raise AtestacaoInvalida("Cadeia de atestação vazia ou longa demais.")
     try:
@@ -256,11 +259,11 @@ def _cadeia(certificados_b64: list[str]) -> list[x509.Certificate]:
         emissor = cadeia[i + 1] if i + 1 < len(cadeia) else cert
         _assinado_por(cert, emissor)
     if hashlib.sha256(_spki(cadeia[-1].public_key())).digest() not in raizes_confiaveis():
-        raise AtestacaoInvalida("A cadeia de atestação não termina numa raiz da Google.")
+        return cadeia, False
     revogados = series_revogadas()
     if any(format(c.serial_number, "x") in revogados for c in cadeia):
         raise AtestacaoInvalida("Certificado de atestação revogado pela Google.")
-    return cadeia
+    return cadeia, True
 
 
 # ---------------------------------------------------------------- entrada
@@ -270,7 +273,7 @@ def verificar(certificados_b64: list[str], *, jkt: str | None) -> Resultado:
     """Confere a cadeia e diz o nível de garantia. Levanta AtestacaoInvalida quando a
     atestação não é de confiança (forjada, outra chave, outro app, revogada)."""
     s = get_settings()
-    cadeia = _cadeia(certificados_b64)
+    cadeia, confiavel = _cadeia(certificados_b64)
     folha = cadeia[0]
 
     chave = folha.public_key()
@@ -292,6 +295,10 @@ def verificar(certificados_b64: list[str], *, jkt: str | None) -> Resultado:
     if esperadas and not esperadas & assinaturas:
         raise AtestacaoInvalida("App assinado por outro certificado (APK modificado?).")
 
+    # Os conferes acima valem mesmo sem raiz da Google (outra chave/outro app = recusa);
+    # daqui para baixo são afirmações sobre o hardware, que só a raiz da Google garante.
+    if not confiavel:
+        return Resultado(None, "atestação sem raiz da Google (emulador ou Keystore em software)")
     if d.nivel_atestacao not in (NIVEL_TEE, NIVEL_STRONGBOX) or d.nivel_keymint not in (NIVEL_TEE, NIVEL_STRONGBOX):
         return Resultado(None, "chave fora do hardware seguro (emulador ou Keystore em software)")
     raiz = _raiz_de_confianca(d)
