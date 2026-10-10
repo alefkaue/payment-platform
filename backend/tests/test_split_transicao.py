@@ -66,3 +66,11 @@ def test_demonstracao_proibida_em_producao(monkeypatch):
     finally:
         monkeypatch.undo()
         config.get_settings.cache_clear()
+
+
+def test_comprovante_mostra_o_imposto_da_nota_mesmo_sem_reter(cliente, monkeypatch):
+    monkeypatch.setattr(config.get_settings(), "split_retencao_desde", date(2027, 1, 1))
+    dono, n, pf, c = _venda(cliente)
+    t = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h()).json()
+    comp = cliente.get(f"/pagamentos/transacoes/{t['id']}", headers=pf.h()).json()
+    assert comp["cbs"] == "0.00" and (comp["nota"]["cbs"], comp["nota"]["ibs"]) == ("3.60", "0.40")

@@ -682,10 +682,17 @@ export async function transacaoPorId(id: number): Promise<Transacao> {
   await delay(200);
   if (MODO_API) {
     const c = await get<ContaApi>("/contas/atual");
-    const t = await get<TransacaoApi & { contestacao?: { status: string } | null }>(
-      `/pagamentos/transacoes/${id}`,
-    );
-    return { ...mapTransacao(t, c.carteira_id), contestacao_aberta: Boolean(t.contestacao) };
+    const t = await get<
+      TransacaoApi & {
+        contestacao?: { status: string } | null;
+        nota?: { cbs: string; ibs: string } | null;
+      }
+    >(`/pagamentos/transacoes/${id}`);
+    return {
+      ...mapTransacao(t, c.carteira_id),
+      contestacao_aberta: Boolean(t.contestacao),
+      ...(t.nota ? { imposto_nota: num(t.nota.cbs) + num(t.nota.ibs) } : {}),
+    };
   }
   await sincronizar();
   const t = todasTransacoes().find((x) => x.id === id);

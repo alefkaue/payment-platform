@@ -85,6 +85,7 @@ class TransacaoResponse(BaseModel):
     data_hora: datetime
     # Só no comprovante (GET /pagamentos/transacoes/{id}): MED aberta/decidida.
     contestacao: dict | None = None
+    nota: dict | None = None  # só no comprovante: imposto destacado na NF-e da cobrança
 
 
 class PendenteResponse(BaseModel):

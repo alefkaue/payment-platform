@@ -70,7 +70,9 @@ function Comprovante() {
     );
   const t = q.data;
   const cobranca = cobrancas.data?.find((c) => c.transacao_id === t.id);
-  const impostoDestacado = cobranca ? cobranca.cbs + cobranca.ibs : t.cbs + t.ibs;
+  const impostoDestacado = cobranca
+    ? cobranca.cbs + cobranca.ibs
+    : (t.imposto_nota ?? t.cbs + t.ibs);
 
   return (
     <div className="enter mx-auto max-w-md text-center">

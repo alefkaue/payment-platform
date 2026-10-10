@@ -127,6 +127,8 @@ export interface Transacao {
   bloqueio_ate?: string;
   /** Já existe contestação (MED) desta transação; vem no comprovante (API e demonstração). */
   contestacao_aberta?: boolean;
+  /** Imposto destacado na NF-e da cobrança paga (comprovante), mesmo quando não foi retido. */
+  imposto_nota?: number;
   categoria: CategoriaTx;
   /** Rótulo humano: "Padaria Aurora", "Voo GRU → GIG", "Pix para João". */
   descricao: string;

@@ -861,8 +861,12 @@ class Repositorio(RepositorioExtras):
             if not t:
                 return None
             c = s.scalar(select(Contestacao).where(Contestacao.transacao_id == t.id))
+            cob = s.scalar(select(Cobranca).where(Cobranca.transacao_id == t.id)) if t.tipo == "cobranca" else None
             return {**self._transacao_dict(s, t),
-                    "contestacao": {"status": c.status, "criado_em": _utc(c.criado_em)} if c else None}
+                    "contestacao": {"status": c.status, "criado_em": _utc(c.criado_em)} if c else None,
+                    # Imposto destacado na NF-e da cobrança paga (aparece mesmo quando não foi
+                    # retido, como em 2026, ano de teste da Reforma).
+                    "nota": {"chave": cob.nfe_chave, "cbs": cob.cbs, "ibs": cob.ibs} if cob and cob.nfe_chave else None}
 
     def listar_transacoes(self, *, carteira_id: Optional[int] = None, limite: int = 50, offset: int = 0) -> list[dict]:
         with self._sf() as s:
