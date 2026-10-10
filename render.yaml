@@ -13,6 +13,18 @@ services:
         fromDatabase:
           name: astro-db
           property: connectionString
+      # Segredos: o Render gera os aleatórios; os outros ele pede na criação
+      # (sync: false = não vêm deste arquivo). Ver backend/entrypoint-demo.sh.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_SENHA
+        generateValue: true
+      # Chave Fernet: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+      - key: EMBEDDING_KEY
+        sync: false
+      # URL exata do app no Netlify (ex.: https://astro-app.netlify.app), sem curinga.
+      - key: CORS_ORIGINS
+        sync: false
 databases:
   - name: astro-db
     plan: free

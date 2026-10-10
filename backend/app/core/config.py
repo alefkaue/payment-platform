@@ -252,4 +252,28 @@ def get_settings() -> Settings:
         raise RuntimeError("DPOP_OBRIGATORIO=0 não pode ser usado em produção (token roubado voltaria a servir).")
     if s.biometria_motor not in ("opencv", "deepface"):
         raise RuntimeError(f"BIOMETRIA_MOTOR desconhecido: {s.biometria_motor!r} (use opencv ou deepface).")
+    if s.em_producao:
+        _conferir_producao(s)
     return s
+
+
+def _conferir_producao(s: Settings) -> None:
+    """Segredos e CORS de produção conferidos no BOOT (SEGURANCA.md item 8), e não só no
+    primeiro uso: um deploy mal configurado nem sobe, em vez de falhar no meio de um login."""
+    if not s.jwt_secret or len(s.jwt_secret) < 32:
+        raise RuntimeError("JWT_SECRET ausente ou curto (mínimo 32 caracteres) -- use o Key Vault.")
+    try:
+        from cryptography.fernet import Fernet
+
+        Fernet((s.embedding_key or "").encode())
+    except (ValueError, TypeError):
+        raise RuntimeError("EMBEDDING_KEY ausente ou não é uma chave Fernet válida -- use o Key Vault.") from None
+    if not s.admin_senha or len(s.admin_senha) < 16:
+        raise RuntimeError("ADMIN_SENHA ausente ou curta (mínimo 16 caracteres) -- use o Key Vault.")
+    # CORS: só origens exatas e https. Regex (ex.: qualquer *.netlify.app) deixaria qualquer
+    # site publicado naquele domínio chamar a API como se fosse o app.
+    if s.cors_origin_regex:
+        raise RuntimeError("CORS_ORIGIN_REGEX não pode ser usado em produção: liste as origens em CORS_ORIGINS.")
+    for origem in s.cors_origins_lista:
+        if origem == "*" or not origem.startswith("https://"):
+            raise RuntimeError(f"CORS_ORIGINS em produção só aceita origens https exatas (recebido {origem!r}).")

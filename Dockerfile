@@ -2,7 +2,8 @@
 # Repository" com as opções padrão, ou o render.yaml desta pasta).
 # - Sem TensorFlow: biometria em modo teste (aprova o rosto), CNPJ sem consulta.
 # - DEPOSITO_DEMO: o botão Depositar do app coloca dinheiro de teste.
-# - CORS liberado para qualquer site *.netlify.app (onde o app/apresentação ficam).
+# - Segredos e CORS_ORIGINS (URL exata do app, sem curinga) vêm do ambiente; sem
+#   eles o entrypoint não sobe (ver backend/entrypoint-demo.sh e render.yaml).
 # Produção de verdade: backend/Dockerfile (com DeepFace) e AMBIENTE=producao.
 FROM python:3.12-slim
 
@@ -11,9 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     AMBIENTE=desenvolvimento \
     BIOMETRIA_STUB=1 \
     CNPJ_PROVEDOR=stub \
-    DEPOSITO_DEMO=1 \
-    CORS_ORIGINS=http://localhost:8777 \
-    CORS_ORIGIN_REGEX=https://.*\.netlify\.app
+    DEPOSITO_DEMO=1
 
 WORKDIR /app
 COPY backend/requirements-demo.txt .

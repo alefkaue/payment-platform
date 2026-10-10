@@ -5,9 +5,9 @@
 > passar por **pentest de outros grupos**. A seção 5 é o diário: o que já foi feito, em que commit, e
 > por onde continuar. Complementa o `HANDOFF-V9.md` (estado geral do projeto).
 >
-> **PARA A PRÓXIMA SESSÃO (parou em 09/10, 4ª sessão):** itens 1 a 7 feitos. Continue no
-> **item 8** da tabela da seção 3 e siga a ordem. Antes de mexer: `git pull`. Rode os testes do backend
-> (`cd backend && .venv/Scripts/python.exe -m pytest`, 177 passando) e do app (`cd app && npx tsc --noEmit &&
+> **PARA A PRÓXIMA SESSÃO (parou em 10/10, 4ª sessão):** itens 1 a 8 feitos. Continue no
+> **item 9** da tabela da seção 3 e siga a ordem. Antes de mexer: `git pull`. Rode os testes do backend
+> (`cd backend && .venv/Scripts/python.exe -m pytest`, 188 passando) e do app (`cd app && npx tsc --noEmit &&
 > npx vitest run`). Atenção: o PC do Alef fica sem memória com app + backend + câmera abertos ao mesmo tempo.
 
 ---
@@ -56,7 +56,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 | 5 | **Cadastro em etapas** (dados → documento → rosto, cada um numa página) e **documento frente e verso obrigatórios** (no app e no backend) | pedido do Alef | ✅ |
 | 6 | **Arquivar Loja/Viagens/pontos**: telas para `app/src/_arquivado/`, fora da navegação; backend com `BENEFICIOS_HABILITADOS=0` por padrão | pedido do Alef, A8 | ✅ |
 | 7 | **Front**: CSP e cabeçalhos no host (Static Web Apps), overlay de debug só em dev, build de produção recusa modo demonstração | A5 | ✅ |
-| 8 | **Segredos e config**: tirar a derivação de segredos e o CORS `*.netlify.app`; Key Vault no Azure | A6 | ⬜ |
+| 8 | **Segredos e config**: tirar a derivação de segredos e o CORS `*.netlify.app`; Key Vault no Azure | A6 | ✅ (Key Vault entra com a infra, item 9) |
 | 9 | **Azure + WAF + `PENTEST.md`** (escopo, regras, contas de teste, como reportar) e APK Android pelo CI | objetivo do pentest | ⬜ |
 | 10 | **App nativo**: tokens no Keystore/Keychain, certificate pinning, Play Integrity / App Attest | A7 | ⬜ (depois do APK existir) |
 
@@ -177,8 +177,21 @@ justamente ver se alguém burla.
   backend `test_sessao_recusada_tem_www_authenticate_visivel_para_o_app`. 177 testes no backend; app 17.
   **Ressalva**: a CSP vale no host web (PWA). No APK (Capacitor) quem serve é o WebView, sem esses headers —
   fica para o item 10.
+- 10/10 (4ª sessão) — **Item 8 feito.** `backend/entrypoint-demo.sh` **não deriva mais segredo nenhum** do
+  `DATABASE_URL`: sem `JWT_SECRET` (32+), `EMBEDDING_KEY` (Fernet válida), `ADMIN_SENHA` e `CORS_ORIGINS` ele
+  nem sobe e diz como gerar cada um. `Dockerfile` da raiz sem o `CORS_ORIGIN_REGEX` de `*.netlify.app` (qualquer
+  site no Netlify podia chamar a API como se fosse o app); a origem agora é a URL exata. `render.yaml`: o Render
+  **gera** `JWT_SECRET` e `ADMIN_SENHA` e **pede** `EMBEDDING_KEY` e `CORS_ORIGINS` na criação.
+  `config.get_settings` em produção confere **no boot** (não só no primeiro uso): `JWT_SECRET` 32+,
+  `EMBEDDING_KEY` Fernet válida, `ADMIN_SENHA` 16+, CORS só com origens `https://` exatas (sem `*`, sem regex).
+  `.env.example` da raiz cobre **todas** as variáveis do `config.py` (conferido por script), agrupadas, com o que
+  é proibido em produção. Testes: `tests/test_config_producao.py` (11 casos); entrypoint testado à mão (falta
+  variável / JWT curto / Fernet inválida → sai com erro). 188 testes no backend.
+  **Atenção — deploy de demonstração já existente no Render**: depois deste commit ele **não sobe** até ganhar
+  as 4 variáveis no painel. Como a `EMBEDDING_KEY` muda, as biometrias cadastradas lá deixam de abrir (cada
+  pessoa refaz o cadastro, ou recria-se o banco) e as sessões abertas caem (JWT novo).
 
-### Próximos passos detalhados (itens 8 a 10)
+### Próximos passos detalhados (itens 9 e 10)
 
 - ~~**7. Front**~~ (feito, ver diário): (a) quando o refresh falhar (401), limpar a sessão e ir para `/login` com o motivo (hoje só
   mostra erro na tela) — ver `requisitar()` em `app/src/lib/http.ts` e `useAuth`; (b) build de produção deve
@@ -188,7 +201,7 @@ justamente ver se alguém burla.
   'self' + `https://cdn.jsdelivr.net` e `https://storage.googleapis.com` que o MediaPipe usa; `connect-src` com a
   URL da API), `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy: camera=(self)`.
   Overlay de debug da câmera já está só no `npm run dev` (item 1).
-- **8. Segredos/config**: apagar a derivação de segredos do `DATABASE_URL` em `backend/entrypoint-demo.sh` (exigir
+- ~~**8. Segredos/config**~~ (feito, ver diário): apagar a derivação de segredos do `DATABASE_URL` em `backend/entrypoint-demo.sh` (exigir
   `JWT_SECRET`/`EMBEDDING_KEY`/`ADMIN_SENHA` no ambiente) e o `CORS_ORIGIN_REGEX` de `*.netlify.app` no
   `Dockerfile` da raiz; atualizar `.env.example` com as variáveis novas (`DPOP_*`, `SESSAO_*`, `CADASTRO_MAX_IP_HORA`,
   `REFRESH_MAX_IP_15MIN`, `BENEFICIOS_HABILITADOS`); no Azure, segredos no Key Vault.

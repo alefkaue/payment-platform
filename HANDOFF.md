@@ -471,11 +471,12 @@ Marina (roteiro da apresentação). Conta nova começa vazia (sem dados da Rodof
 **Backend de demonstração** (Pix entre celular e notebook):
 - `Dockerfile` (raiz) + `backend/requirements-demo.txt` + `backend/entrypoint-demo.sh`:
   sem TensorFlow, `BIOMETRIA_STUB=1`, `CNPJ_PROVEDOR=stub`, `DEPOSITO_DEMO=1` e CORS
-  para `https://*.netlify.app` (`CORS_ORIGIN_REGEX`, novo). Segredos não vão para o
-  git: são derivados do `DATABASE_URL` no boot.
+  para a URL exata do app (`CORS_ORIGINS`). Segredos não vão para o git: vêm do ambiente
+  (o `render.yaml` gera/pede; **desde 10/10 não são mais derivados do `DATABASE_URL`**, ver `SEGURANCA.md` item 8).
 - `render.yaml`: API + Postgres grátis no Render. Sem Blueprint: New → Postgres (free),
   depois New → Web Service → Public Git Repository → este repo, branch `main`,
-  Docker, e a variável `DATABASE_URL` = Internal Database URL do Postgres.
+  Docker, e as variáveis `DATABASE_URL` = Internal Database URL do Postgres, `JWT_SECRET`,
+  `EMBEDDING_KEY`, `ADMIN_SENHA` e `CORS_ORIGINS` (como gerar: `.env.example` da raiz).
 - App/apresentação: build com `VITE_API_URL=<url do Render>` e publicar no Netlify.
   O plano grátis dorme após 15 min: abra a URL da API ~1 min antes de apresentar.
 
