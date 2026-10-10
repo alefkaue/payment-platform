@@ -15,6 +15,7 @@ pendente de aprovação (com 2 aprovações na grande empresa, se passar do limi
 
 from __future__ import annotations
 
+import hashlib
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -92,8 +93,19 @@ def _resolver_itens(repo: Repositorio, conta: dict, itens: list) -> list[dict]:
     return resolvidos
 
 
+def _chave_da_folha(conta: dict, rotulo: str, resolvidos: list[dict], informada: str | None) -> str:
+    """Base das chaves de idempotência de uma folha executada na hora. Sem chave do app,
+    deriva da competência + itens: reenviar a mesma folha (duplo clique, rede ruim) devolve
+    os mesmos pagamentos em vez de pagar de novo."""
+    if informada:
+        return f"folha-{informada}"
+    itens = ",".join(f"{r['funcionario_id']}:{r['valor']}" for r in sorted(resolvidos, key=lambda r: r["funcionario_id"]))
+    digest = hashlib.sha256(f"{conta['empresa_id']}|{rotulo.strip().lower()}|{itens}".encode()).hexdigest()[:32]
+    return f"folha-{digest}"
+
+
 def pagar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, itens: list,
-          descricao: str | None, biometria, ip: str | None) -> dict:
+          descricao: str | None, biometria, ip: str | None, idempotency_key: str | None = None) -> dict:
     exigir_pj(conta)
     exigir_papel(conta, *pagamento_service.PODE_MOVIMENTAR)
     seguranca_service.exigir_dispositivo(dispositivo)
@@ -116,20 +128,23 @@ def pagar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | 
     if total > Decimal(str(get_settings().limite_facial_reais)):
         verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="folha")
     return {"resultados": executar(repo, usuario=usuario, conta=conta, dispositivo=dispositivo, itens=resolvidos,
-                                   descricao=rotulo, ip=ip, verificacao=verificacao, chave_base=None)}
+                                   descricao=rotulo, ip=ip, verificacao=verificacao,
+                                   chave_base=_chave_da_folha(conta, rotulo, resolvidos, idempotency_key))}
 
 
 def executar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, itens: list[dict],
              descricao: str, ip: str | None, verificacao: dict | None, chave_base: str | None,
              auth_metodo: AuthMetodo | None = None) -> list[dict]:
     resultados = []
-    for i, it in enumerate(itens):
+    for it in itens:
         destino = repo.obter_conta(it["destino_carteira_id"])
         try:
             r = pagamento_service.transferir(
                 repo, usuario=usuario, conta=conta, dispositivo=dispositivo, destino=destino,
                 valor=Decimal(it["valor"]), descricao=f"{descricao} — {it['nome']}"[:140],
-                idempotency_key=f"{chave_base}-{i}" if chave_base else None, ip=ip, mfa_resolvido=True,
+                # Por funcionário, não por posição: reordenar a lista não fura a proteção.
+                idempotency_key=f"{chave_base}-f{it['funcionario_id']}" if chave_base else None, ip=ip,
+                mfa_resolvido=True,
                 verificacao_previa=verificacao, pular_alcada=True, sem_bloqueio_cautelar=True,
                 auth_metodo=auth_metodo,
             )

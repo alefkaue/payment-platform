@@ -234,4 +234,5 @@ def pagar_folha(dados: FolhaPagar, usuario: dict = Depends(usuario_atual), conta
                 ip: str | None = Depends(ip_cliente)):
     """Paga salários SÓ para funcionários cadastrados, na conta PF do próprio CPF."""
     return folha_service.pagar(repo, usuario=usuario, conta=conta, dispositivo=dispositivo, itens=dados.itens,
-                               descricao=dados.descricao, biometria=dados.biometria, ip=ip)
+                               descricao=dados.descricao, biometria=dados.biometria, ip=ip,
+                               idempotency_key=dados.idempotency_key)
