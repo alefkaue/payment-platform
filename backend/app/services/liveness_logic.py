@@ -56,6 +56,10 @@ PASSOS_VALIDOS = frozenset(INSTRUCAO_PASSO)
 # Olho: aberto acima de EAR_ABERTO, fechado abaixo de EAR_FECHADO (histerese).
 EAR_ABERTO = 0.24
 EAR_FECHADO = 0.16
+# Mesmo sinal que o app usa ao vivo (blendshape eyeBlink do MediaPipe, 0..1), com
+# folga a favor de quem pisca: o app só dá o passo por feito com > 0.5 / < 0.2.
+BLINK_FECHADO = 0.45
+BLINK_ABERTO = 0.30
 # Piscadas naturais toleradas além do pedido (ninguém controla 100% o piscar).
 PISCADAS_EXTRAS = 1
 PISCADAS_NATURAIS_MAX = 2
@@ -130,6 +134,18 @@ def contar_piscadas(ears: list[float], aberto: float = EAR_ABERTO, fechado: floa
     return piscadas
 
 
+def piscadas_da_serie(seq: list[SinaisQuadro]) -> int:
+    """Piscadas numa série real. Usa o blendshape eyeBlink quando os quadros o trazem
+    (sempre, com o MediaPipe) -- é o mesmo sinal que o app mostra à pessoa; senão a EAR."""
+    if any(s.blink > 0 for s in seq):
+        return contar_piscadas([1.0 - s.blink for s in seq], aberto=1.0 - BLINK_ABERTO, fechado=1.0 - BLINK_FECHADO)
+    return contar_piscadas([s.ear for s in seq])
+
+
+def _olho_aberto(s: SinaisQuadro) -> bool:
+    return s.blink < BLINK_ABERTO if s.blink > 0 else s.ear > EAR_ABERTO
+
+
 def _giros(seq: list[SinaisQuadro], lado: str) -> int:
     if lado == "esquerda":
         return sum(1 for s in seq if s.yaw > YAW_GIRO)
@@ -138,7 +154,7 @@ def _giros(seq: list[SinaisQuadro], lado: str) -> int:
 
 def melhores_frontais(seq: list[SinaisQuadro], n: int = 2) -> list[int]:
     """Índices dos quadros mais frontais com olhos abertos (para face match)."""
-    candidatos = [i for i, s in enumerate(seq) if s.tem_rosto and s.ear > EAR_ABERTO]
+    candidatos = [i for i, s in enumerate(seq) if s.tem_rosto and _olho_aberto(s)]
     if not candidatos:
         candidatos = [i for i, s in enumerate(seq) if s.tem_rosto]
     candidatos.sort(key=lambda i: abs(seq[i].yaw))
@@ -154,7 +170,7 @@ def _checar_passo(seq: list[SinaisQuadro], passo: str) -> tuple[bool, str]:
     m = _PISCAR_RE.match(passo)
     if m:
         pedidas = int(m.group(1))
-        n = contar_piscadas([s.ear for s in seq])
+        n = piscadas_da_serie(seq)
         if n >= pedidas:
             return True, ""
         return False, f"Pisque os olhos {pedidas} vezes, devagar (detectamos {n})."
@@ -192,7 +208,7 @@ def _acoes_nao_pedidas(seq: list[SinaisQuadro], passos: tuple[str, ...]) -> str 
         return "Faça só o que foi pedido: mantenha a expressão neutra fora do passo de sorrir."
     pedidas = next((int(m.group(1)) for p in passos if (m := _PISCAR_RE.match(p))), None)
     limite = PISCADAS_NATURAIS_MAX if pedidas is None else pedidas + PISCADAS_EXTRAS
-    if contar_piscadas([s.ear for s in seq]) > limite:
+    if piscadas_da_serie(seq) > limite:
         return "Pisque só quantas vezes foi pedido."
     return None
 

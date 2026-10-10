@@ -90,16 +90,19 @@ def _obter_landmarker():
     return _local.landmarker
 
 
-def _dist(a, b) -> float:
-    return math.hypot(a.x - b.x, a.y - b.y)
+def _dist(a, b, w: float = 1.0, h: float = 1.0) -> float:
+    return math.hypot((a.x - b.x) * w, (a.y - b.y) * h)
 
 
-def _ear(pontos, idx) -> float:
+def _ear(pontos, idx, w: float = 1.0, h: float = 1.0) -> float:
+    """EAR em PIXELS. Os landmarks vêm normalizados (x/largura, y/altura): medir direto
+    neles distorce a razão conforme o formato da câmera (retrato x paisagem) e o olho
+    aberto podia ficar abaixo do limiar de "aberto" -- a piscada nunca fechava o ciclo."""
     p1, p2, p3, p4, p5, p6 = (pontos[i] for i in idx)
-    horizontal = _dist(p1, p4)
+    horizontal = _dist(p1, p4, w, h)
     if horizontal <= 1e-6:
         return 0.0
-    return (_dist(p2, p6) + _dist(p3, p5)) / (2.0 * horizontal)
+    return (_dist(p2, p6, w, h) + _dist(p3, p5, w, h)) / (2.0 * horizontal)
 
 
 def _blendshape(cats, nome: str) -> float:
@@ -122,7 +125,8 @@ def extrair(imagem_rgb) -> SinaisQuadro:
     pts = r.face_landmarks[0]
     cats = r.face_blendshapes[0] if r.face_blendshapes else []
 
-    ear = (_ear(pts, _OLHO_ESQ) + _ear(pts, _OLHO_DIR)) / 2.0
+    h, w = imagem_rgb.shape[:2]
+    ear = (_ear(pts, _OLHO_ESQ, w, h) + _ear(pts, _OLHO_DIR, w, h)) / 2.0
     larg_boca = _dist(pts[_BOCA_H[0]], pts[_BOCA_H[1]])
     mar = _dist(pts[_BOCA_V[0]], pts[_BOCA_V[1]]) / larg_boca if larg_boca > 1e-6 else 0.0
     nariz, be, bd = pts[_NARIZ], pts[_BOCHECHA_ESQ], pts[_BOCHECHA_DIR]

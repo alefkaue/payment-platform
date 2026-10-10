@@ -38,7 +38,9 @@ const MODELO =
 const BLINK_FECHADO = 0.5;
 const BLINK_ABERTO = 0.2;
 const SORRISO_NEUTRO = 0.15;
-const SORRISO_ALVO = 0.4;
+// Acima do limiar do servidor (0.45): o app só dá o passo por feito quando o servidor
+// também vai ver o sorriso.
+const SORRISO_ALVO = 0.5;
 const YAW_FRONTAL = 0.05;
 // Acima do limiar do servidor (0.22) de propósito: garante que os quadros que
 // capturamos passem com folga.
@@ -46,15 +48,17 @@ const YAW_GIRO = 0.24;
 const GIRO_QUADROS = 2;
 const piscadasDo = (id: PassoBiometria) => (id === "piscar2" ? 2 : 3);
 
-// Captura ~1 quadro a cada CADENCIA ms, com um teto por passo (soma <= 40).
+// O que vai para o servidor são os quadros QUE MOSTRAM o passo (ele refaz a análise):
+// - piscar: alguns quadros de olho aberto espaçados + até 3 quadros com o olho FECHADO e
+//   1 quadro reaberto a cada piscada. Antes guardávamos só os primeiros ~2 s; quem
+//   piscava devagar (como pedido) piscava depois e o servidor via "0 piscadas".
+// - sorrir/virar: o quadro neutro/frontal + os ÚLTIMOS quadros (a ação em si).
+// Soma de todos os passos <= 40 (teto do servidor).
 const CADENCIA_MS = 100;
-const CAP: Record<PassoBiometria, number> = {
-  piscar2: 18,
-  piscar3: 24,
-  sorrir: 5,
-  virar_esquerda: 5,
-  virar_direita: 5,
-};
+const PISCAR_ABERTOS = 6;
+const PISCAR_ABERTO_A_CADA_MS = 300;
+const FECHADOS_POR_PISCADA = 3;
+const JANELA = 6;
 // Continua capturando um tiquinho após detectar o passo (pega o "depois").
 const POS_MS = 250;
 
@@ -78,6 +82,8 @@ function earDe(lm: Pt[], idx: number[]): number {
 interface Hud {
   passo: string;
   piscadas: number;
+  blink: number;
+  guardados: number;
   earE: number;
   earD: number;
   smile: number;
@@ -132,13 +138,14 @@ function desenharOverlay(
 
     const linhas = [
       `passo: ${hud.passo}`,
-      `piscadas: ${hud.piscadas}`,
+      `piscadas: ${hud.piscadas}  olho fechado: ${hud.blink.toFixed(2)}`,
+      `quadros guardados: ${hud.guardados}`,
       `EAR E/D: ${hud.earE.toFixed(2)} / ${hud.earD.toFixed(2)}`,
       `sorriso: ${hud.smile.toFixed(2)}  giro: ${hud.yaw.toFixed(2)}`,
     ];
     ctx.font = "12px ui-monospace, monospace";
     ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.fillRect(6, 6, 220, 16 * linhas.length + 8);
+    ctx.fillRect(6, 6, 260, 16 * linhas.length + 8);
     ctx.fillStyle = "#e5e7eb";
     linhas.forEach((t, i) => ctx.fillText(t, 12, 24 + i * 16));
   }
@@ -197,9 +204,14 @@ export function LivenessCheck({
     // máquinas de estado do passo atual
     let piscouEstado: "aberto" | "fechado" = "aberto";
     let piscadas = 0;
+    let abertosGuardados = 0;
+    let fechadosNestaPiscada = 0;
     let viuNeutro = false;
     let viuFrontal = false;
     let fortes = 0;
+    // sorrir/virar: quadro de partida (neutro/frontal) + janela com os últimos quadros
+    let ancora: string | null = null;
+    let janela: string[] = [];
 
     function bs(cats: { categoryName: string; score: number }[], nome: string): number {
       return cats.find((c) => c.categoryName === nome)?.score ?? 0;
@@ -208,8 +220,13 @@ export function LivenessCheck({
     function resetPasso() {
       bufPasso = [];
       feitoEm = 0;
+      ultimaCaptura = 0;
       piscouEstado = "aberto";
       piscadas = 0;
+      abertosGuardados = 0;
+      fechadosNestaPiscada = 0;
+      ancora = null;
+      janela = [];
       viuNeutro = false;
       viuFrontal = false;
       fortes = 0;
@@ -285,12 +302,6 @@ export function LivenessCheck({
 
       const passo = passos[idx];
       if (lm && passo && !concluido) {
-        // captura para o passo atual (sem espelhamento), respeitando o teto
-        if (agora - ultimaCaptura >= CADENCIA_MS && bufPasso.length < CAP[passo.id]) {
-          bufPasso.push(capturar(v));
-          ultimaCaptura = agora;
-        }
-
         const blink = Math.max(bs(cats, "eyeBlinkLeft"), bs(cats, "eyeBlinkRight"));
         const smile = (bs(cats, "mouthSmileLeft") + bs(cats, "mouthSmileRight")) / 2;
         const nariz = lm[1];
@@ -303,31 +314,65 @@ export function LivenessCheck({
         }
 
         let feito = false;
-        if (passo.id === "piscar2" || passo.id === "piscar3") {
+        const piscar = passo.id === "piscar2" || passo.id === "piscar3";
+        if (piscar) {
           const exigidas = piscadasDo(passo.id);
-          if (piscouEstado === "aberto" && blink > BLINK_FECHADO) piscouEstado = "fechado";
-          else if (piscouEstado === "fechado" && blink < BLINK_ABERTO) {
+          if (piscouEstado === "aberto" && blink > BLINK_FECHADO) {
+            piscouEstado = "fechado";
+            fechadosNestaPiscada = 0;
+          } else if (piscouEstado === "fechado" && blink < BLINK_ABERTO) {
             piscouEstado = "aberto";
             piscadas += 1;
+            bufPasso.push(capturar(v)); // o olho reaberto fecha o ciclo no servidor
+            ultimaCaptura = agora;
+          }
+          if (piscouEstado === "fechado" && fechadosNestaPiscada < FECHADOS_POR_PISCADA) {
+            bufPasso.push(capturar(v)); // o quadro com o olho fechado é o que importa
+            fechadosNestaPiscada += 1;
+          } else if (
+            piscouEstado === "aberto" &&
+            abertosGuardados < PISCAR_ABERTOS &&
+            agora - ultimaCaptura >= PISCAR_ABERTO_A_CADA_MS
+          ) {
+            bufPasso.push(capturar(v));
+            abertosGuardados += 1;
+            ultimaCaptura = agora;
           }
           setProgresso(Math.min(1, piscadas / exigidas));
           feito = piscadas >= exigidas;
-        } else if (passo.id === "sorrir") {
-          if (smile < SORRISO_NEUTRO) viuNeutro = true;
-          setProgresso(Math.min(1, smile / SORRISO_ALVO));
-          feito = viuNeutro && smile > SORRISO_ALVO;
         } else {
-          if (Math.abs(yaw) < YAW_FRONTAL) viuFrontal = true;
-          const virado = passo.id === "virar_esquerda" ? yaw > YAW_GIRO : yaw < -YAW_GIRO;
-          if (virado) fortes += 1;
-          setProgresso(Math.min(1, fortes / GIRO_QUADROS));
-          feito = viuFrontal && fortes >= GIRO_QUADROS;
+          const sorrir = passo.id === "sorrir";
+          const partida = sorrir ? smile < SORRISO_NEUTRO : Math.abs(yaw) < YAW_FRONTAL;
+          const virado =
+            !sorrir && (passo.id === "virar_esquerda" ? yaw > YAW_GIRO : yaw < -YAW_GIRO);
+          if (partida) {
+            if (sorrir) viuNeutro = true;
+            else viuFrontal = true;
+            ancora ??= capturar(v);
+          }
+          // Quadro "forte" (virado) entra sempre; os outros, na cadência.
+          if (ancora && (virado || agora - ultimaCaptura >= CADENCIA_MS)) {
+            janela.push(capturar(v));
+            if (janela.length > JANELA) janela.shift();
+            ultimaCaptura = agora;
+          }
+          if (sorrir) {
+            setProgresso(Math.min(1, smile / SORRISO_ALVO));
+            feito = viuNeutro && smile > SORRISO_ALVO;
+          } else {
+            if (virado && ancora) fortes += 1;
+            setProgresso(Math.min(1, fortes / GIRO_QUADROS));
+            feito = viuFrontal && fortes >= GIRO_QUADROS;
+          }
+          bufPasso = ancora ? [ancora, ...janela] : [];
         }
 
         if (DEBUG_OVERLAY && overlayRef.current) {
           desenharOverlay(overlayRef.current, v, lm, {
             passo: passo.id,
             piscadas,
+            blink,
+            guardados: quadrosFinais.length + bufPasso.length,
             earE: earDe(lm, OLHO_ESQ),
             earD: earDe(lm, OLHO_DIR),
             smile,

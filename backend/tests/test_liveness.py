@@ -152,3 +152,30 @@ def test_melhores_frontais_prefere_olhos_abertos_e_frontal():
     seq = [q(ear=0.30, yaw=0.30), q(ear=0.30, yaw=0.01), q(ear=0.05, yaw=0.0), q(rosto=False)]
     idxs = L.melhores_frontais(seq, n=2)
     assert idxs[0] == 1 and 3 not in idxs
+
+
+# ------------------------------------------------------------------ sinal real (blendshape eyeBlink)
+
+
+def b(blink: float, ear: float = 0.20) -> SinaisQuadro:
+    # EAR "mediana" de propósito: com webcam a EAR de olho aberto pode ficar abaixo de
+    # 0.24; quem decide aqui é o eyeBlink, o mesmo sinal que o app mostra.
+    return SinaisQuadro(tem_rosto=True, ear=ear, blink=blink)
+
+
+def test_piscadas_pelo_blendshape_como_o_app_ve():
+    seq = [b(0.05), b(0.80), b(0.05), b(0.70), b(0.04), b(0.90), b(0.06)]
+    assert L.piscadas_da_serie(seq) == 3
+    assert L.verificar_sequencia([b(0.05)] * 3 + seq, ("piscar3",)) == (True, "")
+
+
+def test_blendshape_sem_fechar_de_verdade_nao_conta():
+    # olho "meio fechado" (0.35) não é piscada; sem reabrir também não
+    assert L.piscadas_da_serie([b(0.05), b(0.35), b(0.05), b(0.35), b(0.05)]) == 0
+    assert L.piscadas_da_serie([b(0.05), b(0.80), b(0.60), b(0.50)]) == 0
+
+
+def test_blendshape_continua_barrando_piscar_demais():
+    seq = [b(0.05)] * 3 + [b(0.8), b(0.05)] * 5  # pediu 2, piscou 5
+    ok, motivo = L.verificar_sequencia(seq, ("piscar2",))
+    assert not ok and "Pisque só" in motivo
