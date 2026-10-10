@@ -89,7 +89,7 @@ async function avancar(tempo: number) {
     quadro?.(tempo);
   });
 }
-it("só começa após um segundo bom seguido e pausa sem capturar no escuro", async () => {
+it("só começa após um segundo bom seguido e, nos passos, não reinicia nem trava", async () => {
   vi.spyOn(performance, "now").mockReturnValue(0);
   const captura = vi.mocked(HTMLCanvasElement.prototype.toDataURL);
   render(<LivenessCheck onSuccess={vi.fn()} onClose={vi.fn()} />);
@@ -99,25 +99,49 @@ it("só começa após um segundo bom seguido e pausa sem capturar no escuro", as
   await avancar(900);
   expect(captura).not.toHaveBeenCalled();
   camera.rostos = 0;
-  await avancar(950);
+  await avancar(1050);
   expect(screen.getByText("Posicione o rosto no círculo")).toBeInTheDocument();
   camera.rostos = 1;
-  await avancar(1000);
-  await avancar(1999);
+  await avancar(1200);
+  await avancar(2199);
   expect(captura).not.toHaveBeenCalled();
-  await avancar(2000);
-  expect(screen.getByText("Pisque duas vezes")).toBeInTheDocument();
-  expect(captura).toHaveBeenCalled();
-  const antes = captura.mock.calls.length;
-  camera.brilho = 20;
-  camera.blink = 1;
-  await avancar(2100);
-  expect(screen.getByText(/Está escuro/)).toHaveAttribute("aria-live", "polite");
-  expect(captura.mock.calls.length).toBe(antes);
-  camera.brilho = 120;
   await avancar(2200);
-  await avancar(3200);
   expect(screen.getByText("Pisque duas vezes")).toBeInTheDocument();
+  await avancar(2250);
+  expect(captura).toHaveBeenCalled();
+  // Luz ruim no meio do passo: o servidor confere nos quadros frontais; aqui não trava.
+  camera.brilho = 20;
+  const antes = captura.mock.calls.length;
+  await avancar(2400);
+  expect(screen.getByText("Pisque duas vezes")).toBeInTheDocument();
+  expect(captura.mock.calls.length).toBeGreaterThan(antes);
+  // Sem rosto: orienta e não grava o quadro, mas não zera o passo.
+  camera.rostos = 0;
+  const semRosto = captura.mock.calls.length;
+  await avancar(2500);
+  expect(screen.getByText("Volte o rosto para a câmera")).toHaveAttribute("aria-live", "polite");
+  expect(captura.mock.calls.length).toBe(semRosto);
+  camera.rostos = 1;
+  await avancar(2600);
+  expect(screen.getByText("Pisque duas vezes")).toBeInTheDocument();
+});
+it("o passo acaba pelo tempo mesmo sem ver o movimento (o servidor decide)", async () => {
+  vi.spyOn(performance, "now").mockReturnValue(0);
+  const enviar = vi.fn(async () => undefined);
+  render(<LivenessCheck onSuccess={enviar} onClose={vi.fn()} />);
+  await waitFor(() =>
+    expect(screen.getByText("Ótimo! Mantenha o rosto assim")).toBeInTheDocument(),
+  );
+  vi.useFakeTimers();
+  await avancar(1000);
+  for (let t = 1100; t <= 7000; t += 100) await avancar(t);
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(600);
+  });
+  expect(enviar).toHaveBeenCalledOnce();
+  const prova = (enviar.mock.calls[0] as unknown as [{ quadros: string[] }])[0];
+  expect(prova.quadros.length).toBeGreaterThan(0);
+  expect(prova.quadros.length).toBeLessThanOrEqual(40);
 });
 it("mostra a recusa do servidor e solicita novo desafio ao tentar de novo", async () => {
   const repetir = vi.fn();
@@ -158,7 +182,7 @@ it("aguarda a resposta assíncrona e recomeça no preparo após a recusa", async
   await avancar(1050);
   camera.blink = 0;
   await avancar(1060);
-  await avancar(1400);
+  await avancar(1420);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(600);
   });

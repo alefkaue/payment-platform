@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  giroDoRosto,
+  mediana,
   medirRosto,
   OCULOS_LIMIAR,
   orientarRosto,
@@ -61,11 +63,6 @@ describe("orientação do rosto", () => {
     expect(orientarRosto({ ...boa, brilho: 55, estourado: 0.25, contraluz: 85 }, true)).toBeNull();
     expect(orientarRosto({ ...boa, oculos: 3 }, false)).toBeNull();
   });
-  it("permite os movimentos dos passos sem perder o bloqueio de luz e múltiplos rostos", () => {
-    expect(orientarRosto({ ...boa, centroX: 0.8, altura: 0.3 }, false, false)).toBeNull();
-    expect(orientarRosto({ ...boa, brilho: 20 }, false, false)).toContain("escuro");
-    expect(orientarRosto({ ...boa, rostos: 2 }, false, false)).toContain("sozinho");
-  });
   it.each([
     "Está escuro",
     "Luz forte demais",
@@ -79,22 +76,39 @@ describe("orientação do rosto", () => {
 });
 
 describe("medição dos pixels", () => {
-  it("compara bordas na ponte do nariz com a testa", () => {
-    const pontos = Array.from({ length: 363 }, () => ({ x: 0.5, y: 0.5 }));
-    pontos[0] = { x: 0.1, y: 0.1 };
-    pontos[1] = { x: 0.9, y: 0.9 };
-    pontos[133] = { x: 0.4, y: 0.4 };
-    pontos[362] = { x: 0.6, y: 0.4 };
-    pontos[168] = { x: 0.5, y: 0.4 };
-    pontos[10] = { x: 0.5, y: 0.2 };
-    const pixels = new Uint8ClampedArray(80 * 80 * 4).fill(120);
-    expect(medirRosto(pixels, 80, 80, pontos, 1).oculos).toBe(0);
-    for (let y = 28; y < 36; y++)
-      for (let x = 34; x < 40; x++) {
-        const i = (y * 80 + x) * 4;
-        pixels.fill(0, i, i + 3);
-      }
-    expect(medirRosto(pixels, 80, 80, pontos, 1).oculos).toBeGreaterThanOrEqual(OCULOS_LIMIAR);
+  const pontos = () => {
+    const p = Array.from({ length: 478 }, () => ({ x: 0.5, y: 0.5 }));
+    p[0] = { x: 0.1, y: 0.1 };
+    p[1] = { x: 0.9, y: 0.9 };
+    p[133] = { x: 0.4, y: 0.4 }; // cantos internos dos olhos: 16 px de distância em 80 px
+    p[362] = { x: 0.6, y: 0.4 };
+    p[168] = { x: 0.5, y: 0.4 };
+    return p;
+  };
+  const pintar = (px: Uint8ClampedArray, x0: number, x1: number, y0: number, y1: number) => {
+    for (let y = y0; y < y1; y++)
+      for (let x = x0; x < x1; x++) px.fill(20, (y * 80 + x) * 4, (y * 80 + x) * 4 + 3);
+  };
+  it("acusa óculos com a barra horizontal da armação entre os olhos", () => {
+    const px = new Uint8ClampedArray(80 * 80 * 4).fill(140);
+    expect(medirRosto(px, 80, 80, pontos(), 1).oculos).toBe(0);
+    pintar(px, 30, 50, 32, 34); // ponte da armação
+    expect(medirRosto(px, 80, 80, pontos(), 1).oculos).toBeGreaterThanOrEqual(OCULOS_LIMIAR);
+  });
+  it("não confunde bordas verticais (nariz de lado, fundo) com óculos", () => {
+    const px = new Uint8ClampedArray(80 * 80 * 4).fill(140);
+    pintar(px, 38, 40, 20, 60); // lateral do nariz / borda do fundo ao virar o rosto
+    pintar(px, 44, 80, 20, 60);
+    expect(medirRosto(px, 80, 80, pontos(), 1).oculos).toBeLessThan(OCULOS_LIMIAR);
+  });
+  it("mede o giro e a mediana", () => {
+    const p = pontos();
+    p[234] = { x: 0.3, y: 0.5 };
+    p[454] = { x: 0.7, y: 0.5 };
+    p[1] = { x: 0.6, y: 0.5 };
+    expect(giroDoRosto(p)).toBeCloseTo(0.25);
+    expect(mediana([0.9, 0.1, 0.2])).toBe(0.2);
+    expect(mediana([])).toBe(0);
   });
   it("mede a caixa do rosto e exclui o rosto da média do fundo", () => {
     const pixels = new Uint8ClampedArray(10 * 10 * 4);

@@ -183,7 +183,7 @@ class Settings(BaseSettings):
     rosto_brilho_min: float = Field(default=55.0, alias="ROSTO_BRILHO_MIN")          # 0..255
     rosto_estourado_max: float = Field(default=0.25, alias="ROSTO_ESTOURADO_MAX")    # fração do rosto
     rosto_contraluz_max: float = Field(default=85.0, alias="ROSTO_CONTRALUZ_MAX")    # fundo - rosto
-    rosto_oculos_limiar: float = Field(default=2.2, alias="ROSTO_OCULOS_LIMIAR")     # bordas ponte/testa
+    rosto_oculos_limiar: float = Field(default=0.6, alias="ROSTO_OCULOS_LIMIAR")     # 0..1 barra na ponte
     # Anti-spoof passivo (MiniFAS): probabilidade mínima de "real". Sem o modelo,
     # produção recusa subir; dev só avisa.
     antispoof_limiar: float = Field(default=0.5, alias="ANTISPOOF_LIMIAR")

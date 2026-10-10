@@ -2,7 +2,22 @@ import { useEffect, useRef, useState } from "react";
 import { useFecharAoVoltar } from "@/lib/mobile";
 import { Check, Loader2, X } from "lucide-react";
 import { pedirDesafio } from "@/lib/api";
-import { medirRosto, orientarRosto, PREPARO_MS } from "@/lib/qualidade-rosto";
+import {
+  giroDoRosto,
+  mediana,
+  medirRosto,
+  orientarRosto,
+  PREPARO_MS,
+  YAW_OCULOS,
+} from "@/lib/qualidade-rosto";
+import {
+  CADENCIA_MS,
+  cotaPorPasso,
+  MAX_QUADROS,
+  selecionarQuadros,
+  TEMPO_PASSO_MS,
+  type Quadro,
+} from "@/lib/captura-facial";
 import type {
   Desafio,
   ModoBiometria,
@@ -20,14 +35,15 @@ import type {
  * - modo "login": 2 dessas ações. É o 2º fator do login: o desafio vem pronto
  *   da etapa da senha (POST /auth/login) e é passado em `desafio`.
  *
- * Faça só o que for pedido: o servidor reprova ação fora do passo (ex.: virar
- * para um lado que não foi pedido).
- *
- * Para cada passo guiamos a pessoa, detectamos o movimento com o FaceLandmarker
- * (MediaPipe) + blendshapes e guardamos os quadros DAQUELE passo (sem
- * espelhamento). No fim mandamos todos juntos. QUEM DECIDE é o servidor: ele
- * reextrai os landmarks, confere a sequência inteira (3 piscadas, sorriso, as 2
- * viradas), com rosto em todos os quadros, faz anti-spoofing e compara o rosto.
+ * Como funciona:
+ * 1. PREPARO: só começa com a captura boa (um rosto, distância, centro, luz e, no
+ *    cadastro, sem óculos -- medidos com o rosto de frente).
+ * 2. PASSOS: a câmera grava em RAJADA (~10 quadros por segundo, como um vídeo). O passo
+ *    acaba quando o app vê o movimento ou quando o tempo do passo acaba; nada trava a
+ *    pessoa no meio. No fim de cada passo guardamos os quadros que mostram a ação.
+ * 3. No fim mandamos as imagens salvas. QUEM DECIDE é o servidor: ele reextrai os
+ *    landmarks, confere a sequência inteira, a luz e os óculos nos quadros frontais, faz
+ *    anti-spoofing e compara o rosto.
  *
  * No webview do apk (Capacitor) exige a permissão CAMERA no AndroidManifest.
  */
@@ -36,33 +52,28 @@ const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm";
 const MODELO =
   "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
 
-// Limiares do GUIA (0..1 dos blendshapes; o servidor tem os dele, via EAR/MAR).
+// Limiares do GUIA (blendshapes 0..1 e giro). Só servem para o passo acabar assim que o
+// movimento aparece, com folga sobre os do servidor; sem eles, o passo acaba pelo tempo.
 const BLINK_FECHADO = 0.5;
 const BLINK_ABERTO = 0.2;
 const SORRISO_NEUTRO = 0.15;
-// Acima do limiar do servidor (0.45): o app só dá o passo por feito quando o servidor
-// também vai ver o sorriso.
 const SORRISO_ALVO = 0.5;
-const YAW_FRONTAL = 0.05;
-// Acima do limiar do servidor (0.22) de propósito: garante que os quadros que
-// capturamos passem com folga.
-const YAW_GIRO = 0.24;
-const GIRO_QUADROS = 2;
+const YAW_FRONTAL = 0.06;
+const YAW_GIRO = 0.26;
+const GIRO_QUADROS = 3;
 const piscadasDo = (id: PassoBiometria) => (id === "piscar2" ? 2 : 3);
-
-// O que vai para o servidor são os quadros QUE MOSTRAM o passo (ele refaz a análise):
-// - piscar: alguns quadros de olho aberto espaçados + até 3 quadros com o olho FECHADO e
-//   1 quadro reaberto a cada piscada. Antes guardávamos só os primeiros ~2 s; quem
-//   piscava devagar (como pedido) piscava depois e o servidor via "0 piscadas".
-// - sorrir/virar: o quadro neutro/frontal + os ÚLTIMOS quadros (a ação em si).
-// Soma de todos os passos <= 40 (teto do servidor).
-const CADENCIA_MS = 100;
-const PISCAR_ABERTOS = 6;
-const PISCAR_ABERTO_A_CADA_MS = 300;
-const FECHADOS_POR_PISCADA = 3;
-const JANELA = 6;
-// Continua capturando um tiquinho após detectar o passo (pega o "depois").
-const POS_MS = 250;
+// Depois de ver o movimento, grava mais um instante (o "depois" da ação).
+const POS_MS = 350;
+// Pausa curta entre passos, para a pessoa ler a próxima instrução.
+const ENTRE_PASSOS_MS = 700;
+// Medição de luz/distância/óculos no preparo: a cada 120 ms; óculos pela mediana.
+const QUALIDADE_MS = 120;
+const OCULOS_JANELA = 7;
+// Sem rosto por mais que isso no meio de um passo: o passo recomeça do zero.
+const SEM_ROSTO_MAX_MS = 1200;
+// O desafio do servidor vale 120 s: antes disso a tela encerra e oferece "Tentar de novo"
+// (que pede um desafio novo), em vez de mandar uma prova que já nasceria vencida.
+const PRAZO_TOTAL_MS = 105_000;
 
 // DEV: desenha onde o rosto é detectado (malha + olhos abrindo/fechando + boca +
 // métricas ao vivo). Só no `npm run dev` -- nunca no build de produção (não dá
@@ -176,7 +187,7 @@ export function LivenessCheck({
   onClose: () => void;
   /** Desafio já emitido pelo servidor (o do login vem junto com o mfa_token). */
   desafio?: Desafio;
-  /** "cadastro" = sequência completa; "login" = só piscar 3x. */
+  /** "cadastro" = sequência completa; "login" = 2 ações. */
   modo?: ModoBiometria;
   erroServidor?: string | null;
   onRetry?: () => void | Promise<void>;
@@ -194,6 +205,9 @@ export function LivenessCheck({
   const [reiniciando, setReiniciando] = useState(false);
   const [passoIdx, setPassoIdx] = useState(0);
   const [progresso, setProgresso] = useState(0);
+  // Proporção real da câmera (largura/altura): a moldura segue a câmera, sem zoom nem
+  // esticar a imagem (webcam de PC é deitada; câmera de celular em pé).
+  const [proporcao, setProporcao] = useState(3 / 4);
   const onSuccessRef = useRef(onSuccess);
   onSuccessRef.current = onSuccess;
 
@@ -211,46 +225,60 @@ export function LivenessCheck({
     let passos: PassoDesafio[] = [];
     let preparado = false;
     let bomDesde: number | null = null;
-    let pausado = false;
+    let ultimaQualidade = Number.NEGATIVE_INFINITY;
+    let avisoPreparo: string | null = "Posicione o rosto no círculo";
+    const oculosFrontais: number[] = [];
     const qualidadeCanvas = document.createElement("canvas");
     qualidadeCanvas.width = 320;
     const qualidadeCtx = qualidadeCanvas.getContext("2d", { willReadFrequently: true });
 
     // acumulador final + estado do passo atual
     const quadrosFinais: string[] = [];
-    let bufPasso: string[] = [];
+    let rajada: Quadro[] = [];
     let idx = 0;
+    let inicioPasso = 0;
     let ultimaCaptura = 0;
     let feitoEm = 0;
-    // máquinas de estado do passo atual
+    let semRostoDesde: number | null = null;
+    let desafioEm = 0;
+    // máquinas de estado do passo atual (só para saber quando o movimento aconteceu)
     let piscouEstado: "aberto" | "fechado" = "aberto";
     let piscadas = 0;
-    let abertosGuardados = 0;
-    let fechadosNestaPiscada = 0;
     let viuNeutro = false;
+    let sorrisoGravado = false;
     let viuFrontal = false;
     let fortes = 0;
-    // sorrir/virar: quadro de partida (neutro/frontal) + janela com os últimos quadros
-    let ancora: string | null = null;
-    let janela: string[] = [];
 
     function bs(cats: { categoryName: string; score: number }[], nome: string): number {
       return cats.find((c) => c.categoryName === nome)?.score ?? 0;
     }
 
-    function resetPasso() {
-      bufPasso = [];
+    function comecarPasso(agora: number) {
+      rajada = [];
+      inicioPasso = agora;
       feitoEm = 0;
+      semRostoDesde = null;
       ultimaCaptura = 0;
       piscouEstado = "aberto";
       piscadas = 0;
-      abertosGuardados = 0;
-      fechadosNestaPiscada = 0;
-      ancora = null;
-      janela = [];
       viuNeutro = false;
+      sorrisoGravado = false;
       viuFrontal = false;
       fortes = 0;
+    }
+
+    function encerrarPasso(passo: PassoDesafio, agora: number) {
+      const cota = Math.min(cotaPorPasso(passos.length), MAX_QUADROS - quadrosFinais.length);
+      quadrosFinais.push(...selecionarQuadros(rajada, passo.id, cota).map((q) => q.img));
+      idx += 1;
+      setPassoIdx(idx);
+      setProgresso(0);
+      if (idx >= passos.length) {
+        finalizar();
+        return;
+      }
+      // Pequena pausa para ler a próxima instrução antes de gravar o passo seguinte.
+      comecarPasso(agora + ENTRE_PASSOS_MS);
     }
 
     function finalizar() {
@@ -260,7 +288,7 @@ export function LivenessCheck({
       setProgresso(1);
       const prova: ProvaBiometrica = {
         desafio_id: desafioLocal.desafio_id,
-        quadros: quadrosFinais.slice(0, 40),
+        quadros: quadrosFinais.slice(0, MAX_QUADROS),
       };
       setTimeout(() => {
         if (!parar) {
@@ -281,27 +309,25 @@ export function LivenessCheck({
 
     async function iniciar() {
       try {
-        const d = desafioPronto ?? (await pedirDesafio(modo));
-        if (parar) return;
-        desafioLocal = d;
-        passos = d.passos;
-        setDesafio(d);
-
         const vision = await import("@mediapipe/tasks-vision");
         const fileset = await vision.FilesetResolver.forVisionTasks(WASM);
         if (parar) return;
-        landmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
-          baseOptions: { modelAssetPath: MODELO, delegate: "GPU" },
-          runningMode: "VIDEO",
-          numFaces: 2,
-          outputFaceBlendshapes: true,
-        });
+        const criar = (delegate: "GPU" | "CPU") =>
+          vision.FaceLandmarker.createFromOptions(fileset, {
+            baseOptions: { modelAssetPath: MODELO, delegate },
+            runningMode: "VIDEO",
+            numFaces: 2,
+            outputFaceBlendshapes: true,
+          });
+        // Aparelho/navegador sem WebGL utilizável: cai para CPU em vez de falhar.
+        landmarker = await criar("GPU").catch(() => criar("CPU"));
         if (parar) {
           landmarker.close();
           return;
         }
+        // Sem forçar largura/altura exatas: o navegador recortava/esticava para caber.
         stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: "user", width: 480, height: 640 },
+          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
           audio: false,
         });
         if (parar) {
@@ -313,6 +339,15 @@ export function LivenessCheck({
         v.srcObject = stream;
         await v.play();
         if (parar) return;
+        if (v.videoWidth && v.videoHeight) setProporcao(v.videoWidth / v.videoHeight);
+        // O desafio só é pedido com modelo e câmera prontos: o prazo dele (120 s) não
+        // corre durante o download do modelo nem enquanto a pessoa permite a câmera.
+        const d = desafioPronto ?? (await pedirDesafio(modo));
+        if (parar) return;
+        desafioLocal = d;
+        passos = d.passos;
+        desafioEm = performance.now();
+        setDesafio(d);
         setFase("preparo");
         loop();
       } catch (e) {
@@ -329,6 +364,55 @@ export function LivenessCheck({
       }
     }
 
+    /** Preparo: luz, distância, centro e (cadastro) óculos. Só libera com tudo bom. */
+    function preparar(v: HTMLVideoElement, lm: Pt[] | undefined, rostos: number, agora: number) {
+      if (agora - ultimaQualidade >= QUALIDADE_MS) {
+        ultimaQualidade = agora;
+        qualidadeCanvas.height = Math.max(1, Math.round((320 * v.videoHeight) / v.videoWidth));
+        qualidadeCtx?.drawImage(v, 0, 0, qualidadeCanvas.width, qualidadeCanvas.height);
+        const pixels = qualidadeCtx?.getImageData(
+          0,
+          0,
+          qualidadeCanvas.width,
+          qualidadeCanvas.height,
+        );
+        if (!pixels) {
+          avisoPreparo = "Não foi possível avaliar a câmera";
+        } else {
+          const m = medirRosto(
+            pixels.data,
+            qualidadeCanvas.width,
+            qualidadeCanvas.height,
+            lm ?? [],
+            rostos,
+          );
+          // Óculos só com o rosto de frente, pela mediana dos últimos quadros: um quadro
+          // ruim (rosto virando, desfoque) não acusa óculos sozinho.
+          if (lm && Math.abs(giroDoRosto(lm)) < YAW_OCULOS) {
+            oculosFrontais.push(m.oculos);
+            if (oculosFrontais.length > OCULOS_JANELA) oculosFrontais.shift();
+          }
+          m.oculos = oculosFrontais.length >= 3 ? mediana(oculosFrontais) : 0;
+          avisoPreparo = orientarRosto(m, modo === "cadastro");
+        }
+      }
+      setOrientacao(avisoPreparo);
+      setQualidadeBoa(!avisoPreparo);
+      if (avisoPreparo) {
+        bomDesde = null;
+        return;
+      }
+      bomDesde ??= agora;
+      if (agora - bomDesde < PREPARO_MS) {
+        setOrientacao("Ótimo! Mantenha o rosto assim");
+        return;
+      }
+      preparado = true;
+      setOrientacao(null);
+      setFase("ativo");
+      comecarPasso(agora);
+    }
+
     function loop() {
       const v = videoRef.current;
       if (parar) return;
@@ -337,150 +421,104 @@ export function LivenessCheck({
         return;
       }
       const agora = performance.now();
+      if (desafioEm && agora - desafioEm > PRAZO_TOTAL_MS && !concluido) {
+        concluido = true;
+        setErro("O tempo da verificação acabou. Toque em Tentar de novo.");
+        setFase("erro");
+        return;
+      }
       const r = landmarker.detectForVideo(v, agora);
+      const rostos = r.faceLandmarks?.length ?? 0;
       const lm = r.faceLandmarks?.[0];
       const cats = r.faceBlendshapes?.[0]?.categories ?? [];
       setTemRosto(Boolean(lm));
-      qualidadeCanvas.height = Math.max(1, Math.round((320 * v.videoHeight) / v.videoWidth));
-      qualidadeCtx?.drawImage(v, 0, 0, qualidadeCanvas.width, qualidadeCanvas.height);
-      const pixels = qualidadeCtx?.getImageData(
-        0,
-        0,
-        qualidadeCanvas.width,
-        qualidadeCanvas.height,
-      );
-      const aviso = pixels
-        ? orientarRosto(
-            medirRosto(
-              pixels.data,
-              qualidadeCanvas.width,
-              qualidadeCanvas.height,
-              lm ?? [],
-              r.faceLandmarks.length,
-            ),
-            modo === "cadastro",
-            !preparado,
-          )
-        : "Não foi possível avaliar a câmera";
-      setOrientacao(aviso);
-      setQualidadeBoa(!aviso);
-      if (aviso) {
-        bomDesde = null;
-        if (!pausado) {
-          resetPasso();
-          setProgresso(0);
-        }
-        pausado = true;
+
+      if (!preparado) {
+        preparar(v, lm, rostos, agora);
         raf = requestAnimationFrame(loop);
         return;
       }
-      if (!preparado || pausado) {
-        bomDesde ??= agora;
-        if (agora - bomDesde < PREPARO_MS) {
-          setOrientacao("Ótimo! Mantenha o rosto assim");
-          raf = requestAnimationFrame(loop);
-          return;
-        }
-        preparado = true;
-        pausado = false;
-        setFase("ativo");
-      }
 
       const passo = passos[idx];
-      if (lm && passo && !concluido) {
-        const blink = Math.max(bs(cats, "eyeBlinkLeft"), bs(cats, "eyeBlinkRight"));
-        const smile = (bs(cats, "mouthSmileLeft") + bs(cats, "mouthSmileRight")) / 2;
-        const nariz = lm[1];
-        const ladoE = lm[234];
-        const ladoD = lm[454];
-        let yaw = 0;
-        if (nariz && ladoE && ladoD) {
-          const meio = (ladoE.x + ladoD.x) / 2;
-          yaw = (nariz.x - meio) / (Math.abs(ladoD.x - ladoE.x) || 1);
-        }
-
-        let feito = false;
-        const piscar = passo.id === "piscar2" || passo.id === "piscar3";
-        if (piscar) {
-          const exigidas = piscadasDo(passo.id);
-          if (piscouEstado === "aberto" && blink > BLINK_FECHADO) {
-            piscouEstado = "fechado";
-            fechadosNestaPiscada = 0;
-          } else if (piscouEstado === "fechado" && blink < BLINK_ABERTO) {
-            piscouEstado = "aberto";
-            piscadas += 1;
-            bufPasso.push(capturar(v)); // o olho reaberto fecha o ciclo no servidor
-            ultimaCaptura = agora;
-          }
-          if (piscouEstado === "fechado" && fechadosNestaPiscada < FECHADOS_POR_PISCADA) {
-            bufPasso.push(capturar(v)); // o quadro com o olho fechado é o que importa
-            fechadosNestaPiscada += 1;
-          } else if (
-            piscouEstado === "aberto" &&
-            abertosGuardados < PISCAR_ABERTOS &&
-            agora - ultimaCaptura >= PISCAR_ABERTO_A_CADA_MS
-          ) {
-            bufPasso.push(capturar(v));
-            abertosGuardados += 1;
-            ultimaCaptura = agora;
-          }
-          setProgresso(Math.min(1, piscadas / exigidas));
-          feito = piscadas >= exigidas;
-        } else {
-          const sorrir = passo.id === "sorrir";
-          const partida = sorrir ? smile < SORRISO_NEUTRO : Math.abs(yaw) < YAW_FRONTAL;
-          const virado =
-            !sorrir && (passo.id === "virar_esquerda" ? yaw > YAW_GIRO : yaw < -YAW_GIRO);
-          if (partida) {
-            if (sorrir) viuNeutro = true;
-            else viuFrontal = true;
-            ancora ??= capturar(v);
-          }
-          // Quadro "forte" (virado) entra sempre; os outros, na cadência.
-          if (ancora && (virado || agora - ultimaCaptura >= CADENCIA_MS)) {
-            janela.push(capturar(v));
-            if (janela.length > JANELA) janela.shift();
-            ultimaCaptura = agora;
-          }
-          if (sorrir) {
-            setProgresso(Math.min(1, smile / SORRISO_ALVO));
-            feito = viuNeutro && smile > SORRISO_ALVO;
-          } else {
-            if (virado && ancora) fortes += 1;
-            setProgresso(Math.min(1, fortes / GIRO_QUADROS));
-            feito = viuFrontal && fortes >= GIRO_QUADROS;
-          }
-          bufPasso = ancora ? [ancora, ...janela] : [];
-        }
-
-        if (DEBUG_OVERLAY && overlayRef.current) {
-          desenharOverlay(overlayRef.current, v, lm, {
-            passo: passo.id,
-            piscadas,
-            blink,
-            guardados: quadrosFinais.length + bufPasso.length,
-            earE: earDe(lm, OLHO_ESQ),
-            earD: earDe(lm, OLHO_DIR),
-            smile,
-            yaw,
-          });
-        }
-
-        const minQuadros = passo.id.startsWith("piscar") ? 6 : 3;
-        if (feito && feitoEm === 0 && bufPasso.length >= minQuadros) feitoEm = agora;
-        if (feitoEm > 0 && agora - feitoEm >= POS_MS) {
-          quadrosFinais.push(...bufPasso);
-          idx += 1;
-          setPassoIdx(idx);
+      if (!passo || concluido) return;
+      if (agora < inicioPasso) {
+        // pausa entre passos: mostra a próxima instrução, ainda sem gravar
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      // Sem rosto (ou com dois) não grava o quadro. Uma falha curta (piscar de detecção) não
+      // atrapalha; ausência longa recomeça SÓ este passo: o servidor tem de ver a ação
+      // inteira de forma contínua, não pedaços com buracos.
+      if (!lm || rostos !== 1) {
+        semRostoDesde ??= agora;
+        if (agora - semRostoDesde >= SEM_ROSTO_MAX_MS) {
+          comecarPasso(agora);
           setProgresso(0);
-          resetPasso();
-          if (idx >= passos.length) {
-            finalizar();
-            return;
-          }
         }
-      } else if (DEBUG_OVERLAY && overlayRef.current && v) {
-        desenharOverlay(overlayRef.current, v, undefined, null);
+        setOrientacao(rostos > 1 ? "Fique sozinho na câmera" : "Volte o rosto para a câmera");
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      semRostoDesde = null;
+      setOrientacao(null);
+
+      const blink = Math.max(bs(cats, "eyeBlinkLeft"), bs(cats, "eyeBlinkRight"));
+      const smile = (bs(cats, "mouthSmileLeft") + bs(cats, "mouthSmileRight")) / 2;
+      const yaw = giroDoRosto(lm);
+
+      // Rajada: um quadro a cada CADENCIA_MS, sempre (como um vídeo). Piscada é rápida
+      // (~150 ms): com o olho fechando, grava no ritmo da câmera para não perder.
+      const olhoFechando = blink > 0.4 && agora - ultimaCaptura >= 30;
+      let gravou = false;
+      if (agora - ultimaCaptura >= CADENCIA_MS || olhoFechando) {
+        rajada.push({ img: capturar(v), t: agora, blink, smile, yaw });
+        ultimaCaptura = agora;
+        gravou = true;
+      }
+
+      // Só para saber quando o movimento já aconteceu (e mostrar o progresso).
+      let feito = false;
+      if (passo.id === "piscar2" || passo.id === "piscar3") {
+        if (piscouEstado === "aberto" && blink > BLINK_FECHADO) piscouEstado = "fechado";
+        else if (piscouEstado === "fechado" && blink < BLINK_ABERTO) {
+          piscouEstado = "aberto";
+          piscadas += 1;
+        }
+        const exigidas = piscadasDo(passo.id);
+        setProgresso(Math.min(1, piscadas / exigidas));
+        feito = piscadas >= exigidas;
+      } else if (passo.id === "sorrir") {
+        // Sorriso e giro só contam nos quadros GRAVADOS: o servidor só vê esses.
+        if (gravou && smile < SORRISO_NEUTRO) viuNeutro = true;
+        if (gravou && viuNeutro && smile > SORRISO_ALVO) sorrisoGravado = true;
+        setProgresso(Math.min(1, smile / SORRISO_ALVO));
+        feito = sorrisoGravado;
+      } else {
+        if (gravou && Math.abs(yaw) < YAW_FRONTAL) viuFrontal = true;
+        const virado = passo.id === "virar_esquerda" ? yaw > YAW_GIRO : yaw < -YAW_GIRO;
+        if (gravou && virado && viuFrontal) fortes += 1;
+        setProgresso(Math.min(1, fortes / GIRO_QUADROS));
+        feito = viuFrontal && fortes >= GIRO_QUADROS;
+      }
+
+      if (DEBUG_OVERLAY && overlayRef.current) {
+        desenharOverlay(overlayRef.current, v, lm, {
+          passo: passo.id,
+          piscadas,
+          blink,
+          guardados: quadrosFinais.length + rajada.length,
+          earE: earDe(lm, OLHO_ESQ),
+          earD: earDe(lm, OLHO_DIR),
+          smile,
+          yaw,
+        });
+      }
+
+      if (feito && feitoEm === 0) feitoEm = agora;
+      const acabouTempo = agora - inicioPasso >= TEMPO_PASSO_MS[passo.id];
+      if ((feitoEm > 0 && agora - feitoEm >= POS_MS) || acabouTempo) {
+        encerrarPasso(passo, agora);
+        if (concluido) return;
       }
       raf = requestAnimationFrame(loop);
     }
@@ -533,19 +571,24 @@ export function LivenessCheck({
         </button>
       </div>
 
-      <div className="relative mx-auto mt-4 aspect-[3/4] w-[min(86%,340px)] overflow-hidden rounded-[28px] bg-black ring-1 ring-ink-foreground/10">
+      <div
+        style={{ aspectRatio: String(proporcao) }}
+        className={`relative mx-auto mt-4 overflow-hidden rounded-[28px] bg-black ring-1 ring-ink-foreground/10 ${
+          proporcao > 1 ? "w-[min(92%,420px)]" : "w-[min(86%,340px)]"
+        }`}
+      >
         <video
           ref={videoRef}
           muted
           playsInline
-          className="h-full w-full -scale-x-100 object-fill"
+          className="h-full w-full -scale-x-100 object-cover"
         />
         {DEBUG_OVERLAY && (
           <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
         )}
         <div
-          className={`pointer-events-none absolute inset-6 rounded-[50%] border-2 transition-colors ${
-            falha ? "border-errt" : fase === "ok" || qualidadeBoa ? "border-pos" : "border-pending"
+          className={`pointer-events-none absolute left-1/2 top-[7%] aspect-[3/4] h-[86%] -translate-x-1/2 rounded-[50%] border-2 transition-colors ${
+            falha ? "border-errt" : fase === "ok" || fase === "ativo" || qualidadeBoa ? "border-pos" : "border-pending"
           }`}
         />
         {fase === "carregando" && (

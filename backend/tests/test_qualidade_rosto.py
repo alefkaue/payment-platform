@@ -57,6 +57,22 @@ def test_oculos_detectados_so_quando_pedido():
     assert q.problema(med, checar_oculos=False) is None  # login aceita óculos
 
 
+def test_rosto_virando_nao_vira_oculos():
+    """Ao virar, a lateral do nariz e a borda do fundo cruzam a região da ponte: são
+    bordas VERTICAIS e não podem ser lidas como armação (bug relatado no emulador)."""
+    img = _imagem()
+    img[80:120, 112:115] = 30     # lateral do nariz
+    img[80:120, 124:240] = 220    # fundo claro entrando pela lateral do rosto
+    med = q.medir(img, CAIXA, _pontos())
+    assert med.oculos < 0.6
+    assert q.problema(med, checar_oculos=True) is None
+
+
+def test_ruido_forte_nao_vira_oculos():
+    med = q.medir(_imagem(ruido=25, seed=7), CAIXA, _pontos())
+    assert med.oculos < 0.6
+
+
 def test_sem_landmarks_nao_inventa_oculos():
     med = q.medir(_com_oculos(_imagem()), CAIXA, None)
     assert med.oculos == 0 and q.problema(med, checar_oculos=True) is None
