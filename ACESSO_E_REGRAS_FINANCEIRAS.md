@@ -15,7 +15,7 @@ parênteses). Inventário por rota: `ENDPOINTS.md`.
 | Sessão | Access token 15 min; refresh 7 dias com rotação; **teto de 12 h** e queda após **30 min** parado (`SESSAO_MAX_HORAS`, `SESSAO_INATIVIDADE_MIN`). Cada requisição confere se a sessão está ativa: encerrar sessão, logout ou bloquear aparelho derruba na hora |
 | Tokens | JWT HS256 (algoritmo fixo), `iss`, `aud`, `exp`, `typ` e tipo exigidos; tokens **presos à chave do aparelho** (DPoP, RFC 9449): cada requisição leva uma prova assinada com método, caminho, horário (±60 s), id único e hash do token |
 | Onde ficam no app | Na memória/`sessionStorage` (navegador) e WebView (APK). Não ficam em cookie, então não há CSRF; o CORS não libera credenciais. Copiar o token não basta: sem a chave não exportável do aparelho ele não serve |
-| Admin da plataforma | Login só com senha (**sem 2º fator**, ver `SECURITY_AUDIT.md` A-15). Em produção só entra de IPs em `ADMIN_IPS_PERMITIDOS`; sem a lista, fica desligado |
+| Admin da plataforma | Senha + código TOTP de uso único do app autenticador (`POST /auth/login/totp`, `ADMIN_TOTP_SEGREDO`). Em produção só entra de IPs em `ADMIN_IPS_PERMITIDOS`; sem a lista, fica desligado; com a lista, o TOTP é obrigatório |
 | Troca de senha | Logado: senha atual + rosto; política de senha; encerra as outras sessões (`POST /auth/senha`) |
 | Recuperação de senha | E-mail/CPF + data de nascimento, depois prova de vida completa no mesmo aparelho; resposta neutra; uso único; derruba todas as sessões; 10/h por IP e 5/h por conta (`/auth/recuperacao`) |
 

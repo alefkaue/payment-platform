@@ -7,7 +7,7 @@ from app.core.config import get_settings
 from app.core.limites import limitar_por_ip
 from app.deps import get_repo, hash_dispositivo, ip_cliente, usuario_atual
 from app.repositories.repository import Repositorio
-from app.schemas.auth import (LoginMfaRequest, LoginRequest, LoginResponse, MfaDesafioRequest, RecuperacaoConcluirRequest,
+from app.schemas.auth import (LoginMfaRequest, LoginRequest, LoginTotpRequest, LoginResponse, MfaDesafioRequest, RecuperacaoConcluirRequest,
                               RecuperacaoRequest, RefreshRequest, TokenResponse, TrocarSenhaRequest)
 from app.services import auth_service
 
@@ -59,6 +59,21 @@ def login_mfa(
     return auth_service.concluir_login(repo, mfa_token=dados.mfa_token, prova=dados.biometria, ip=ip,
                                        dispositivo_hash=_dev(x_dispositivo_id), user_agent=_ua(request),
                                        jkt=_jkt(request, dpop, repo), atestacao=dados.atestacao)
+
+
+@router.post("/login/totp", response_model=TokenResponse)
+def login_totp(
+    dados: LoginTotpRequest,
+    request: Request,
+    repo: Repositorio = Depends(get_repo),
+    ip: str | None = Depends(ip_cliente),
+    x_dispositivo_id: str | None = Header(default=None, max_length=128),
+    dpop: str | None = Header(default=None, alias="DPoP"),
+):
+    """Etapa 2 do admin da plataforma: código de 6 dígitos do app autenticador."""
+    return auth_service.concluir_login_totp(repo, mfa_token=dados.mfa_token, codigo=dados.codigo, ip=ip,
+                                            dispositivo_hash=_dev(x_dispositivo_id), user_agent=_ua(request),
+                                            jkt=_jkt(request, dpop, repo))
 
 
 @router.post("/login/mfa/desafio", status_code=201)

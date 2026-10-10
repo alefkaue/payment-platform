@@ -19,6 +19,11 @@ class LoginMfaRequest(BaseModel):
     atestacao: list[Annotated[str, Field(max_length=8000)]] | None = Field(default=None, max_length=8)
 
 
+class LoginTotpRequest(BaseModel):
+    mfa_token: str = Field(..., min_length=20, max_length=2000)
+    codigo: str = Field(..., min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
+
+
 class MfaDesafioRequest(BaseModel):
     mfa_token: str = Field(..., min_length=20, max_length=2000)
 
@@ -43,6 +48,7 @@ class LoginResponse(BaseModel):
     mfa_token: str | None = None
     mfa_expira_em: datetime | None = None
     desafio: dict | None = None
+    fator: str | None = None  # "rosto" (pessoas) ou "totp" (admin da plataforma)
     access_token: str | None = None
     refresh_token: str | None = None
     token_type: str | None = None

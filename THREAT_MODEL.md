@@ -68,14 +68,14 @@ Estado em 10/10/2026. Achados e evidências em `SECURITY_AUDIT.md`; rotas em `EN
 | T16 | API | Payload gigante / consulta enorme (D) | Teto de corpo (também chunked); listas com `le=200`; limite de concorrência da biometria | Volume distribuído → WAF |
 | T17 | API | Erro com detalhe interno (I) | problem+json genérico com `request_id`; validação não ecoa valor; Swagger desligado em produção | — |
 | T18 | Front | XSS (T/E) | React escapa; CSP com hash dos scripts inline, sem `unsafe-inline` em script; sem source maps | CSP dentro do APK ainda não aplicada |
-| T19 | Admin | Senha do admin vazada (E) | Admin desligado em produção sem lista de IPs; ações na trilha | **Sem 2º fator** (A-15) |
+| T19 | Admin | Senha do admin vazada (E) | Admin desligado em produção sem lista de IPs; com a lista, senha + TOTP de uso único (A-15); ações na trilha | Segredo TOTP único do ambiente |
 | T20 | Segredos | Segredo no código/imagem/log (I) | Só ambiente; produção não sobe sem segredos fortes; imagem sem `.env`; logs sem token/senha | Usuário do banco com DDL (A — §6 da auditoria) |
 | T21 | Logs | Apagar rastros; forjar linha de log (R) | Trilha no banco + evento no log JSON (escapa quebra de linha); falha da trilha não perde o Pix | Trilha na mesma base da API → exportar |
 | T22 | Supply chain | Biblioteca vulnerável/modelo trocado (T) | `pip-audit`/`npm audit`; versões fixadas; modelos da biometria com SHA-256 fixado; raízes da atestação fixadas | Dependências de build (`uuid`) |
 
 ## 6. Riscos residuais aceitos (resumo)
 
-Admin com fator único (mitigado por IP); ausência de troca/recuperação de senha; WAF
+Segredo TOTP único para o admin de operação; recuperação de senha que recusa mais rápido quando ninguém confere (A-16); WAF
 Standard sem regras gerenciadas e origem alcançável sem WAF; DNS rebinding em webhook;
 concorrência e migração no Postgres provadas só no CI; trilha de auditoria na mesma base;
 recursos do APK sem teste em aparelho. Detalhe e ordem de correção: `SECURITY_AUDIT.md` §5 e §7.

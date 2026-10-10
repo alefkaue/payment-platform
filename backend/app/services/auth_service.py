@@ -113,6 +113,13 @@ def iniciar_login(repo: Repositorio, *, email: str, senha: str, ip: str | None, 
 
     if usuario["papel"] == "admin":
         _checar_admin(ip)
+        if get_settings().admin_totp_segredo:
+            # 2º fator do admin: código do app autenticador (A-15).
+            mfa_token, _, exp = security.criar_mfa_token(usuario["id"], dispositivo_hash=dispositivo_hash, jkt=jkt,
+                                                         fator="totp")
+            repo.registrar_sessao_mfa(tipo="login_senha", sucesso=True, usuario_id=usuario["id"], referencia=ref, ip=ip)
+            return {"mfa_requerido": True, "mfa_token": mfa_token, "mfa_expira_em": exp, "desafio": None,
+                    "fator": "totp"}
         repo.registrar_sessao_mfa(tipo="login", sucesso=True, usuario_id=usuario["id"], referencia=ref, ip=ip)
         repo.registrar_log(ator=usuario["email"], acao="login_admin", ip=ip, usuario_id=usuario["id"])
         disp = repo.registrar_dispositivo(usuario_id=usuario["id"], id_hash=dispositivo_hash, nome=None) if dispositivo_hash else None
@@ -124,15 +131,18 @@ def iniciar_login(repo: Repositorio, *, email: str, senha: str, ip: str | None, 
     mfa_token, _, exp = security.criar_mfa_token(usuario["id"], dispositivo_hash=dispositivo_hash, jkt=jkt)
     desafio = biometria_service.criar_desafio(repo, usuario_id=usuario["id"], modo="login")
     repo.registrar_sessao_mfa(tipo="login_senha", sucesso=True, usuario_id=usuario["id"], referencia=ref, ip=ip)
-    return {"mfa_requerido": True, "mfa_token": mfa_token, "mfa_expira_em": exp, "desafio": desafio}
+    return {"mfa_requerido": True, "mfa_token": mfa_token, "mfa_expira_em": exp, "desafio": desafio, "fator": "rosto"}
 
 
 def _usuario_do_mfa(repo: Repositorio, mfa_token: str, dispositivo_hash: str | None,
-                    jkt: str | None = None) -> tuple[dict, dict]:
+                    jkt: str | None = None, fator: str = "rosto") -> tuple[dict, dict]:
     try:
         payload = security.decodificar_token(mfa_token, "mfa")
     except (jwt.PyJWTError, ValueError):
         raise HTTPException(status_code=401, detail="Etapa de verificação expirada. Entre de novo com a senha.")
+    # Token sem `fator` (emitido antes do A-15) era sempre de rosto.
+    if payload.get("fator", "rosto") != fator:
+        raise HTTPException(status_code=401, detail="Esta etapa de verificação é de outro tipo. Entre de novo.")
     if payload.get("dev") != dispositivo_hash:
         raise HTTPException(status_code=401, detail="A verificação precisa ser concluída no mesmo aparelho.")
     if dpop.jkt_do_token(payload) != jkt:
@@ -211,6 +221,38 @@ def concluir_login(repo: Repositorio, *, mfa_token: str, prova, ip: str | None, 
                                 "dispositivo_id": disp["id"] if disp else None, "atestacao": nivel_atestacao})
     return emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dispositivo_hash, ip=ip, user_agent=user_agent,
                          jkt=jkt)
+
+
+def concluir_login_totp(repo: Repositorio, *, mfa_token: str, codigo: str, ip: str | None,
+                        dispositivo_hash: str | None, user_agent: str | None, jkt: str | None = None) -> dict:
+    """2º fator do admin: código de 6 dígitos do app autenticador (A-15). Cada código
+    vale uma vez (não dá para reaproveitar o que alguém viu na tela)."""
+    from app.core import totp
+
+    usuario, payload = _usuario_do_mfa(repo, mfa_token, dispositivo_hash, jkt, fator="totp")
+    segredo = get_settings().admin_totp_segredo
+    if usuario["papel"] != "admin" or not segredo:
+        raise HTTPException(status_code=401, detail="Etapa de verificação inválida. Entre de novo.")
+    _checar_admin(ip)
+    ref = usuario["email"]
+    _checar_rate_limit(repo, ref, ip)  # código errado conta como erro de login
+    passo = totp.passo_do_codigo(segredo, codigo, _relogio())
+    usado = f"totp:{usuario['id']}:{passo}"
+    if passo is None or not repo.registrar_sessao_mfa(tipo="mfa_usado", sucesso=True, referencia=usado,
+                                                      usuario_id=usuario["id"], ip=ip):
+        repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=ref, ip=ip, usuario_id=usuario["id"],
+                                  detalhe={"etapa": "totp"})
+        raise HTTPException(status_code=401, detail="Código inválido ou já usado. Use o próximo código do app.")
+    if not repo.registrar_sessao_mfa(tipo="mfa_usado", sucesso=True, referencia=payload["jti"],
+                                     usuario_id=usuario["id"], ip=ip):
+        raise HTTPException(status_code=401, detail="Esta etapa de verificação já foi usada. Entre de novo.")
+    repo.registrar_sessao_mfa(tipo="login", sucesso=True, usuario_id=usuario["id"], referencia=ref, ip=ip)
+    repo.registrar_log(ator=ref, acao="login_admin", ip=ip, usuario_id=usuario["id"],
+                       detalhe={"fatores": ["senha", "totp"]})
+    disp = repo.registrar_dispositivo(usuario_id=usuario["id"], id_hash=dispositivo_hash,
+                                      nome=None) if dispositivo_hash else None
+    return emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dispositivo_hash, ip=ip,
+                         user_agent=user_agent, jkt=jkt)
 
 
 def _nome_aparelho(user_agent: str | None) -> str | None:

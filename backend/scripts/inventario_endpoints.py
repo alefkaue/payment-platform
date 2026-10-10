@@ -27,6 +27,7 @@ MOVIMENTA = "PJ: admin/aprovador/operador; alçada, alçada diária e assinatura
 REGRAS = {
     ("POST", "/auth/login"): "Senha (1º fator) + DPoP; limites por conta+IP, por conta e por IP",
     ("POST", "/auth/login/mfa"): "Rosto com prova de vida sorteada (2º fator); mesmo aparelho e chave DPoP; atestação opcional (APK)",
+    ("POST", "/auth/login/totp"): "Admin da plataforma: código TOTP de uso único (2º fator); lista de IPs; conta no limite de login",
     ("POST", "/auth/refresh"): "Refresh preso à chave DPoP e ao aparelho; rotação; limite por IP",
     ("POST", "/auth/logout"): "Revoga a sessão inteira (família de refresh)",
     ("POST", "/auth/senha"): "Senha atual + rosto; política de senha; encerra as outras sessões",

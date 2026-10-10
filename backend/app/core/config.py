@@ -99,6 +99,9 @@ class Settings(BaseSettings):
     # produção ele só entra a partir destes IPs (rede interna/VPN/bastion). Vazio
     # em produção = login de admin DESLIGADO.
     admin_ips_permitidos: str = Field(default="", alias="ADMIN_IPS_PERMITIDOS")
+    # 2º fator do admin (A-15): segredo TOTP em base32 (app autenticador). Com ele, o
+    # login do admin pede o código de 6 dígitos. Em produção, admin ligado exige o segredo.
+    admin_totp_segredo: str | None = Field(default=None, alias="ADMIN_TOTP_SEGREDO")
 
     # ---------- Limites de Pix (Res. BCB 142/2021 e IN BCB 491/2024) ----------
     # Período noturno: das HORA_INICIO às HORA_FIM (horário de Brasília).
@@ -312,6 +315,11 @@ def _conferir_producao(s: Settings) -> None:
         raise RuntimeError("EMBEDDING_KEY ausente ou não é uma chave Fernet válida -- use o Key Vault.") from None
     if not s.admin_senha or len(s.admin_senha) < 16:
         raise RuntimeError("ADMIN_SENHA ausente ou curta (mínimo 16 caracteres) -- use o Key Vault.")
+    from app.core import totp
+
+    if s.admin_ips_lista and not totp.segredo_valido(s.admin_totp_segredo):
+        raise RuntimeError("Admin ligado (ADMIN_IPS_PERMITIDOS) exige ADMIN_TOTP_SEGREDO em base32 com 160 bits "
+                           "ou mais -- use o Key Vault.")
     # CORS: só origens exatas e https. Regex (ex.: qualquer *.netlify.app) deixaria qualquer
     # site publicado naquele domínio chamar a API como se fosse o app.
     if s.cors_origin_regex:

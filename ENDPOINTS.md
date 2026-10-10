@@ -1,6 +1,6 @@
 # Astro — inventário de endpoints
 
-> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (105 rotas).
+> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (106 rotas).
 > Não edite à mão: rode o script de novo quando a API mudar.
 
 - **pública**: sem login (as de autenticação têm limite por IP e/ou DPoP).
@@ -17,6 +17,7 @@
 |---|---|---|---|---|
 | `POST` | `/auth/login` | pública |  | Senha (1º fator) + DPoP; limites por conta+IP, por conta e por IP |
 | `POST` | `/auth/login/mfa` | pública |  | Rosto com prova de vida sorteada (2º fator); mesmo aparelho e chave DPoP; atestação opcional (APK) |
+| `POST` | `/auth/login/totp` | pública |  | Admin da plataforma: código TOTP de uso único (2º fator); lista de IPs; conta no limite de login |
 | `POST` | `/auth/login/mfa/desafio` | pública |  |  |
 | `POST` | `/auth/refresh` | pública |  | Refresh preso à chave DPoP e ao aparelho; rotação; limite por IP |
 | `POST` | `/auth/senha` | login + DPoP |  | Senha atual + rosto; política de senha; encerra as outras sessões |

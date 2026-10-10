@@ -31,7 +31,7 @@ dos itens 1–10).
 | A-05 | Média | Operação pendente **não expirava**, era aprovável depois de o autor ser **suspenso**, e o autor **não conseguia cancelar** | Corrigido |
 | A-06 | Média | **Bloqueio de conta por terceiro**: 10 senhas erradas de qualquer IP travavam a conta da vítima por 15 min | Corrigido |
 | A-07 | Média | Teto de corpo (48 MB) só olhava `Content-Length`: requisição **chunked** passava por fora | Corrigido |
-| A-15 | Média (residual) | Admin da plataforma entra **só com senha** (sem 2º fator) | Mitigado (lista de IPs obrigatória em produção); pendente |
+| A-15 | Média | Admin da plataforma entrava **só com senha** (sem 2º fator) | Corrigido (TOTP + lista de IPs) |
 | A-16 | Média (funcional) | **Não existia** troca nem recuperação de senha | Corrigido (backend e app) |
 | A-08 | Baixa | `Idempotency-Key` repetida com **outro valor/destino** devolvia a transação antiga como se fosse a nova | Corrigido |
 | A-10 | Baixa | `GET /cobrancas/{txid}` mostrava a qualquer logado o **CPF/CNPJ do pagador** e ids internos | Corrigido |
@@ -89,8 +89,13 @@ dos itens 1–10).
 - A-12: `test_cors_nao_libera_origem_estranha_nem_credenciais`.
 - A-14: `docker-compose.yml`.
 
-### A-15 — Admin com fator único (Média, pendente)
-Em produção o admin **não entra** sem `ADMIN_IPS_PERMITIDOS` (confere no login e em cada rota `/admin`). Falta um 2º fator (TOTP ou rosto). Recomendação: TOTP com segredo no Key Vault antes de expor o painel.
+### A-15 — Admin com fator único (corrigido)
+Em produção o admin **não entra** sem `ADMIN_IPS_PERMITIDOS` (confere no login e em cada rota `/admin`). Agora tem 2º fator:
+- Com `ADMIN_TOTP_SEGREDO` (base32, 160+ bits), `POST /auth/login` do admin devolve `mfa_token` com `fator: "totp"` e nenhum token; a sessão só nasce em `POST /auth/login/totp` com o código de 6 dígitos do app autenticador (RFC 6238, implementado em `app/core/totp.py`, sem dependência nova).
+- Cada código vale **uma vez** (marcado como usado no banco); código errado conta no mesmo limite do login; o `mfa_token` de rosto não serve no TOTP e vice-versa.
+- **Produção não sobe** com admin ligado (`ADMIN_IPS_PERMITIDOS`) e sem segredo TOTP válido.
+- **Testes**: `tests/test_admin_totp.py` (vetores da RFC 6238, uso único, etapas separadas, limite) e `test_config_producao.py::test_admin_ligado_em_producao_exige_totp`.
+- **Residual**: o segredo é um só, do ambiente (vale para o admin de operação); admins múltiplos com segredo próprio pedem cadastro por pessoa.
 
 ### A-16 — Troca e recuperação de senha (corrigido)
 Era lacuna de produto: quem esquecia a senha não voltava. Sem link mágico por e-mail/SMS (seria a única prova):
@@ -146,7 +151,6 @@ Rodar localmente: ver `SECURITY.md` §3.
 
 ## 5. Pendências e riscos residuais
 
-1. **A-15** 2º fator do admin.
 2. **Concorrência no Postgres** só provada quando o CI rodar (`backend.yml`).
 3. **Usuário do banco**: o `DATABASE_URL` do Bicep usa o administrador do Postgres. O certo é um papel só com DML nas tabelas para a API e o dono do schema só para as migrações (ver §6).
 4. DNS rebinding no webhook (A-04) — fechar com egress na infra.
@@ -175,7 +179,7 @@ Rodar localmente: ver `SECURITY.md` §3.
 
 1. Rodar o CI `backend.yml` e conferir os 3 testes de Postgres e a migração.
 2. Papel `astro_app` com menor privilégio + egress restrito (configuração, sem código).
-3. 2º fator do admin (A-15).
+3. ~~2º fator do admin (A-15)~~ (feito).
 4. ~~Troca e recuperação de senha com rosto (A-16)~~ (feito).
 5. Testar no celular os itens do APK (Keystore, atestação, pinning, FLAG_SECURE).
 6. Exportar a trilha de auditoria para fora do banco da API.

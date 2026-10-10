@@ -168,12 +168,12 @@ def criar_refresh_token(usuario_id: int, *, sessao_id: str | None = None, jkt: s
 
 
 def criar_mfa_token(usuario_id: int, *, dispositivo_hash: str | None,
-                    jkt: str | None = None) -> tuple[str, str, datetime]:
-    """Token intermediário: a senha confere, falta a prova facial. Só serve em
-    POST /auth/login/mfa e expira em minutos."""
+                    jkt: str | None = None, fator: str = "rosto") -> tuple[str, str, datetime]:
+    """Token intermediário: a senha confere, falta o 2º fator (`fator`: "rosto" em
+    POST /auth/login/mfa; "totp" do admin em POST /auth/login/totp). Expira em minutos."""
     s = get_settings()
     return _criar_token(usuario_id, "mfa", timedelta(minutes=s.mfa_token_exp_min),
-                        extra={"dev": dispositivo_hash, "cnf": _cnf(jkt)})
+                        extra={"dev": dispositivo_hash, "cnf": _cnf(jkt), "fator": fator})
 
 
 def criar_recuperacao_token(usuario_id: int | None, *, dispositivo_hash: str | None,

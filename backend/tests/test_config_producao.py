@@ -36,6 +36,20 @@ def test_producao_valida_sobe(producao):
     assert config.get_settings().em_producao
 
 
+def test_admin_ligado_em_producao_exige_totp(producao):
+    producao.setenv("ADMIN_IPS_PERMITIDOS", "10.0.0.5")
+    config.get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="ADMIN_TOTP_SEGREDO"):
+        config.get_settings()
+    producao.setenv("ADMIN_TOTP_SEGREDO", "CURTO234")
+    config.get_settings.cache_clear()
+    with pytest.raises(RuntimeError, match="ADMIN_TOTP_SEGREDO"):
+        config.get_settings()
+    producao.setenv("ADMIN_TOTP_SEGREDO", "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP")
+    config.get_settings.cache_clear()
+    assert config.get_settings().admin_totp_segredo
+
+
 @pytest.mark.parametrize(
     ("variavel", "valor", "erro"),
     [
