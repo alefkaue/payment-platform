@@ -192,3 +192,17 @@ def exigir_papel(conta: dict, *papeis: PapelVinculo) -> None:
 def exigir_pj(conta: dict) -> None:
     if conta["titular_tipo"] != "PJ":
         raise HTTPException(status_code=400, detail="Esta ação é só para contas de empresa. Envie o header X-Conta com o número da conta PJ.")
+
+
+def chave_idempotencia(
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key", min_length=1, max_length=80),
+) -> str | None:
+    """Header Idempotency-Key (o mesmo contrato do campo `idempotency_key` do corpo)."""
+    return idempotency_key.strip() or None if idempotency_key else None
+
+
+def escolher_chave(header: str | None, corpo: str | None) -> str | None:
+    """Header e corpo valem igual; os dois diferentes é pedido ambíguo (C1-03)."""
+    if header and corpo and header != corpo:
+        raise HTTPException(status_code=400, detail="Idempotency-Key do header diferente da do corpo.")
+    return corpo or header

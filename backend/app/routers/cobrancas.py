@@ -3,7 +3,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.core.documentos import mascarar_cnpj, mascarar_cpf
-from app.deps import conta_atual, dispositivo_atual, exigir_pj, get_repo, ip_cliente, usuario_atual
+from app.deps import (chave_idempotencia, conta_atual, dispositivo_atual, escolher_chave, exigir_pj, get_repo,
+                      ip_cliente, usuario_atual)
 from app.repositories.repository import Repositorio
 from app.routers.pagamentos import resposta_pendente
 from app.schemas.comum import PendenteResponse, TransacaoResponse
@@ -77,9 +78,10 @@ def pagar_cobranca(
     dispositivo: dict | None = Depends(dispositivo_atual),
     repo: Repositorio = Depends(get_repo),
     ip: str | None = Depends(ip_cliente),
+    chave_header: str | None = Depends(chave_idempotencia),
 ):
     r = cobranca_service.pagar(repo, usuario=usuario, conta=conta, dispositivo=dispositivo, txid=txid,
-                               biometria=dados.biometria, idempotency_key=dados.idempotency_key, ip=ip)
+                               biometria=dados.biometria, idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip)
     return resposta_pendente(r["pendente"]) if "pendente" in r else r["transacao"]
 
 

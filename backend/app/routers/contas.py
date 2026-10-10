@@ -6,6 +6,8 @@ from app.core.config import get_settings
 from app.core.limites import limitar_por_ip
 from app.db.models import PapelVinculo
 from app.deps import (
+    chave_idempotencia,
+    escolher_chave,
     conta_atual,
     dispositivo_atual,
     exigir_papel,
@@ -231,8 +233,8 @@ def desligar_funcionario(funcionario_id: int, usuario: dict = Depends(usuario_at
 @router.post("/empresas/atual/folha/pagar")
 def pagar_folha(dados: FolhaPagar, usuario: dict = Depends(usuario_atual), conta: dict = Depends(conta_atual),
                 dispositivo: dict | None = Depends(dispositivo_atual), repo: Repositorio = Depends(get_repo),
-                ip: str | None = Depends(ip_cliente)):
+                ip: str | None = Depends(ip_cliente), chave_header: str | None = Depends(chave_idempotencia)):
     """Paga salários SÓ para funcionários cadastrados, na conta PF do próprio CPF."""
     return folha_service.pagar(repo, usuario=usuario, conta=conta, dispositivo=dispositivo, itens=dados.itens,
                                descricao=dados.descricao, biometria=dados.biometria, ip=ip,
-                               idempotency_key=dados.idempotency_key)
+                               idempotency_key=escolher_chave(chave_header, dados.idempotency_key))

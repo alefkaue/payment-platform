@@ -3,7 +3,8 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 
-from app.deps import conta_atual, dispositivo_atual, get_repo, ip_cliente, usuario_atual
+from app.deps import (chave_idempotencia, conta_atual, dispositivo_atual, escolher_chave, get_repo, ip_cliente,
+                      usuario_atual)
 from app.repositories.repository import Repositorio
 from app.schemas.comum import PendenteResponse, TransacaoResponse
 from app.schemas.pagamentos import (
@@ -35,12 +36,13 @@ def transferir(
     dispositivo: dict | None = Depends(dispositivo_atual),
     repo: Repositorio = Depends(get_repo),
     ip: str | None = Depends(ip_cliente),
+    chave_header: str | None = Depends(chave_idempotencia),
 ):
     """Transferência (Pix/TED interno). Nunca retém imposto: split só em cobrança com NF-e."""
     destino = pix_service.resolver_destino(repo, dados.destino)
     r = pagamento_service.transferir(
         repo, usuario=usuario, conta=conta, dispositivo=dispositivo, destino=destino, valor=dados.valor,
-        descricao=dados.descricao, biometria=dados.biometria, idempotency_key=dados.idempotency_key, ip=ip,
+        descricao=dados.descricao, biometria=dados.biometria, idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip,
     )
     return resposta_pendente(r["pendente"]) if "pendente" in r else r["transacao"]
 
