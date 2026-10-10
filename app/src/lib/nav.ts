@@ -5,6 +5,7 @@ import {
   CircleHelp,
   CreditCard,
   FileText,
+  Banknote,
   Home,
   ListOrdered,
   Plane,
@@ -70,6 +71,7 @@ const SECUNDARIA_PJ: NavItem[] = [
     icon: Users,
     hint: "Quem acessa e quanto pode mover",
   },
+  { to: "/folha", label: "Folha de pagamento", icon: Banknote, hint: "Funcionários e salários" },
   { to: "/pendentes", label: "Aprovações", icon: Scale, hint: "Operações aguardando 2º aprovador" },
   {
     to: "/cartoes",
