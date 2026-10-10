@@ -22,7 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core import logs
 from app.core.config import get_settings
 from app.core.security import hash_senha
-from app.db.base import usando_postgres
+from app.db.base import usando_postgres, conferir_runtime_producao, banco_disponivel
 from app.repositories import get_repository
 from app.repositories.exceptions import IdempotenciaConflitanteError
 from app.routers import admin, auth, beneficios, biometria, cobrancas, contas, identidade, pagamentos, seguranca
@@ -44,6 +44,8 @@ SENHA_ADMIN_DEV = "payflow-admin-dev"
 
 
 def _preparar():
+    if settings.em_producao:
+        conferir_runtime_producao()
     repo = get_repository()
     repo.garantir_contas_sistema()
     senha_admin = settings.admin_senha
@@ -209,6 +211,13 @@ def raiz():
 @app.get("/saude")
 def saude():
     """Liveness/readiness para o Azure Container Apps (sem dados internos)."""
+    return {"status": "ok"}
+
+
+@app.get("/pronto")
+def pronto():
+    if not banco_disponivel():
+        return JSONResponse(status_code=503, content={"status": "indisponivel"})
     return {"status": "ok"}
 
 

@@ -12,6 +12,7 @@ def producao(monkeypatch):
     """Ambiente de produção válido; cada teste estraga uma coisa."""
     valido = {
         "AMBIENTE": "producao",
+        "DATABASE_URL": "postgresql+psycopg2://astro_app:teste@banco:5432/astro?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt",
         "JWT_SECRET": "x" * 48,
         "EMBEDDING_KEY": FERNET,
         "ADMIN_SENHA": "uma-senha-de-admin-forte",
@@ -38,6 +39,10 @@ def test_producao_valida_sobe(producao):
 @pytest.mark.parametrize(
     ("variavel", "valor", "erro"),
     [
+        ("DATABASE_URL", "", "DATABASE_URL"),
+        ("DATABASE_URL", "sqlite://", "PostgreSQL"),
+        ("DATABASE_URL", "postgresql://u:p@db/test?sslmode=require", "verify-full"),
+        ("JWT_ALGORITMO", "none", "JWT_ALGORITMO"),
         ("JWT_SECRET", "", "JWT_SECRET"),
         ("JWT_SECRET", "curto-demais", "JWT_SECRET"),
         ("EMBEDDING_KEY", "", "EMBEDDING_KEY"),

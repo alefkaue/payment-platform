@@ -12,6 +12,7 @@ DENTRO do lock, via o callback `checar`, para duas operações simultâneas não
 passarem as duas pelo mesmo limite.
 """
 
+from contextlib import nullcontext
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Callable, Optional
@@ -21,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core import tempo
+from app.core.config import get_settings
 from app.core.documentos import gerar_numero_conta
 from app.db.base import usando_postgres
 from app.db.models import (
@@ -349,6 +351,22 @@ class Repositorio(RepositorioExtras):
     # Movimentação (atômica)
     # =========================================================================
 
+    @staticmethod
+    def _exigir_identidade_financeira(s: Session, carteira: Carteira) -> None:
+        """Pendência de KYC/KYB permite acompanhamento, não movimentação real."""
+        if not get_settings().em_producao or carteira.titular_tipo == TipoPessoa.SISTEMA:
+            return
+        if carteira.titular_tipo == TipoPessoa.PF:
+            u = s.get(Usuario, carteira.usuario_id)
+            if u is None or not u.ativo or u.kyc_status != "aprovado":
+                raise ValueError("Identidade do titular ainda não aprovada para movimentação.")
+        else:
+            e = s.get(Empresa, carteira.empresa_id)
+            u = s.get(Usuario, e.representante_usuario_id) if e and e.representante_usuario_id else None
+            if (e is None or e.kyb_status != "aprovado" or u is None
+                    or not u.ativo or u.kyc_status != "aprovado"):
+                raise ValueError("Identidade da empresa/representante ainda não aprovada para movimentação.")
+
     def executar_movimento(
         self,
         *,
@@ -374,9 +392,25 @@ class Repositorio(RepositorioExtras):
         Levanta SaldoInsuficienteError; `checar` pode levantar qualquer erro de
         domínio (limite estourado etc.) -- tudo dentro do lock."""
         def repetida(ja: Transacao) -> dict:
-            if (ja.origem_carteira_id, ja.destino_carteira_id, ja.valor_bruto) != (origem_id, destino_id, split.valor_bruto):
+            if (ja.origem_carteira_id, ja.destino_carteira_id, ja.valor_bruto, ja.tipo,
+                ja.cbs, ja.ibs, ja.liquido, ja.aplicou_split) != (
+                origem_id, destino_id, split.valor_bruto, tipo,
+                split.cbs, split.ibs, split.liquido, split.aplicou_split):
                 raise IdempotenciaConflitanteError()
+            if cobranca_id is not None:
+                cob_repetida = s.scalar(select(Cobranca.id).where(Cobranca.transacao_id == ja.id))
+                if cob_repetida != cobranca_id:
+                    raise IdempotenciaConflitanteError()
             return self._transacao_dict(s, ja)
+
+        valores = (split.valor_bruto, split.liquido, split.cbs, split.ibs)
+        if any(not v.is_finite() or v != v.quantize(Decimal("0.01")) for v in valores):
+            raise ValueError("Valores devem ser finitos e ter no máximo duas casas decimais.")
+        if (split.valor_bruto <= 0 or min(split.liquido, split.cbs, split.ibs) < 0
+                or split.valor_bruto != split.liquido + split.cbs + split.ibs
+                or (not split.aplicou_split and split.imposto_total != 0)
+                or (split.aplicou_split and tipo not in ("cobranca", "resgate_pontos")) or origem_id == destino_id):
+            raise ValueError("Movimento financeiro inválido.")
 
         with self._sf() as s:
             if idempotency_key:
@@ -391,9 +425,14 @@ class Repositorio(RepositorioExtras):
                 ids.add(tributos.id)
             stmt = select(Carteira).where(Carteira.id.in_(sorted(ids))).order_by(Carteira.id)
             if usando_postgres():
-                stmt = stmt.with_for_update()
+                stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             origem, destino = cs[origem_id], cs[destino_id]
+            if tipo in ("transferencia", "cobranca", "resgate_pontos"):
+                self._exigir_identidade_financeira(s, origem)
+                self._exigir_identidade_financeira(s, destino)
+            if permitir_saldo_negativo and origem.sistema != "CAIXA":
+                raise ValueError("Somente a conta CAIXA pode emitir recursos.")
             if idempotency_key:
                 # De novo, já com a carteira travada: quem chegou antes com a mesma chave
                 # já fez commit enquanto esperávamos o lock (pedidos repetidos em paralelo).
@@ -401,6 +440,22 @@ class Repositorio(RepositorioExtras):
                 if ja:
                     return repetida(ja)
 
+            cob = None
+            if cobranca_id is not None:
+                cob = s.scalar(select(Cobranca).where(Cobranca.id == cobranca_id)
+                               .with_for_update().execution_options(populate_existing=True))
+                if cob is None or cob.status != "aberta":
+                    raise ValueError("Esta cobrança não está mais aberta.")
+                if cob.recebedor_carteira_id != destino_id or cob.valor != split.valor_bruto:
+                    raise ValueError("Movimento não corresponde à cobrança.")
+                if auth_metodo == AuthMetodo.AUTOMATICO:
+                    autorizacao = s.scalar(select(AutorizacaoRecorrente).where(
+                        AutorizacaoRecorrente.id == cob.autorizacao_id).with_for_update())
+                    if (autorizacao is None or autorizacao.status != "ativa"
+                            or autorizacao.pagador_carteira_id != origem_id
+                            or autorizacao.recebedor_carteira_id != destino_id
+                            or split.valor_bruto > autorizacao.valor_maximo):
+                        raise ValueError("Autorização recorrente inválida ou cancelada.")
             if checar:
                 checar(s, origem)
             if not permitir_saldo_negativo and origem.saldo < split.valor_bruto:
@@ -455,10 +510,6 @@ class Repositorio(RepositorioExtras):
                     if split.ibs > 0:
                         s.add(SplitLiquidacao(transacao_id=t.id, natureza="IBS", carteira_destino_id=tributos.id, valor=split.ibs, criado_em=agora))
             if cobranca_id is not None:
-                cob = s.get(Cobranca, cobranca_id)
-                if cob.status != "aberta":
-                    s.rollback()
-                    raise ValueError("Esta cobrança não está mais aberta.")
                 cob.status, cob.transacao_id, cob.paga_em = "paga", t.id, agora
             self._vincular_historico(s, t.id)
             try:
@@ -473,20 +524,21 @@ class Repositorio(RepositorioExtras):
             s.refresh(t)
             return self._transacao_dict(s, t)
 
-    def liberar_bloqueio(self, transacao_id: int) -> Optional[dict]:
+    def liberar_bloqueio(self, transacao_id: int, *, _sessao: Session | None = None) -> Optional[dict]:
         """Retida -> concluída: move o valor do saldo bloqueado para o livre."""
-        with self._sf() as s:
-            t = s.get(Transacao, transacao_id)
+        with (nullcontext(_sessao) if _sessao is not None else self._sf()) as s:
+            t = s.scalar(select(Transacao).where(Transacao.id == transacao_id).with_for_update())
             if t is None or t.status != StatusTransacao.RETIDA:
                 return None
             stmt = select(Carteira).where(Carteira.id == t.destino_carteira_id)
             if usando_postgres():
-                stmt = stmt.with_for_update()
+                stmt = stmt.with_for_update().execution_options(populate_existing=True)
             destino = s.scalar(stmt)
             self._mover(s, destino, t.liquido, bloqueado=-t.liquido, motivo="liberacao_bloqueio")
             t.status, t.bloqueio_ate = StatusTransacao.CONCLUIDA, None
             self._vincular_historico(s, t.id)
-            s.commit()
+            if _sessao is None:
+                s.commit()
             return self._transacao_dict(s, t)
 
     def transacoes_retidas_vencidas(self, ate: datetime) -> list[int]:
@@ -502,16 +554,22 @@ class Repositorio(RepositorioExtras):
                 ).all()
             )
 
-    def devolver(self, *, transacao_id: int, valor_maximo: Decimal, tipo: str, autor_usuario_id: Optional[int]) -> dict:
+    def devolver(self, *, transacao_id: int, valor_maximo: Decimal, tipo: str, autor_usuario_id: Optional[int],
+                 _sessao: Session | None = None) -> dict:
         """Devolve ao pagador até `valor_maximo`, tirando primeiro do que está
         bloqueado (se a transação estava retida) e depois do saldo livre do
         recebedor, sem deixá-lo negativo. Usado pelo MED procedente."""
-        with self._sf() as s:
-            t = s.get(Transacao, transacao_id)
+        with (nullcontext(_sessao) if _sessao is not None else self._sf()) as s:
+            t = s.scalar(select(Transacao).where(Transacao.id == transacao_id).with_for_update())
+            if t is None or t.status in (StatusTransacao.DEVOLVIDA, StatusTransacao.DEVOLVIDA_PARCIAL):
+                return {"valor_devolvido": ZERO, "transacao": None}
+            if not valor_maximo.is_finite() or valor_maximo <= 0:
+                raise ValueError("Valor de devolução inválido.")
+            valor_maximo = min(valor_maximo, t.liquido)
             ids = sorted({t.origem_carteira_id, t.destino_carteira_id})
             stmt = select(Carteira).where(Carteira.id.in_(ids)).order_by(Carteira.id)
             if usando_postgres():
-                stmt = stmt.with_for_update()
+                stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             origem, destino = cs[t.origem_carteira_id], cs[t.destino_carteira_id]
 
@@ -539,7 +597,8 @@ class Repositorio(RepositorioExtras):
                 t.bloqueio_ate = None
             t.status = StatusTransacao.DEVOLVIDA if total >= t.liquido else StatusTransacao.DEVOLVIDA_PARCIAL
             self._vincular_historico(s, dev.id)
-            s.commit()
+            if _sessao is None:
+                s.commit()
             return {"valor_devolvido": total, "transacao": self._transacao_dict(s, dev)}
 
     def estornar_cobranca(self, *, cobranca_id: int, autor_usuario_id: int) -> dict:
@@ -549,14 +608,22 @@ class Repositorio(RepositorioExtras):
         (a empresa recupera na apuração)."""
         with self._sf() as s:
             cob = s.get(Cobranca, cobranca_id)
-            t = s.get(Transacao, cob.transacao_id)
+            if cob is None or cob.transacao_id is None:
+                raise ValueError("Cobrança não está paga.")
+            t = s.scalar(select(Transacao).where(Transacao.id == cob.transacao_id).with_for_update())
+            if t.status in (StatusTransacao.DEVOLVIDA, StatusTransacao.DEVOLVIDA_PARCIAL):
+                raise ValueError("Pagamento já devolvido; estorno recusado.")
             tributos = self._sistema(s, "TRIBUTOS")
             ids = sorted({t.origem_carteira_id, t.destino_carteira_id, tributos.id})
             stmt = select(Carteira).where(Carteira.id.in_(ids)).order_by(Carteira.id)
             if usando_postgres():
-                stmt = stmt.with_for_update()
+                stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             pagador, recebedor, trib = cs[t.origem_carteira_id], cs[t.destino_carteira_id], cs[tributos.id]
+            cob = s.scalar(select(Cobranca).where(Cobranca.id == cobranca_id)
+                           .with_for_update().execution_options(populate_existing=True))
+            if cob.status != "paga":
+                raise ValueError("Cobrança não está paga.")
 
             pernas = s.scalars(
                 select(SplitLiquidacao).where(
@@ -600,16 +667,27 @@ class Repositorio(RepositorioExtras):
         anterior, bloq_ant = c.saldo, c.saldo_bloqueado
         c.saldo = anterior + delta
         c.saldo_bloqueado = bloq_ant + bloqueado
-        s.add(HistoricoSaldo(
+        # Mantém o histórico fora do flush que gera o id da transação. Caso
+        # contrário ele sairia de s.new com transacao_id NULL antes da vinculação.
+        s.info.setdefault("historicos_movimento", []).append(HistoricoSaldo(
             carteira_id=c.id, saldo_anterior=anterior, saldo_novo=c.saldo,
             bloqueado_anterior=bloq_ant, bloqueado_novo=c.saldo_bloqueado, motivo=motivo,
         ))
 
     @staticmethod
     def _vincular_historico(s: Session, transacao_id: int) -> None:
-        for obj in s.new:
-            if isinstance(obj, HistoricoSaldo) and obj.transacao_id is None:
-                obj.transacao_id = transacao_id
+        historicos = s.info.pop("historicos_movimento", [])
+        for obj in historicos:
+            obj.transacao_id = transacao_id
+            s.add(obj)
+        if historicos:
+            t = s.get(Transacao, transacao_id)
+            # Trilha mínima atômica com o dinheiro: mesmo se o log do service
+            # ou a entrega de webhook falhar após o commit, este registro existe.
+            s.add(LogAuditoria(ator="sistema", acao="movimento_registrado",
+                               usuario_id=t.autor_usuario_id, criado_em=tempo.agora(),
+                               detalhe={"transacao_id": transacao_id, "tipo": t.tipo,
+                                        "carteiras": [h.carteira_id for h in historicos]}))
 
     # ---- consultas usadas por limites e risco (rodam dentro do lock) ----
 
@@ -755,15 +833,16 @@ class Repositorio(RepositorioExtras):
 
     def listar_dispositivos(self, usuario_id: int) -> list[dict]:
         with self._sf() as s:
-            ds = s.scalars(select(Dispositivo).where(Dispositivo.usuario_id == usuario_id).order_by(Dispositivo.id)).all()
+            ds = s.scalars(select(Dispositivo).where(Dispositivo.usuario_id == usuario_id, Dispositivo.removido.is_(False)).order_by(Dispositivo.id)).all()
             return [self._dispositivo_dict(d) for d in ds]
 
     def remover_dispositivo(self, usuario_id: int, dispositivo_id: int) -> bool:
         with self._sf() as s:
             d = s.get(Dispositivo, dispositivo_id)
-            if not d or d.usuario_id != usuario_id:
+            if not d or d.usuario_id != usuario_id or d.removido:
                 return False
-            s.delete(d)
+            d.removido, d.bloqueado, d.confiavel = True, True, False
+            d.bloqueado_em = tempo.agora()
             s.commit()
             return True
 
@@ -836,6 +915,26 @@ class Repositorio(RepositorioExtras):
     def criar_cobrancas(self, linhas: list[dict]) -> list[dict]:
         with self._sf() as s:
             objs = [Cobranca(**l) for l in linhas]
+            ids_autorizacoes = sorted({c.autorizacao_id for c in objs if c.autorizacao_id is not None})
+            for aid in ids_autorizacoes:
+                a = s.scalar(select(AutorizacaoRecorrente).where(AutorizacaoRecorrente.id == aid).with_for_update())
+                if a is None or a.status != "ativa":
+                    raise ValueError("A autorização não está ativa.")
+                existentes = list(s.scalars(select(Cobranca).where(
+                    Cobranca.autorizacao_id == aid, Cobranca.status != "cancelada")))
+                def periodo(d):
+                    if a.periodicidade == "semanal":
+                        return tuple(d.isocalendar()[:2])
+                    if a.periodicidade == "mensal":
+                        return (d.year, d.month)
+                    return (d.year,)
+                for c in (c for c in objs if c.autorizacao_id == aid):
+                    if (c.recebedor_carteira_id != a.recebedor_carteira_id or c.valor > a.valor_maximo
+                            or c.vencimento is None):
+                        raise ValueError("Cobrança fora da autorização recorrente.")
+                    if any(e.vencimento and periodo(e.vencimento) == periodo(c.vencimento) for e in existentes):
+                        raise ValueError("Já existe cobrança desta autorização neste período.")
+                    existentes.append(c)
             s.add_all(objs)
             s.commit()
             return [self._cobranca_dict(s, c) for c in objs]
@@ -893,7 +992,9 @@ class Repositorio(RepositorioExtras):
 
     def atualizar_autorizacao(self, autorizacao_id: int, **campos) -> dict:
         with self._sf() as s:
-            a = s.get(AutorizacaoRecorrente, autorizacao_id)
+            a = s.scalar(select(AutorizacaoRecorrente).where(AutorizacaoRecorrente.id == autorizacao_id).with_for_update())
+            if campos.get("status") in ("ativa", "recusada") and a.status != "pendente":
+                raise ValueError("Autorização já decidida ou cancelada.")
             for k, v in campos.items():
                 setattr(a, k, v)
             s.commit()
@@ -987,6 +1088,29 @@ class Repositorio(RepositorioExtras):
                 stmt = stmt.where(Contestacao.status == status)
             return [self._contestacao_dict(c) for c in s.scalars(stmt.order_by(Contestacao.id)).all()]
 
+    def resolver_contestacao(self, contestacao_id: int, *, procedente: bool, autor_usuario_id: int) -> Optional[dict]:
+        """Decisão, devolução/liberação e estado do MED no mesmo commit."""
+        with self._sf() as s:
+            c = s.get(Contestacao, contestacao_id)
+            if c is None:
+                return None
+            # Mesma ordem dos locks que os demais caminhos de devolução/liberação.
+            t = s.scalar(select(Transacao).where(Transacao.id == c.transacao_id).with_for_update())
+            c = s.scalar(select(Contestacao).where(Contestacao.id == contestacao_id)
+                         .with_for_update().execution_options(populate_existing=True))
+            if c.status != "aberta":
+                return None
+            devolvido = ZERO
+            if procedente:
+                devolvido = self.devolver(transacao_id=t.id, valor_maximo=t.liquido, tipo="devolucao",
+                                         autor_usuario_id=autor_usuario_id, _sessao=s)["valor_devolvido"]
+            elif t.status == StatusTransacao.RETIDA:
+                self.liberar_bloqueio(t.id, _sessao=s)
+            c.status = "procedente" if procedente else "improcedente"
+            c.valor_devolvido, c.decidida_em = devolvido, tempo.agora()
+            s.commit()
+            return self._contestacao_dict(c)
+
     def fechar_contestacao(self, contestacao_id: int, *, status: str, valor_devolvido: Decimal) -> bool:
         with self._sf() as s:
             n = s.query(Contestacao).filter(Contestacao.id == contestacao_id, Contestacao.status == "aberta").update(
@@ -1006,7 +1130,7 @@ class Repositorio(RepositorioExtras):
             trib, fisco = self._sistema(s, "TRIBUTOS"), self._sistema(s, "FISCO")
             stmt = select(Carteira).where(Carteira.id.in_(sorted([trib.id, fisco.id]))).order_by(Carteira.id)
             if usando_postgres():
-                stmt = stmt.with_for_update()
+                stmt = stmt.with_for_update().execution_options(populate_existing=True)
             s.scalars(stmt).all()
             pernas = s.scalars(
                 select(SplitLiquidacao).where(
@@ -1082,9 +1206,11 @@ class Repositorio(RepositorioExtras):
             caixa = self._sistema(s, "CAIXA")
             stmt = select(Carteira).where(Carteira.id.in_(sorted([carteira_id, caixa.id]))).order_by(Carteira.id)
             if usando_postgres():
-                stmt = stmt.with_for_update()
+                stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             c = cs[carteira_id]
+            if s.scalar(select(Rendimento.id).where(Rendimento.carteira_id == carteira_id, Rendimento.data == data)):
+                return None
             valor = calcular(c.saldo)
             if valor <= 0:
                 return None
@@ -1170,7 +1296,7 @@ class Repositorio(RepositorioExtras):
         with self._sf() as s:
             stmt = select(Usuario).where(Usuario.id == usuario_id)
             if usando_postgres():
-                stmt = stmt.with_for_update()
+                stmt = stmt.with_for_update().execution_options(populate_existing=True)
             u = s.scalar(stmt)
             if u.pontos + delta < 0:
                 raise ValueError("Pontos insuficientes.")
@@ -1277,12 +1403,24 @@ class Repositorio(RepositorioExtras):
 
     def salvar_refresh(self, *, usuario_id: int, jti: str, token_hash: str, expira_em: datetime,
                        sessao_id: Optional[str] = None, dispositivo_id: Optional[int] = None,
-                       ip: Optional[str] = None, user_agent: Optional[str] = None) -> None:
+                       ip: Optional[str] = None, user_agent: Optional[str] = None,
+                       token_anterior: Optional[str] = None) -> bool:
         with self._sf() as s:
+            # Uma única rotação por token. O lock do usuário serializa também
+            # revogação/logout: uma rotação não recria sessão encerrada.
+            s.scalar(select(Usuario).where(Usuario.id == usuario_id).with_for_update())
+            if token_anterior:
+                anterior = s.scalar(select(RefreshToken).where(RefreshToken.token_hash == token_anterior).with_for_update())
+                if anterior is None or anterior.revogado or anterior.usuario_id != usuario_id:
+                    s.query(RefreshToken).filter(RefreshToken.usuario_id == usuario_id).update({"revogado": True})
+                    s.commit()
+                    return False
+                anterior.revogado, anterior.substituido_por = True, jti
             s.add(RefreshToken(usuario_id=usuario_id, jti=jti, token_hash=token_hash, expira_em=expira_em,
                                sessao_id=sessao_id, dispositivo_id=dispositivo_id, ip=ip,
                                user_agent=(user_agent or "")[:200] or None, criado_em=tempo.agora()))
             s.commit()
+            return True
 
     def obter_refresh(self, token_hash: str) -> Optional[dict]:
         with self._sf() as s:
@@ -1304,6 +1442,7 @@ class Repositorio(RepositorioExtras):
 
     def revogar_todos_refresh(self, usuario_id: int) -> None:
         with self._sf() as s:
+            s.scalar(select(Usuario).where(Usuario.id == usuario_id).with_for_update())
             for rt in s.scalars(select(RefreshToken).where(RefreshToken.usuario_id == usuario_id, RefreshToken.revogado.is_(False))):
                 rt.revogado = True
             s.commit()
@@ -1315,11 +1454,18 @@ class Repositorio(RepositorioExtras):
     def registrar_sessao_mfa(
         self, *, tipo: str, sucesso: bool, usuario_id: Optional[int] = None, referencia: Optional[str] = None,
         ip: Optional[str] = None, detalhe: Optional[dict] = None,
-    ) -> None:
+    ) -> bool:
         with self._sf() as s:
             s.add(SessaoMfa(usuario_id=usuario_id, referencia=referencia, tipo=tipo, sucesso=sucesso, ip=ip,
                             detalhe=detalhe, criado_em=tempo.agora()))
-            s.commit()
+            try:
+                s.commit()
+            except IntegrityError:
+                s.rollback()
+                if tipo == "mfa_usado" and sucesso:
+                    return False
+                raise
+            return True
 
     def contar_eventos(
         self, *, tipo: str, desde: datetime, sucesso: Optional[bool] = False, usuario_id: Optional[int] = None,

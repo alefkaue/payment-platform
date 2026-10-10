@@ -7,11 +7,12 @@ memória paralelo.
 
 from functools import lru_cache
 
-from app.db.base import SessionLocal, criar_tabelas
+from app.db.base import SessionLocal, criar_tabelas, usando_postgres
 from app.repositories.repository import Repositorio
 
 
 @lru_cache
 def get_repository() -> Repositorio:
-    criar_tabelas()
+    if not usando_postgres():
+        criar_tabelas()
     return Repositorio(SessionLocal)

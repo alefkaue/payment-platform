@@ -34,6 +34,7 @@ from decimal import Decimal
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Enum,
@@ -45,6 +46,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -460,6 +462,8 @@ class Dispositivo(Base):
     # Celular perdido/roubado: bloqueado derruba as sessões dele e recusa novos logins.
     bloqueado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     bloqueado_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Exclusão lógica preserva referências de sessões e transações financeiras.
+    removido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     ultimo_uso: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Atestação da chave no último login: "strongbox" / "tee" (chave em hardware, app
     # nosso, boot verificado) ou nulo (navegador, PWA, emulador, aparelho com root).
@@ -770,3 +774,22 @@ class Cartao(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     carteira: Mapped["Carteira"] = relationship(back_populates="cartoes")
+
+
+# O mesmo contrato é aplicado pela migração versionada em bancos existentes.
+from app.db.integridade_v1 import CHECKS, INDEXES, UNIQUES
+
+for _nome, _regras in CHECKS.items():
+    for _constraint, _sql in _regras:
+        Base.metadata.tables[_nome].append_constraint(CheckConstraint(_sql, name=_constraint))
+for _nome, _regras in UNIQUES.items():
+    for _constraint, _colunas in _regras:
+        Base.metadata.tables[_nome].append_constraint(UniqueConstraint(*_colunas, name=_constraint))
+for _nome, _regras in INDEXES.items():
+    for _indice, _colunas in _regras:
+        Index(_indice, *(Base.metadata.tables[_nome].c[c] for c in _colunas))
+
+# MFA intermediário só pode concluir um login, inclusive em paralelo.
+Index("uq_mfa_usado_referencia", SessaoMfa.referencia, unique=True,
+      postgresql_where=text("tipo = 'mfa_usado' AND sucesso"),
+      sqlite_where=text("tipo = 'mfa_usado' AND sucesso"))

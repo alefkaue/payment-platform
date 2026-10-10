@@ -22,7 +22,7 @@ config = context.config
 
 # URL efetiva (Postgres se DATABASE_URL, senão SQLite local) -- igual ao runtime.
 _url = get_settings().database_url or "sqlite:///./payflow.db"
-config.set_main_option("sqlalchemy.url", _url)
+config.set_main_option("sqlalchemy.url", _url.replace("%", "%%"))
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

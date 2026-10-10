@@ -177,18 +177,57 @@ def test_log_json_tem_request_id_e_nao_deixa_forjar_linha():
     assert dados["request_id"] == "req-123456" and dados["evento"] == "login"
 
 
-def test_falha_na_trilha_nao_derruba_o_pix_ja_feito(cliente, monkeypatch):
+def test_falha_no_log_complementar_preserva_pix_e_trilha_atomica(cliente, monkeypatch):
+    from sqlalchemy import select, func
     from app.db import models
-
+    from app.db.base import SessionLocal
     a, b = Pessoa(cliente, "a@ex.com"), Pessoa(cliente, "b@ex.com")
     depositar(cliente, a.numero, 100)
+    original = models.LogAuditoria
 
-    class Quebrada:
-        def __init__(self, *args, **kw):
-            raise RuntimeError("banco da auditoria fora do ar")
+    def log_com_falha(*args, **kw):
+        if kw.get("acao") == "transferencia":
+            raise RuntimeError("trilha complementar indisponível")
+        return original(*args, **kw)
 
-    monkeypatch.setattr("app.repositories.repository.LogAuditoria", Quebrada)
+    monkeypatch.setattr("app.repositories.repository.LogAuditoria", log_com_falha)
     r = a.transferir(conta_ref(b.numero), 10, idempotency_key="pix-com-trilha-quebrada")
     assert r.status_code == 200, r.text
     assert a.saldo() == "90.00" and b.saldo() == "10.00"
-    assert models.LogAuditoria is not Quebrada
+    with SessionLocal() as s:
+        assert s.scalar(select(func.count(models.LogAuditoria.id)).where(models.LogAuditoria.acao == "movimento_registrado")) == 2
+
+
+def test_falha_na_trilha_atomica_reverte_todo_movimento(cliente, monkeypatch):
+    from fastapi.testclient import TestClient
+    from app.main import app
+    a, b = Pessoa(cliente, "a@ex.com"), Pessoa(cliente, "b@ex.com")
+    depositar(cliente, a.numero, 100)
+
+    def quebrada(*args, **kw):
+        raise RuntimeError("auditoria indisponível")
+
+    monkeypatch.setattr("app.repositories.repository.LogAuditoria", quebrada)
+    r = TestClient(app, raise_server_exceptions=False).post("/pagamentos/transferir",
+        json={"destino": conta_ref(b.numero), "valor": "10", "idempotency_key": "pix-atomico"}, headers=a.h())
+    assert r.status_code == 500
+    assert a.saldo() == "100.00" and b.saldo() == "0.00"
+
+
+def test_webhook_conecta_no_ip_validado_sem_segunda_resolucao(monkeypatch):
+    conexoes = []
+    monkeypatch.setattr(webhook_service, "resolver_publico", lambda host, port: ["93.184.216.34"])
+
+    class Conexao:
+        def __init__(self, host, port, ip, timeout):
+            conexoes.append((host, port, ip))
+        def request(self, method, path, **kwargs):
+            assert method == "POST" and path == "/evento?tipo=pix"
+        def getresponse(self):
+            return type("Resposta", (), {"status": 204})()
+        def close(self):
+            pass
+
+    monkeypatch.setattr(webhook_service, "_HTTPSFixado", Conexao)
+    assert webhook_service._enviar("https://erp.exemplo.com/evento?tipo=pix", b"{}", {}) == (True, "HTTP 204")
+    assert conexoes == [("erp.exemplo.com", 443, "93.184.216.34")]

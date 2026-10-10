@@ -71,9 +71,12 @@ def _checar_admin(ip: str | None) -> None:
 
 def autenticar(repo: Repositorio, *, email: str, senha: str, ip: str | None = None) -> dict:
     """Confere a senha (fator 1). Não emite sessão."""
-    ref = email.lower().strip()
+    identificador = email.lower().strip()
+    usuario = repo.obter_usuario_por_login(identificador)
+    # E-mail e CPF (pontuado ou não) são aliases da mesma identidade. Não
+    # permitem contornar o rate limit alternando a forma de login.
+    ref = usuario["email"] if usuario else identificador
     _checar_rate_limit(repo, ref, ip)
-    usuario = repo.obter_usuario_por_login(ref)
     ok = False
     if usuario and usuario["ativo"]:
         ok = security.verificar_senha(senha, usuario["senha_hash"])
@@ -191,7 +194,8 @@ def concluir_login(repo: Repositorio, *, mfa_token: str, prova, ip: str | None, 
         repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=ref, ip=ip, usuario_id=usuario["id"],
                                   detalhe={"etapa": "rosto"})
         raise
-    repo.registrar_sessao_mfa(tipo="mfa_usado", sucesso=True, referencia=payload["jti"], usuario_id=usuario["id"], ip=ip)
+    if not repo.registrar_sessao_mfa(tipo="mfa_usado", sucesso=True, referencia=payload["jti"], usuario_id=usuario["id"], ip=ip):
+        raise HTTPException(status_code=401, detail="Esta etapa de verificação já foi usada. Entre de novo.")
     repo.registrar_sessao_mfa(tipo="login", sucesso=True, usuario_id=usuario["id"], referencia=ref, ip=ip)
     disp = None
     if dispositivo_hash and repo.obter_dispositivo(usuario["id"], dispositivo_hash) is None:
@@ -223,16 +227,20 @@ def _nome_aparelho(user_agent: str | None) -> str | None:
 
 def emitir_tokens(repo: Repositorio, usuario: dict, *, dispositivo: dict | None = None,
                   dispositivo_hash: str | None = None, ip: str | None = None, user_agent: str | None = None,
-                  sessao_id: str | None = None, jkt: str | None = None, auth_time: int | None = None) -> dict:
+                  sessao_id: str | None = None, jkt: str | None = None, auth_time: int | None = None,
+                  token_anterior: str | None = None) -> dict:
     sid = sessao_id or security.novo_sessao_id()
     auth_time = auth_time or int(_relogio())  # login novo: a sessão começa agora
     access, access_exp = security.criar_access_token(usuario["id"], usuario["papel"], dispositivo_hash=dispositivo_hash,
                                                      sessao_id=sid, jkt=jkt, auth_time=auth_time)
     refresh_bruto, jti, refresh_exp = security.criar_refresh_token(usuario["id"], sessao_id=sid, jkt=jkt,
                                                                    auth_time=auth_time)
-    repo.salvar_refresh(usuario_id=usuario["id"], jti=jti, token_hash=security.hash_refresh(refresh_bruto),
+    salvo = repo.salvar_refresh(usuario_id=usuario["id"], jti=jti, token_hash=security.hash_refresh(refresh_bruto),
                         expira_em=refresh_exp, sessao_id=sid, dispositivo_id=dispositivo["id"] if dispositivo else None,
-                        ip=ip, user_agent=user_agent)
+                        ip=ip, user_agent=user_agent, token_anterior=token_anterior)
+    if not salvo:
+        repo.registrar_log(ator=str(usuario["id"]), acao="refresh_reuso_detectado", ip=ip, usuario_id=usuario["id"])
+        raise HTTPException(status_code=401, detail="Sessão inválida. Entre de novo.")
     return {"access_token": access, "refresh_token": refresh_bruto, "token_type": "bearer",
             "access_expira_em": access_exp, "sessao_id": sid}
 
@@ -285,9 +293,7 @@ def renovar(repo: Repositorio, *, refresh_token: str, ip: str | None = None, dis
             raise HTTPException(status_code=401, detail="Aparelho bloqueado.")
     novos = emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dispositivo_hash if disp else None,
                           ip=ip, user_agent=user_agent, sessao_id=registro["sessao_id"] or payload.get("sid"), jkt=jkt,
-                          auth_time=payload.get("auth_time"))
-    novo_payload = security.decodificar_token(novos["refresh_token"], "refresh")
-    repo.revogar_refresh(payload["jti"], substituido_por=novo_payload["jti"])
+                          auth_time=payload.get("auth_time"), token_anterior=security.hash_refresh(refresh_token))
     return novos
 
 

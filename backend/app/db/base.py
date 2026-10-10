@@ -21,7 +21,7 @@ SQLite serializa escritas com lock de banco, o que é suficiente para o uso
 single-process de desenvolvimento. Produção é Postgres.
 """
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -48,10 +48,17 @@ def _criar_engine():
         return create_engine(url, connect_args=connect_args)
     # pool_pre_ping evita erro de "conexão caiu" após ociosidade (VM que hiberna,
     # banco gerenciado que recicla conexões).
-    return create_engine(url, pool_pre_ping=True)
+    return create_engine(url, pool_pre_ping=True, hide_parameters=True, connect_args={"connect_timeout": 10})
 
 
 engine = _criar_engine()
+if engine.dialect.name == "sqlite":
+    @event.listens_for(engine, "connect")
+    def _integridade_sqlite(conexao, _registro):
+        cursor = conexao.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 
@@ -65,3 +72,27 @@ def criar_tabelas() -> None:
     from app.db import models  # noqa: F401 -- registra os modelos no Base
 
     Base.metadata.create_all(bind=engine)
+
+
+def conferir_runtime_producao() -> None:
+    """A API de produção não pode ser superusuário nem dona das tabelas."""
+    with engine.connect() as connection:
+        privilegiado = connection.scalar(text("""
+            SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolbypassrls
+            FROM pg_roles WHERE rolname = current_user
+        """))
+        dono = connection.scalar(text("""
+            SELECT count(*) FROM pg_tables
+            WHERE schemaname = 'public' AND tableowner = current_user
+        """))
+        ddl = connection.scalar(text("SELECT has_schema_privilege(current_user, 'public', 'CREATE')"))
+        if privilegiado or dono or ddl:
+            raise RuntimeError("Credencial da API tem privilégios excessivos; use astro_app.")
+
+
+def banco_disponivel() -> bool:
+    try:
+        with engine.connect() as connection:
+            return connection.scalar(text("SELECT 1")) == 1
+    except Exception:
+        return False

@@ -112,6 +112,9 @@ def test_ip_atras_do_front_door(cliente, monkeypatch):
     # sem FRONT_DOOR_ID configurado, os headers do Front Door são ignorados
     assert ip_cliente(req(fd)) == "10.20.0.9"
     monkeypatch.setattr(get_settings(), "front_door_id", "id-do-perfil")
+    # FDID conhecido não basta: sem proxy confiável o header é forjável.
+    assert ip_cliente(req(fd)) == "10.20.0.9"
+    monkeypatch.setattr(get_settings(), "proxies_confiaveis", "10.20.0.0/23")
     assert ip_cliente(req(fd)) == "1.2.3.4"
     # quem chama a origem direto e não sabe o id não escolhe o próprio IP
     assert ip_cliente(req({**fd, "x-azure-fdid": "chute"})) == "10.20.0.9"

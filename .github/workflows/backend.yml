@@ -8,10 +8,12 @@ on:
   push:
     paths:
       - "backend/**"
+      - "infra/postgres/**"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "infra/postgres/**"
   workflow_dispatch: {}
 
 permissions:
@@ -67,6 +69,23 @@ jobs:
           alembic downgrade -1
           alembic upgrade head
           alembic check   # schema das migrações == modelos
+
+      - name: Credencial runtime e trilha imutável no banco migrado
+        env:
+          PGHOST: localhost
+          PGPORT: '5432'
+          PGPASSWORD: somente-ci
+          POSTGRES_USER: astro
+          POSTGRES_DB: astro_teste
+          DATABASE_APP_PASSWORD: runtime-somente-ci
+          DATABASE_MIGRATION_PASSWORD: migracao-somente-ci
+          DATABASE_MIGRATION_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
+          TEST_RUNTIME_DATABASE_URL: postgresql+psycopg2://astro_app:runtime-somente-ci@localhost:5432/astro_teste
+        run: |
+          sh ../infra/postgres/init-roles.sh
+          python scripts/restringir_runtime.py
+          python -m pytest tests/test_migracoes_privilegios.py -q
+          DATABASE_URL="$TEST_RUNTIME_DATABASE_URL" python scripts/verificar_banco.py
 
       - name: Vulnerabilidades conhecidas (pip-audit)
         run: pip-audit -r requirements.txt

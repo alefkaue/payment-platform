@@ -52,9 +52,14 @@ param embeddingKey string
 param adminSenha string
 
 @secure()
-@description('Senha do Postgres. Só [A-Za-z0-9_-] (secrets.token_urlsafe): vai crua na DATABASE_URL e o Alembic não aceita %.')
+@description('Senha bootstrap do Postgres; não é entregue à API.')
 @minLength(24)
 param pgSenha string
+
+@secure()
+@description('Senha do papel astro_app, criado previamente com os scripts de provisionamento. Use secrets.token_urlsafe(32).')
+@minLength(24)
+param pgAppSenha string
 
 var sufixo = uniqueString(resourceGroup().id)
 var comApi = !empty(imagem)
@@ -213,7 +218,7 @@ resource kvBanco 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: kv
   name: 'database-url'
   properties: {
-    value: 'postgresql://${pgUsuario}:${pgSenha}@${pg.properties.fullyQualifiedDomainName}:5432/${pgBanco}?sslmode=require'
+    value: 'postgresql://astro_app:${pgAppSenha}@${pg.properties.fullyQualifiedDomainName}:5432/${pgBanco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt'
   }
 }
 
@@ -294,6 +299,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
             { name: 'FRONT_DOOR_ID', value: fd!.properties.frontDoorId }
             { name: 'ATESTACAO_ASSINATURAS', value: assinaturasApk }
             { name: 'DATABASE_URL', secretRef: 'database-url' }
+            { name: 'RUN_MIGRATIONS', value: '0' }
             { name: 'JWT_SECRET', secretRef: 'jwt-secret' }
             { name: 'EMBEDDING_KEY', secretRef: 'embedding-key' }
             { name: 'ADMIN_SENHA', secretRef: 'admin-senha' }
@@ -313,7 +319,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
             }
             {
               type: 'Readiness'
-              httpGet: { path: '/saude', port: 8000 }
+              httpGet: { path: '/pronto', port: 8000 }
               periodSeconds: 10
             }
           ]

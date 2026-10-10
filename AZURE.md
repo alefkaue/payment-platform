@@ -1,5 +1,9 @@
 # Astro no Azure (ambiente do pentest)
 
+**Antes do deploy:** seguir [estrutura e operação do banco](docs/BANCO.md),
+provisionar os papéis separados e configurar `AZURE_MIGRATION_JOB`. A API não
+aplica migrações no boot.
+
 Infra em `infra/azure/main.bicep`, deploy contínuo em `.github/workflows/azure.yml`.
 Regras do teste para os outros grupos: `PENTEST.md`. Contexto: `SEGURANCA.md` item 9.
 
@@ -18,7 +22,7 @@ APK Android (CI) ──► Front Door                            ├─► Conta
   biometria conferidos por SHA-256 no build (`MODELOS_DOWNLOAD=0`: o container não baixa nada),
   `AMBIENTE=producao` (o boot recusa modo de teste, segredo fraco e CORS curinga).
 - **IP do cliente**: o Front Door manda `X-Azure-ClientIP` e `X-Azure-FDID`; a API só acredita
-  quando o id do perfil bate (`FRONT_DOOR_ID`). Isso alimenta os limites por IP da própria API.
+  quando o id do perfil bate (`FRONT_DOOR_ID`) e a conexão vem de proxy confiável. Isso alimenta os limites por IP da própria API.
 - **Limite conhecido**: a origem do Container Apps (`apiOrigemDireta`) continua acessível sem passar
   pelo WAF (restringir só ao Front Door pede o tier Premium com Private Link). Os limites da API
   (no banco) valem dos dois jeitos. Está declarado no `PENTEST.md`.
@@ -64,8 +68,8 @@ cd backend
 No shell (não salve em arquivo do repositório):
 
 ```sh
-export JWT_SECRET=... EMBEDDING_KEY=... ADMIN_SENHA=... PG_SENHA=...
-SEGREDOS="jwtSecret=$JWT_SECRET embeddingKey=$EMBEDDING_KEY adminSenha=$ADMIN_SENHA pgSenha=$PG_SENHA"
+export JWT_SECRET=... EMBEDDING_KEY=... ADMIN_SENHA=... PG_SENHA=... PG_APP_SENHA=...
+SEGREDOS="jwtSecret=$JWT_SECRET embeddingKey=$EMBEDDING_KEY adminSenha=$ADMIN_SENHA pgSenha=$PG_SENHA pgAppSenha=$PG_APP_SENHA"
 ```
 
 ## 3. Deploy da infra (dois passos)
@@ -85,6 +89,10 @@ Anote `acr` (ex.: `acrastroxxxx.azurecr.io`) e `frontNome`.
 ACR=acrastroxxxx   # nome, sem .azurecr.io
 az acr build -r $ACR -t astro-api:inicial -f backend/Dockerfile backend
 ```
+
+**Entre os passos:** criar `astro_app` e `astro_migrator` no PostgreSQL privado,
+aplicar as migrações e restringir o runtime (ver `docs/BANCO.md`). O Bicep não
+executa SQL de provisionamento.
 
 **Passo 2**: a API e o Front Door:
 
@@ -126,7 +134,8 @@ São **variáveis**, não segredos: nenhuma dá acesso sozinha. O que dá acesso
 GitHub emite só para workflows do branch `main` deste repositório.
 
 Daí em diante, cada push no `main` que mexa em `backend/` ou `app/`:
-- **api**: `az acr build` com o SHA do commit + nova revisão no Container Apps;
+- **api**: `az acr build` com o SHA do commit, job isolado de migração
+  (`AZURE_MIGRATION_JOB`) e só depois nova revisão no Container Apps;
 - **front**: `npm run build` com `VITE_API_URL=ASTRO_API_URL` (gera a CSP com a URL da API) e
   publica no Static Web Apps.
 

@@ -17,6 +17,8 @@ Webhooks para o ERP da empresa.
 
 import hashlib
 import hmac
+import http.client
+import ssl
 import ipaddress
 import json
 import logging
@@ -83,7 +85,7 @@ def validar_url(url: str) -> tuple[str, int]:
     return host, porta
 
 
-def resolver_publico(host: str, porta: int) -> None:
+def resolver_publico(host: str, porta: int) -> list[str]:
     """Na entrega: todos os endereços do nome precisam ser públicos (um nome que
     resolve para 10.x / 169.254.169.254 / ::1 não recebe nada)."""
     try:
@@ -92,6 +94,7 @@ def resolver_publico(host: str, porta: int) -> None:
         raise DestinoRecusado("Não foi possível resolver o endereço.") from None
     if not infos or not all(_ip_publico(i[4][0]) for i in infos):
         raise DestinoRecusado("O endereço resolve para uma rede interna.")
+    return list(dict.fromkeys(i[4][0] for i in infos))
 
 
 def criar(repo: Repositorio, *, empresa_id: int, url: str, eventos: list[str]) -> dict:
@@ -107,21 +110,48 @@ def criar(repo: Repositorio, *, empresa_id: int, url: str, eventos: list[str]) -
     return {**w, "segredo": segredo}
 
 
-def _enviar(url: str, corpo: bytes, headers: dict) -> tuple[bool, str]:
-    """Faz o POST. Isolado para os testes substituírem."""
-    import httpx
+class _HTTPSFixado(http.client.HTTPSConnection):
+    """Conecta ao IP que foi validado; TLS continua verificando o hostname.
+    Não há segunda resolução DNS nem proxy/redirect decidido pelo ambiente.
+    """
+    def __init__(self, host: str, porta: int, ip: str, timeout: float):
+        super().__init__(host, porta, timeout=timeout, context=ssl.create_default_context())
+        self._ip_validado = ip
 
+    def connect(self):
+        family = socket.AF_INET6 if ":" in self._ip_validado else socket.AF_INET
+        raw = socket.socket(family, socket.SOCK_STREAM)
+        raw.settimeout(self.timeout)
+        try:
+            raw.connect((self._ip_validado, self.port))
+            self.sock = self._context.wrap_socket(raw, server_hostname=self.host)
+        except BaseException:
+            raw.close()
+            raise
+
+
+def _enviar(url: str, corpo: bytes, headers: dict) -> tuple[bool, str]:
+    """POST com DNS fixado no IP público validado (fecha DNS rebinding)."""
     try:
-        resolver_publico(*validar_url(url))
+        host, porta = validar_url(url)
+        ips = resolver_publico(host, porta)
     except DestinoRecusado as e:
         return False, f"recusado: {e}"
+    partes = urlsplit(url)
+    caminho = partes.path or "/"
+    if partes.query:
+        caminho += "?" + partes.query
+    conexao = _HTTPSFixado(host, porta, ips[0], get_settings().webhook_timeout_seg)
     try:
-        r = httpx.post(url, content=corpo, headers=headers, timeout=get_settings().webhook_timeout_seg,
-                       follow_redirects=False)
-    except httpx.HTTPError as e:
-        logger.info("Webhook para %s falhou: %s", urlsplit(url).hostname, type(e).__name__)
+        conexao.request("POST", caminho, body=corpo, headers=headers)
+        resposta = conexao.getresponse()
+        # Só precisamos do status; não carregamos um corpo remoto ilimitado.
+        return 200 <= resposta.status < 300, f"HTTP {resposta.status}"
+    except (OSError, http.client.HTTPException, ValueError) as e:
+        logger.info("Webhook para %s falhou: %s", host, type(e).__name__)
         return False, "falha de conexão"
-    return 200 <= r.status_code < 300, f"HTTP {r.status_code}"
+    finally:
+        conexao.close()
 
 
 def entregar(repo: Repositorio, entrega_id: int) -> None:

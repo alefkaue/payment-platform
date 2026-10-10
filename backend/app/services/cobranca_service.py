@@ -226,6 +226,8 @@ def estornar(repo: Repositorio, *, usuario: dict, conta: dict, txid: str, ip: st
         t = repo.estornar_cobranca(cobranca_id=cob["id"], autor_usuario_id=usuario["id"])
     except SaldoInsuficienteError:
         raise HTTPException(status_code=400, detail="Saldo insuficiente para devolver o valor ao pagador.")
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
     repo.registrar_log(ator=usuario["email"], acao="cobranca_estornada", ip=ip, detalhe={"txid": txid, "transacao_id": t["id"]})
     webhook_service.emitir(repo, empresa_id=conta["empresa_id"], evento="cobranca.estornada",
                            payload={"txid": txid, "transacao_id": t["id"], "valor": t["valor_bruto"]})
@@ -269,7 +271,10 @@ def responder_autorizacao(repo: Repositorio, *, usuario: dict, conta: dict, disp
     exigir_papel(conta, PapelVinculo.ADMIN)
     seguranca_service.exigir_dispositivo(dispositivo)
     campos = {"status": "ativa", "aceita_em": tempo.agora()} if aceitar else {"status": "recusada"}
-    a = repo.atualizar_autorizacao(autorizacao_id, **campos)
+    try:
+        a = repo.atualizar_autorizacao(autorizacao_id, **campos)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
     repo.registrar_log(ator=usuario["email"], acao="pix_automatico_" + ("aceito" if aceitar else "recusado"), ip=ip,
                        detalhe={"autorizacao_id": autorizacao_id})
     return a
@@ -312,12 +317,15 @@ def cobrar_recorrente(repo: Repositorio, *, usuario: dict, conta: dict, autoriza
            for c in repo.cobrancas_da_autorizacao(autorizacao_id)):
         raise HTTPException(status_code=409, detail="Já existe cobrança desta autorização neste período.")
     chave, cbs, ibs = _validar_nota(conta, valor, dados.nota_fiscal)
-    [cob] = repo.criar_cobrancas([{
-        "txid": gerar_txid(), "recebedor_carteira_id": conta["carteira_id"], "valor": valor,
-        "descricao": dados.descricao or a["descricao"], "vencimento": dados.vencimento, "nfe_chave": chave,
-        "cbs": cbs, "ibs": ibs, "linha_digitavel": gerar_linha_digitavel(int(valor * 100)),
-        "autorizacao_id": autorizacao_id, "criado_por_usuario_id": usuario["id"],
-    }])
+    try:
+        [cob] = repo.criar_cobrancas([{
+            "txid": gerar_txid(), "recebedor_carteira_id": conta["carteira_id"], "valor": valor,
+            "descricao": dados.descricao or a["descricao"], "vencimento": dados.vencimento, "nfe_chave": chave,
+            "cbs": cbs, "ibs": ibs, "linha_digitavel": gerar_linha_digitavel(int(valor * 100)),
+            "autorizacao_id": autorizacao_id, "criado_por_usuario_id": usuario["id"],
+        }])
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
     repo.registrar_log(ator=usuario["email"], acao="pix_automatico_cobranca", ip=ip,
                        detalhe={"autorizacao_id": autorizacao_id, "txid": cob["txid"]})
     return cob

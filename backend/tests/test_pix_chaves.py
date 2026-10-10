@@ -109,3 +109,20 @@ def test_eu_devolve_os_dados_de_quem_se_cadastrou(cliente):
     assert eu["nome"] == "Ana Real"
     [pf] = [c for c in eu["contas"] if c["titular_tipo"] == "PF"]
     assert pf["documento"] == ana.cpf
+
+
+def test_producao_nao_cadastra_chave_email_sem_confirmacao(cliente, monkeypatch):
+    from app.core.config import get_settings
+    from app.repositories import get_repository
+    from app.services import pix_service
+    from fastapi import HTTPException
+    import pytest
+    p = Pessoa(cliente, "posse@ex.com")
+    repo = get_repository()
+    conta = repo.obter_conta_por_numero(p.numero)
+    autor = repo.obter_usuario_por_login(p.email)
+    monkeypatch.setattr(get_settings(), "ambiente", "producao")
+    with pytest.raises(HTTPException) as exc:
+        pix_service.criar_chave(repo, conta=conta, tipo="email", valor="terceiro@ex.com", ip=None, autor=autor)
+    assert exc.value.status_code == 409
+    assert repo.listar_chaves(conta["carteira_id"]) == []

@@ -53,3 +53,6 @@ payment/
 # Chaves de assinatura do APK (app/scripts/chave_apk.py gera fora do repo)
 *.p12
 *.jks
+
+# Credenciais exclusivas do Compose (não entram no env_file da API)
+.env.docker

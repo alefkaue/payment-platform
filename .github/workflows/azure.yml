@@ -43,6 +43,26 @@ jobs:
       - name: Build da imagem no ACR
         run: az acr build -r "$ACR" -t "astro-api:${GITHUB_SHA}" -f backend/Dockerfile backend
 
+      - name: Migração isolada antes da API
+        env:
+          MIGRATION_JOB: ${{ vars.AZURE_MIGRATION_JOB }}
+        run: |
+          : "${MIGRATION_JOB:?configure AZURE_MIGRATION_JOB com o job dedicado (docs/BANCO.md)}"
+          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
+          EXECUCAO=$(az containerapp job start -g "$RG" -n "$MIGRATION_JOB" \
+            --image "$SERVIDOR/astro-api:${GITHUB_SHA}" --query name -o tsv)
+          for tentativa in $(seq 1 60); do
+            ESTADO=$(az containerapp job execution show -g "$RG" -n "$MIGRATION_JOB" \
+              --job-execution-name "$EXECUCAO" --query properties.status -o tsv)
+            case "$ESTADO" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped) echo "Migração falhou: $ESTADO" >&2; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "Migração excedeu o tempo permitido." >&2
+          exit 1
+
       - name: Nova revisão da API
         run: |
           SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)

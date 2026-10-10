@@ -199,6 +199,8 @@ def transferir(
         raise HTTPException(status_code=400, detail="Saldo insuficiente.")
     except AlcadaDiariaExcedida:
         return pendente("alcada_diaria")
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
 
     repo.registrar_log(ator=usuario["email"], acao="transferencia", ip=ip, usuario_id=usuario["id"],
                        empresa_id=conta.get("empresa_id"), detalhe={
@@ -376,17 +378,13 @@ def decidir_contestacao(repo: Repositorio, *, admin: dict, contestacao_id: int, 
         raise HTTPException(status_code=404, detail="Contestação não encontrada.")
     if c["status"] != "aberta":
         raise HTTPException(status_code=409, detail="Contestação já decidida.")
-    t = repo.obter_transacao(c["transacao_id"])
-    devolvido = Decimal("0.00")
-    if procedente:
-        r = repo.devolver(transacao_id=t["id"], valor_maximo=t["liquido"], tipo="devolucao", autor_usuario_id=admin["id"])
-        devolvido = r["valor_devolvido"]
-    elif t["status"] == "retida":
-        repo.liberar_bloqueio(t["id"])
-    repo.fechar_contestacao(contestacao_id, status="procedente" if procedente else "improcedente", valor_devolvido=devolvido)
+    resultado = repo.resolver_contestacao(contestacao_id, procedente=procedente, autor_usuario_id=admin["id"])
+    if resultado is None:
+        raise HTTPException(status_code=409, detail="Contestação já decidida.")
+    devolvido = resultado["valor_devolvido"]
     repo.registrar_log(ator=admin["email"], acao="contestacao_decidida", ip=ip,
                        detalhe={"contestacao_id": contestacao_id, "procedente": procedente, "devolvido": str(devolvido)})
-    return repo.obter_contestacao(contestacao_id)
+    return resultado
 
 
 def liberar_bloqueios_vencidos(repo: Repositorio) -> dict:

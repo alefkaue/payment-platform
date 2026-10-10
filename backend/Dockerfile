@@ -5,6 +5,7 @@ FROM python:3.12-slim
 # - libgl1 / libglib2.0-0: OpenCV e MediaPipe (sem elas: "ImportError: libGL.so.1").
 # - tesseract-ocr + idioma por: OCR dos documentos do KYC (DOCUMENTO_PROVEDOR=tesseract).
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        ca-certificates \
         libgl1 \
         libglib2.0-0 \
         tesseract-ocr \
@@ -32,6 +33,7 @@ RUN AMBIENTE=desenvolvimento python -m app.core.modelos baixar \
     && chmod -R a-w /opt/astro/modelos
 ENV MODELOS_DOWNLOAD=0
 
+COPY scripts ./scripts
 COPY alembic ./alembic
 COPY alembic.ini entrypoint.sh ./
 

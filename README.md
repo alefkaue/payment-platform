@@ -42,8 +42,10 @@ npm run dev                        # http://localhost:8081
 Sem `VITE_API_URL` o app roda em **modo demonstração** (dados fictícios). Para usar o
 backend, crie `app/.env` com `VITE_API_URL=http://localhost:8000`.
 
-**Docker (backend + Postgres)**: `cp .env.example .env`, preencha a senha e os
-segredos, `docker compose up --build`.
+**Docker (backend + Postgres)**: copie `.env.example` para `.env` e
+`.env.docker.example` para `.env.docker`, preencha os segredos e rode
+`docker compose --env-file .env.docker up --build`. Banco, migração e API têm
+credenciais separadas. Veja [estrutura e operação do banco](docs/BANCO.md).
 
 Sem permissão de administrador para instalar o Node? Veja a seção "Node sem
 administrador" no [HANDOFF.md](HANDOFF.md#node-sem-administrador).

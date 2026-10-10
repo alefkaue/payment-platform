@@ -1,39 +1,54 @@
-# Sobe backend + Postgres. Credenciais e segredos vêm do arquivo .env (copie de
-# .env.example). Nada de senha escrita aqui: o compose falha com mensagem clara
-# se POSTGRES_PASSWORD não estiver definida.
-
+# Credenciais distintas: bootstrap, migração e API. Banco sem porta publicada.
 services:
-  backend:
-    build: ./backend
-    # Só na própria máquina: numa VM, quem fala com a internet é o proxy (nginx/TLS),
-    # que encaminha para 127.0.0.1:8000. "8000:8000" publicaria a API sem TLS.
-    ports:
-      - "127.0.0.1:8000:8000"
-    env_file: .env
-    environment:
-      # "db" é o nome do serviço abaixo (DNS interno do Compose), não localhost.
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-payflow}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@db:5432/${POSTGRES_DB:-payflow}
-    depends_on:
-      db:
-        condition: service_healthy
-
   db:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-payflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-payflow}
+      DATABASE_APP_PASSWORD: ${DATABASE_APP_PASSWORD:?defina DATABASE_APP_PASSWORD}
+      DATABASE_MIGRATION_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?defina DATABASE_MIGRATION_PASSWORD}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
     volumes:
-      # Persiste entre "docker compose down/up"; "down -v" apaga.
       - payflow_db_data:/var/lib/postgresql/data
+      - ./infra/postgres/init-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
       interval: 5s
       timeout: 5s
       retries: 10
-    # Porta 5432 não exposta de propósito. Para inspecionar com DBeaver/psql, descomente:
-    # ports:
-    #   - "5432:5432"
+    restart: unless-stopped
+
+  migrate:
+    build: ./backend
+    environment:
+      AMBIENTE: desenvolvimento
+      DATABASE_URL: postgresql+psycopg2://astro_migrator:${DATABASE_MIGRATION_PASSWORD:?defina DATABASE_MIGRATION_PASSWORD}@db:5432/${POSTGRES_DB:-payflow}
+      DATABASE_MIGRATION_URL: postgresql+psycopg2://astro_migrator:${DATABASE_MIGRATION_PASSWORD:?defina DATABASE_MIGRATION_PASSWORD}@db:5432/${POSTGRES_DB:-payflow}
+    entrypoint: [/bin/sh, -ec]
+    command: ['alembic upgrade head && python scripts/restringir_runtime.py']
+    depends_on:
+      db:
+        condition: service_healthy
+
+  backend:
+    build: ./backend
+    ports:
+      - 127.0.0.1:8000:8000
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://astro_app:${DATABASE_APP_PASSWORD:?defina DATABASE_APP_PASSWORD}@db:5432/${POSTGRES_DB:-payflow}
+      RUN_MIGRATIONS: '0'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Banco administrador/migrador não são necessários no processo da API.
+    # Não coloque suas senhas em .env: prefira .env.docker (interpolação Compose).
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
 
 volumes:
   payflow_db_data:

@@ -99,6 +99,8 @@ def consultar(repo: Repositorio, *, usuario: dict, chave: str, ip: str | None) -
 def criar_chave(repo: Repositorio, *, conta: dict, tipo: str, valor: str | None, ip: str | None, autor: dict) -> dict:
     if repo.contar_chaves(conta["carteira_id"]) >= MAX_CHAVES[conta["titular_tipo"]]:
         raise HTTPException(status_code=400, detail=f"Limite de {MAX_CHAVES[conta['titular_tipo']]} chaves por conta atingido.")
+    if get_settings().em_producao and tipo in ("email", "celular"):
+        raise HTTPException(status_code=409, detail="Chaves de e-mail/celular exigem confirmação de posse, ainda não disponível.")
     if tipo == "aleatoria":
         valor_final = str(uuid.uuid4())
     elif tipo == "cpf":

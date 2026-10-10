@@ -115,6 +115,7 @@ class RepositorioExtras:
 
     def revogar_sessao(self, usuario_id: int, sessao_id: str) -> bool:
         with self._sf() as s:
+            s.scalar(select(Usuario).where(Usuario.id == usuario_id).with_for_update())
             n = s.query(RefreshToken).filter(
                 RefreshToken.usuario_id == usuario_id, RefreshToken.sessao_id == sessao_id,
                 RefreshToken.revogado.is_(False),
@@ -124,6 +125,7 @@ class RepositorioExtras:
 
     def revogar_outras_sessoes(self, usuario_id: int, manter: Optional[str]) -> int:
         with self._sf() as s:
+            s.scalar(select(Usuario).where(Usuario.id == usuario_id).with_for_update())
             q = s.query(RefreshToken).filter(RefreshToken.usuario_id == usuario_id, RefreshToken.revogado.is_(False))
             if manter:
                 q = q.filter((RefreshToken.sessao_id != manter) | RefreshToken.sessao_id.is_(None))
@@ -133,6 +135,7 @@ class RepositorioExtras:
 
     def revogar_sessoes_do_dispositivo(self, usuario_id: int, dispositivo_id: int) -> int:
         with self._sf() as s:
+            s.scalar(select(Usuario).where(Usuario.id == usuario_id).with_for_update())
             n = s.query(RefreshToken).filter(
                 RefreshToken.usuario_id == usuario_id, RefreshToken.dispositivo_id == dispositivo_id,
                 RefreshToken.revogado.is_(False),
@@ -143,7 +146,7 @@ class RepositorioExtras:
     def bloquear_dispositivo(self, usuario_id: int, dispositivo_id: int) -> Optional[dict]:
         with self._sf() as s:
             d = s.get(Dispositivo, dispositivo_id)
-            if not d or d.usuario_id != usuario_id:
+            if not d or d.usuario_id != usuario_id or d.removido:
                 return None
             d.bloqueado, d.bloqueado_em, d.confiavel = True, tempo.agora(), False
             s.commit()
@@ -153,7 +156,7 @@ class RepositorioExtras:
     def desbloquear_dispositivo(self, usuario_id: int, dispositivo_id: int) -> Optional[dict]:
         with self._sf() as s:
             d = s.get(Dispositivo, dispositivo_id)
-            if not d or d.usuario_id != usuario_id:
+            if not d or d.usuario_id != usuario_id or d.removido:
                 return None
             d.bloqueado, d.bloqueado_em = False, None
             s.commit()
@@ -384,7 +387,7 @@ class RepositorioExtras:
             lista.append({"usuario_id": usuario_id, "nome": nome, "em": tempo.agora().isoformat()})
             p.aprovacoes = lista
             if len(lista) >= (p.aprovacoes_necessarias or 1):
-                p.status, p.decidido_por_usuario_id, p.decidido_em = "aprovada", usuario_id, tempo.agora()
+                p.status, p.decidido_por_usuario_id, p.decidido_em = "executando", usuario_id, tempo.agora()
                 s.commit()
                 return "completa"
             s.commit()

@@ -59,6 +59,8 @@ def test_atacante_nao_trava_a_conta_da_vitima_de_outro_ip(cliente, monkeypatch):
     from app.core.config import get_settings
 
     monkeypatch.setattr(get_settings(), "front_door_id", "fd")
+    monkeypatch.setattr(get_settings(), "proxies_confiaveis", "10.20.0.0/23")
+    monkeypatch.setattr(cliente._transport, "client", ("10.20.0.9", 50000))
     p = Pessoa(cliente, "p@ex.com")
     atacante = {"x-azure-fdid": "fd", "x-azure-clientip": "203.0.113.9"}
     vitima = {"x-azure-fdid": "fd", "x-azure-clientip": "198.51.100.7", "X-Dispositivo-Id": p.dispositivo}
@@ -72,6 +74,8 @@ def test_ataque_distribuido_trava_a_conta(cliente, monkeypatch):
     from app.core.config import get_settings
 
     monkeypatch.setattr(get_settings(), "front_door_id", "fd")
+    monkeypatch.setattr(get_settings(), "proxies_confiaveis", "10.20.0.0/23")
+    monkeypatch.setattr(cliente._transport, "client", ("10.20.0.9", 50000))
     monkeypatch.setattr(get_settings(), "login_max_tentativas_conta", 12)
     p = Pessoa(cliente, "p@ex.com")
     for i in range(12):
@@ -80,3 +84,15 @@ def test_ataque_distribuido_trava_a_conta(cliente, monkeypatch):
     r = cliente.post("/auth/login", json={"email": p.email, "senha": SENHA},
                      headers={"x-azure-fdid": "fd", "x-azure-clientip": "198.51.100.7"})
     assert r.status_code == 429
+
+
+def test_alternar_email_e_cpf_nao_contorna_rate_limit(cliente):
+    p = Pessoa(cliente, "aliases@ex.com")
+    cpf = p.cpf
+    pontuado = f"{cpf[:3]}.{cpf[3:6]}.{cpf[6:9]}-{cpf[9:]}"
+    aliases = [p.email, cpf, pontuado]
+    for i in range(10):
+        r = cliente.post("/auth/login", json={"email": aliases[i % 3], "senha": "senha-incorreta"})
+        assert r.status_code == 401
+    for alias in aliases:
+        assert cliente.post("/auth/login", json={"email": alias, "senha": SENHA}).status_code == 429

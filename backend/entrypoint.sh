@@ -5,8 +5,13 @@
 # create_all. Sem DATABASE_URL (dev/SQLite), o create_all do boot cuida do schema.
 set -e
 
-if [ -n "$DATABASE_URL" ]; then
-  echo "[entrypoint] Aplicando migrações Alembic..."
+# A API não recebe credenciais de DDL. Migrações rodam em job separado.
+# RUN_MIGRATIONS=1 é somente compatibilidade para desenvolvimento.
+if [ "${RUN_MIGRATIONS:-0}" = "1" ]; then
+  if [ "${AMBIENTE:-desenvolvimento}" = "producao" ] || [ "${AMBIENTE:-}" = "production" ] || [ "${AMBIENTE:-}" = "prod" ]; then
+    echo "Migrações de produção devem rodar em job separado." >&2
+    exit 1
+  fi
   alembic upgrade head
 fi
 

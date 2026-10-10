@@ -46,13 +46,6 @@ def ip_cliente(request: Request) -> str | None:
     if not request.client:
         return None
     s = get_settings()
-    # Atrás do Azure Front Door: ele sobrescreve X-Azure-FDID e X-Azure-ClientIP, então
-    # o header só vale se o id do perfil bater (quem chama a origem direto não sabe o id).
-    fdid = request.headers.get("x-azure-fdid", "")
-    if s.front_door_id and secrets.compare_digest(fdid.encode(), s.front_door_id.encode()):
-        ip = _ip(request.headers.get("x-azure-clientip"))
-        if ip:
-            return str(ip)
     direto = request.client.host
     redes = s.proxies_confiaveis_redes
 
@@ -60,6 +53,14 @@ def ip_cliente(request: Request) -> str | None:
         ip = _ip(texto)
         return ip is not None and any(ip in r for r in redes)
 
+    # O id do Front Door é público: só aceitamos os headers quando a conexão
+    # chega de um proxy confiável. Saber o FDID não prova a origem do pedido.
+    fdid = request.headers.get("x-azure-fdid", "")
+    if (confiavel(direto) and s.front_door_id
+            and secrets.compare_digest(fdid.encode(), s.front_door_id.encode())):
+        ip = _ip(request.headers.get("x-azure-clientip"))
+        if ip:
+            return str(ip)
     xff = request.headers.get("x-forwarded-for")
     if not xff or not confiavel(direto):
         return direto

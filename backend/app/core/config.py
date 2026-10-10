@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     )
 
     # ---------- Banco ----------
-    # Sem DATABASE_URL, a app cai no repositório em memória (ver repositories/__init__.py).
+    # Sem DATABASE_URL, desenvolvimento usa SQLite local.
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
 
     # ---------- JWT ----------
@@ -287,6 +287,17 @@ def get_settings() -> Settings:
 def _conferir_producao(s: Settings) -> None:
     """Segredos e CORS de produção conferidos no BOOT (SEGURANCA.md item 8), e não só no
     primeiro uso: um deploy mal configurado nem sobe, em vez de falhar no meio de um login."""
+    from sqlalchemy.engine import make_url
+    try:
+        url = make_url(s.database_url or "")
+    except Exception:
+        raise RuntimeError("DATABASE_URL válida é obrigatória em produção.") from None
+    if url.get_backend_name() != "postgresql":
+        raise RuntimeError("DATABASE_URL de produção deve usar PostgreSQL.")
+    if url.query.get("sslmode") != "verify-full" or not url.query.get("sslrootcert"):
+        raise RuntimeError("DATABASE_URL de produção requer sslmode=verify-full e sslrootcert.")
+    if s.jwt_algoritmo != "HS256":
+        raise RuntimeError("JWT_ALGORITMO deve ser HS256 nesta implementação.")
     if not s.jwt_secret or len(s.jwt_secret) < 32:
         raise RuntimeError("JWT_SECRET ausente ou curto (mínimo 32 caracteres) -- use o Key Vault.")
     try:
