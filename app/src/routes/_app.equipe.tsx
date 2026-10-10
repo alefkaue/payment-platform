@@ -4,13 +4,16 @@ import { useState } from "react";
 import { Plus, ShieldCheck, UserPlus } from "lucide-react";
 import {
   convidarMembro,
+  alterarVinculo,
+  aumentaPoder,
+  type VinculoMudancas,
   equipe,
   MODO_API,
   mudarAcessoMembro,
   politicaEmpresa,
   type AcaoMembro,
 } from "@/lib/api";
-import { PAPEIS } from "@/lib/empresa";
+import { PAPEIS, PORTES } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, fmtData, iniciais, maskDoc, parseValor } from "@/lib/format";
 import type {
@@ -19,6 +22,7 @@ import type {
   PapelVinculo,
   ProvaBiometrica,
   StatusVinculo,
+  PoliticaEmpresa,
 } from "@/lib/types";
 import { Empty, ErrorBox, Field, PageTitle, TxSkeleton } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
@@ -107,7 +111,12 @@ function Equipe() {
         ) : (
           <ul className="divide-y divide-border">
             {ativos.map((m) => (
-              <Linha key={m.id} m={m} podeGerir={souAdmin && !m.eu} />
+              <Linha
+                key={m.id}
+                m={m}
+                podeGerir={souAdmin && !m.eu}
+                politica={souAdmin ? pol.data : undefined}
+              />
             ))}
           </ul>
         )}
@@ -135,9 +144,18 @@ function Equipe() {
   );
 }
 
-function Linha({ m, podeGerir }: { m: MembroEquipe; podeGerir: boolean }) {
+function Linha({
+  m,
+  podeGerir,
+  politica,
+}: {
+  m: MembroEquipe;
+  podeGerir: boolean;
+  politica?: PoliticaEmpresa | undefined;
+}) {
   const qc = useQueryClient();
   const [rosto, setRosto] = useState(false);
+  const [editando, setEditando] = useState(false);
   const mut = useMutation({
     mutationFn: ({ acao, prova }: { acao: AcaoMembro; prova?: ProvaBiometrica }) =>
       mudarAcessoMembro(m.id, acao, prova),
@@ -196,6 +214,21 @@ function Linha({ m, podeGerir }: { m: MembroEquipe; podeGerir: boolean }) {
         </div>
       </div>
 
+      {politica && m.status === "ativo" && (
+        <div className="mt-2 pl-[52px] text-xs font-semibold">
+          <button
+            className="text-ink underline underline-offset-4"
+            disabled={mut.isPending}
+            onClick={() => setEditando(true)}
+          >
+            Editar
+          </button>
+        </div>
+      )}
+      {editando && politica && (
+        <EditarMembro m={m} politica={politica} onFechar={() => setEditando(false)} />
+      )}
+
       {podeGerir && m.status !== "revogado" && (
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 pl-[52px] text-xs font-semibold">
           {m.status === "ativo" && (
@@ -240,6 +273,172 @@ function Linha({ m, podeGerir }: { m: MembroEquipe; podeGerir: boolean }) {
         />
       )}
     </li>
+  );
+}
+
+function EditarMembro({
+  m,
+  politica,
+  onFechar,
+}: {
+  m: MembroEquipe;
+  politica: PoliticaEmpresa;
+  onFechar: () => void;
+}) {
+  const qc = useQueryClient();
+  const { conta, trocarConta } = useAuth();
+  const [papel, setPapel] = useState(m.papel);
+  const [alcada, setAlcada] = useState(m.alcada?.toFixed(2).replace(".", ",") ?? "");
+  const [diaria, setDiaria] = useState(m.alcada_diaria?.toFixed(2).replace(".", ",") ?? "");
+  const [semLimite, setSemLimite] = useState(m.alcada === null);
+  const [erro, setErro] = useState<string | null>(null);
+  const [rosto, setRosto] = useState<VinculoMudancas | null>(null);
+  const [enviado, setEnviado] = useState<MembroEquipe | null>(null);
+  const mut = useMutation({
+    mutationFn: ({ mudancas, prova }: { mudancas: VinculoMudancas; prova?: ProvaBiometrica }) =>
+      alterarVinculo(m.id, mudancas, prova),
+    onSuccess: (resultado) => {
+      setEnviado(resultado);
+      if (m.eu && conta && !resultado.aguardando_aprovacao)
+        trocarConta({ ...conta, papel: resultado.papel, alcada: resultado.alcada });
+      void qc.invalidateQueries({ queryKey: ["equipe"] });
+      void qc.invalidateQueries({ queryKey: ["politica"] });
+      void qc.invalidateQueries({ queryKey: ["pendentes"] });
+    },
+    onError: (e: Error) => setErro(e.message),
+  });
+  const temAlcada = papel === "operador" || papel === "aprovador";
+  const permiteSemLimite = temAlcada && !(papel === "operador" && politica.operador_exige_alcada);
+  const ilimitado = permiteSemLimite && semLimite;
+  const papeis =
+    politica.porte === "MEI" && m.papel === "admin"
+      ? ["admin" as const]
+      : politica.papeis_convidaveis;
+  const id = `editar-${m.id}`;
+
+  function enviar(e: React.FormEvent) {
+    e.preventDefault();
+    setErro(null);
+    const decimal = (s: string) => s.trim().replace(",", ".");
+    const a = decimal(alcada);
+    const d = decimal(diaria);
+    if (temAlcada && !ilimitado && !/^\d{1,12}(\.\d{1,2})?$/.test(a))
+      return setErro("Defina uma alçada por operação válida.");
+    if (temAlcada && !ilimitado && d && !/^\d{1,12}(\.\d{1,2})?$/.test(d))
+      return setErro("Defina uma alçada diária válida.");
+    // Vazio no PATCH mantém a diária atual; não há campo para apagá-la.
+    const novaAlcada = papel === "admin" || ilimitado ? null : papel === "consulta" ? 0 : Number(a);
+    const novaDiaria = !temAlcada || ilimitado ? null : d ? Number(d) : (m.alcada_diaria ?? null);
+    if (novaAlcada !== null && novaDiaria !== null && novaDiaria < novaAlcada)
+      return setErro("A alçada diária não pode ser menor que a alçada por operação.");
+    const mudancas: VinculoMudancas = {
+      papel,
+      ...(temAlcada
+        ? ilimitado
+          ? { sem_limite: true }
+          : { alcada: a, ...(d ? { alcada_diaria: d } : {}) }
+        : {}),
+    };
+    if (MODO_API && aumentaPoder(m, { ...m, papel, alcada: novaAlcada, alcada_diaria: novaDiaria }))
+      setRosto(mudancas);
+    else mut.mutate({ mudancas });
+  }
+
+  if (enviado)
+    return (
+      <div className="mt-4 space-y-3 rounded-[16px] bg-tint p-4">
+        <p className="text-sm text-ink">
+          {enviado.aguardando_aprovacao
+            ? "Enviado para aprovação de outro administrador"
+            : "Acesso alterado."}
+        </p>
+        <button className="btn btn-ghost w-full" onClick={onFechar}>
+          Fechar
+        </button>
+      </div>
+    );
+  return (
+    <form className="mt-4 space-y-4 rounded-[16px] bg-tint p-4" onSubmit={enviar}>
+      <h2 className="text-lg text-ink">Editar acesso · {m.nome}</h2>
+      <p className="text-xs text-mut3">{PORTES[politica.porte].label}</p>
+      <Field label="Papel" id={`${id}-papel`}>
+        <select
+          id={`${id}-papel`}
+          className="field"
+          value={papel}
+          disabled={mut.isPending}
+          onChange={(e) => setPapel(e.target.value as PapelVinculo)}
+        >
+          {papeis.map((p) => (
+            <option key={p} value={p}>
+              {PAPEIS[p]}
+            </option>
+          ))}
+        </select>
+      </Field>
+      {temAlcada && (
+        <>
+          {permiteSemLimite && (
+            <label className="flex items-center gap-2 text-sm text-ink">
+              <input
+                type="checkbox"
+                checked={semLimite}
+                disabled={mut.isPending}
+                onChange={(e) => setSemLimite(e.target.checked)}
+              />
+              Sem limite
+            </label>
+          )}
+          {!ilimitado && (
+            <>
+              <Field label="Alçada por operação (R$)" id={`${id}-alcada`}>
+                <input
+                  id={`${id}-alcada`}
+                  className="field tabular"
+                  inputMode="decimal"
+                  value={alcada}
+                  disabled={mut.isPending}
+                  onChange={(e) => setAlcada(e.target.value)}
+                />
+              </Field>
+              <Field
+                label="Alçada diária (R$)"
+                id={`${id}-diaria`}
+                hint="Vazio mantém a diária atual; se não definida, vale a alçada por operação."
+              >
+                <input
+                  id={`${id}-diaria`}
+                  className="field tabular"
+                  inputMode="decimal"
+                  value={diaria}
+                  disabled={mut.isPending}
+                  onChange={(e) => setDiaria(e.target.value)}
+                />
+              </Field>
+            </>
+          )}
+        </>
+      )}
+      {erro && <ErrorBox>{erro}</ErrorBox>}
+      <div className="grid grid-cols-2 gap-3">
+        <button type="button" className="btn btn-ghost" disabled={mut.isPending} onClick={onFechar}>
+          Cancelar
+        </button>
+        <button className="btn btn-ink" disabled={mut.isPending}>
+          {mut.isPending ? "Salvando…" : "Salvar"}
+        </button>
+      </div>
+      {rosto && (
+        <LivenessCheck
+          onClose={() => setRosto(null)}
+          onSuccess={(prova) => {
+            const mudancas = rosto;
+            setRosto(null);
+            mut.mutate({ mudancas, prova });
+          }}
+        />
+      )}
+    </form>
   );
 }
 
