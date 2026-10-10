@@ -10,6 +10,7 @@ import { centavosFolha, decimalFolha, totalFolha } from "@/lib/folha";
 import type { FolhaItem, ProvaBiometrica, ResultadoFolha } from "@/lib/types";
 import { Empty, ErrorBox, Field, PageTitle } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
+import { criarIntencaoPagamento } from "@/lib/intencao-pagamento";
 
 export const Route = createFileRoute("/_app/folha")({
   head: () => ({ meta: [{ title: "Folha de pagamento — Astro" }] }),
@@ -45,6 +46,8 @@ function FolhaConta() {
   const [rosto, setRosto] = useState(false);
   const [pedido, setPedido] = useState<FolhaItem[]>([]);
   const [resultado, setResultado] = useState<ResultadoFolha | null>(null);
+  const [intencao] = useState(criarIntencaoPagamento);
+  const [chave, setChave] = useState("");
   const cadastrar = useMutation({
     mutationFn: cadastrarFuncionario,
     onSuccess: () => {
@@ -69,11 +72,21 @@ function FolhaConta() {
     },
   });
   const pagar = useMutation({
-    mutationFn: ({ itens, prova }: { itens: FolhaItem[]; prova?: ProvaBiometrica }) =>
-      pagarFolha(itens, descricao.trim(), prova),
+    mutationFn: ({
+      itens,
+      prova,
+      chave,
+    }: {
+      itens: FolhaItem[];
+      prova?: ProvaBiometrica;
+      chave: string;
+    }) => pagarFolha(itens, descricao.trim(), prova, chave),
     onSuccess: (r) => {
       setResultado(r);
-      setSelecionados({});
+      if ("pendente" in r || r.resultados.every((item) => item.situacao === "pago")) {
+        intencao.concluir();
+        setSelecionados({});
+      }
       void qc.invalidateQueries();
     },
   });
@@ -127,8 +140,10 @@ function FolhaConta() {
       valor: decimalFolha(centavosFolha(valor)),
     }));
     setPedido(itens);
+    const chave = intencao.preparar(JSON.stringify([conta?.carteira_id, itens]));
+    setChave(chave);
     if (centavosFolha(total) > 50000n && !acimaAlcada && !conjunta) setRosto(true);
-    else pagar.mutate({ itens });
+    else pagar.mutate({ itens, chave });
   }
 
   return (
@@ -403,7 +418,7 @@ function FolhaConta() {
           onClose={() => setRosto(false)}
           onSuccess={(prova) => {
             setRosto(false);
-            pagar.mutate({ itens: pedido, prova });
+            pagar.mutate({ itens: pedido, prova, chave });
           }}
         />
       )}
