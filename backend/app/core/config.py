@@ -185,6 +185,9 @@ class Settings(BaseSettings):
     limite_duas_aprovacoes_reais: float = Field(default=250000.0, alias="LIMITE_DUAS_APROVACOES_REAIS")
     # Operação pendente que ninguém decide expira (não fica aprovável meses depois).
     pendente_validade_horas: int = Field(default=72, ge=1, le=720, alias="PENDENTE_VALIDADE_HORAS")
+    # Operação aprovada que ficou "executando" além disso (queda no meio) é conciliada
+    # pelo job /admin/jobs/conciliar-pendentes, conferindo no banco se o dinheiro saiu.
+    pendente_executando_min: int = Field(default=10, ge=1, le=1440, alias="PENDENTE_EXECUTANDO_MIN")
     # MEI pode ter 1 empregado (LC 123/2006, art. 18-C). O PLP 186/2026 propõe 2 --
     # quando virar lei, basta trocar aqui.
     mei_max_funcionarios: int = Field(default=1, alias="MEI_MAX_FUNCIONARIOS")

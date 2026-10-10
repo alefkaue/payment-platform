@@ -212,6 +212,7 @@ sem mudar a estrutura nem a ideia do app.
 | `POST /admin/jobs/recorrencias` | diário |
 | `POST /admin/jobs/liberar-bloqueios` | a cada hora |
 | `POST /admin/jobs/webhooks` | a cada minuto |
+| `POST /admin/jobs/conciliar-pendentes` | a cada 5 minutos |
 
 ---
 

@@ -246,6 +246,42 @@ def expirar_vencidas(repo: Repositorio, empresa_id: int) -> int:
     return repo.expirar_pendentes(empresa_id, tempo.agora() - timedelta(hours=horas))
 
 
+_INTERROMPIDA = "A execução foi interrompida antes de mover o dinheiro. Nada foi debitado: lance de novo."
+
+
+def conciliar_executando(repo: Repositorio) -> dict:
+    """Job: operação aprovada que ficou "executando" (o processo caiu entre a última
+    aprovação e a gravação do resultado). NUNCA reexecuta: confere no banco, pela chave
+    de idempotência "pendente-{id}", se o movimento aconteceu.
+    - achou transação: "aprovada" (o dinheiro saiu), com os ids achados;
+    - não achou: "falhou" (nada saiu; quem lançou pode lançar de novo);
+    - mudança de acesso não tem transação para conferir: "falhou" pedindo conferência."""
+    limite = tempo.agora() - timedelta(minutes=get_settings().pendente_executando_min)
+    contagem = {"conciliadas": 0, "aprovadas": 0, "falharam": 0}
+    for p in repo.pendentes_executando(limite):
+        if p["tipo"] == "acesso":
+            status, resultado = "falhou", {"erro": "A execução foi interrompida. Confira o acesso em Equipe e refaça se "
+                                                   "precisar.", "conciliada": True}
+        else:
+            ids = repo.transacoes_da_pendente(p["id"], p["empresa_id"])
+            if not ids:
+                status, resultado = "falhou", {"erro": _INTERROMPIDA, "conciliada": True}
+            elif p["tipo"] == "folha":
+                total = len(p["payload"].get("itens") or [])
+                status, resultado = "aprovada", {"transacoes": ids, "executados": len(ids), "itens": total,
+                                                 "conciliada": True}
+            else:
+                status, resultado = "aprovada", {"transacao_id": ids[0], "conciliada": True}
+        if not repo.reconciliar_pendente(p["id"], status, resultado):
+            continue  # alguém concluiu nesse meio-tempo
+        contagem["conciliadas"] += 1
+        contagem["aprovadas" if status == "aprovada" else "falharam"] += 1
+        repo.registrar_log(ator="sistema", acao="operacao_conciliada", empresa_id=p["empresa_id"],
+                           detalhe={"operacao_id": p["id"], "status": status, **resultado})
+        logger.warning("Operação %s estava executando e foi conciliada como %s.", p["id"], status)
+    return contagem
+
+
 def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, operacao_id: int,
                      aprovar: bool, biometria, ip: str | None) -> dict:
     """Maker-checker com N aprovadores. Regras:

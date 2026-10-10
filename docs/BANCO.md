@@ -160,8 +160,12 @@ implantado aqui. O template facial já usa Fernet e senhas usam Argon2id.
 A trilha financeira é atômica, mas emissão de webhooks ainda ocorre depois do
 commit. Para entrega garantida mesmo após crash, migrar para outbox transacional
 com worker e deduplicação do receptor. Operações PJ ficam `executando` até o
-resultado persistir; crash nesse intervalo exige conciliar/reprocessar pelo id
-idempotente, nunca marcar aprovada sem confirmar o movimento. Folhas/lotes
+resultado persistir. Crash nesse intervalo é fechado pelo job
+`POST /admin/jobs/conciliar-pendentes` (`pagamento_service.conciliar_executando`):
+passados `PENDENTE_EXECUTANDO_MIN` (10) minutos, procura as transações pela chave
+idempotente `pendente-{id}` na carteira da empresa; achou, vira `aprovada` com os
+ids; não achou, vira `falhou` (nada saiu). Nunca reexecuta. Mudança de acesso não
+tem transação: vira `falhou` pedindo conferência em Equipe. Folhas/lotes
 continuam retornando resultados por item, sem promessa de all-or-nothing.
 
 O backend usa uma identidade compartilhada para operar várias contas; autorização

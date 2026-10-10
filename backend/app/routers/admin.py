@@ -113,6 +113,13 @@ def job_recorrencias(_: dict = Depends(admin_atual), repo: Repositorio = Depends
     return cobranca_service.processar_recorrencias(repo)
 
 
+@router.post("/jobs/conciliar-pendentes")
+def job_conciliar_pendentes(_: dict = Depends(admin_atual), repo: Repositorio = Depends(get_repo)):
+    """Operações aprovadas que ficaram "executando" (queda no meio): confere no banco se o
+    dinheiro saiu e fecha como aprovada ou falhou. Nunca reexecuta."""
+    return pagamento_service.conciliar_executando(repo)
+
+
 @router.post("/jobs/webhooks")
 def job_webhooks(_: dict = Depends(admin_atual), repo: Repositorio = Depends(get_repo)):
     return webhook_service.processar_pendentes(repo)

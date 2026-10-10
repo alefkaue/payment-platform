@@ -62,6 +62,7 @@ REGRAS = {
     ("POST", "/empresas/atual/webhooks"): PJ_ADMIN + "; URL https pública (anti-SSRF)",
     ("GET", "/pix/consultar/{chave}"): "Nome mascarado; 60 consultas/hora por pessoa",
     ("POST", "/admin/depositar"): "Admin; IP na lista ADMIN_IPS_PERMITIDOS (sem lista: desligado em produção)",
+    ("POST", "/admin/jobs/conciliar-pendentes"): "Admin; fecha operação presa em executando conferindo a chave de idempotência; nunca reexecuta",
 }
 
 

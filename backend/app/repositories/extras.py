@@ -17,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core import tempo
 from app.db.models import (
+    Carteira,
     CasoKyc,
     DocumentoEmpresa,
     DocumentoIdentidade,
@@ -28,6 +29,7 @@ from app.db.models import (
     OperacaoPendente,
     PapelVinculo,
     RefreshToken,
+    Transacao,
     Usuario,
     Vinculo,
 )
@@ -392,6 +394,38 @@ class RepositorioExtras:
                 return "completa"
             s.commit()
             return "parcial"
+
+    def pendentes_executando(self, iniciadas_antes: datetime) -> list[dict]:
+        """Operações que ficaram em "executando" (aprovadas, mas o resultado nunca foi
+        gravado: queda do processo no meio da execução)."""
+        with self._sf() as s:
+            ps = s.scalars(select(OperacaoPendente).where(
+                OperacaoPendente.status == "executando", OperacaoPendente.decidido_em < iniciadas_antes,
+            ).order_by(OperacaoPendente.id)).all()
+            return [self._pendente_dict(p) for p in ps]
+
+    def transacoes_da_pendente(self, pendente_id: int, empresa_id: int) -> list[int]:
+        """Ids das transações que a execução da pendente gravou, achadas pela chave de
+        idempotência "{carteira}:pendente-{id}" (folha: "...-{id}-{item}") em carteira da empresa."""
+        with self._sf() as s:
+            carteiras = select(Carteira.id).where(Carteira.empresa_id == empresa_id)
+            chave = f"pendente-{pendente_id}"
+            ts = s.scalars(select(Transacao).where(
+                Transacao.origem_carteira_id.in_(carteiras),
+                Transacao.idempotency_key.like(f"%:{chave}") | Transacao.idempotency_key.like(f"%:{chave}-%"),
+            ).order_by(Transacao.id)).all()
+            # O LIKE acha "pendente-1" dentro de "pendente-12": confere a chave exata.
+            return [t.id for t in ts if t.idempotency_key.split(":", 1)[1] == chave
+                    or t.idempotency_key.split(":", 1)[1].startswith(f"{chave}-")]
+
+    def reconciliar_pendente(self, pendente_id: int, status: str, resultado: dict) -> bool:
+        """executando -> status final, só se ainda estiver executando (UPDATE condicional)."""
+        with self._sf() as s:
+            n = s.query(OperacaoPendente).filter(
+                OperacaoPendente.id == pendente_id, OperacaoPendente.status == "executando",
+            ).update({"status": status, "resultado": resultado}, synchronize_session=False)
+            s.commit()
+            return n == 1
 
     # =========================================================================
     # Funcionários (folha)

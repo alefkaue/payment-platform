@@ -1,6 +1,6 @@
 # Astro — inventário de endpoints
 
-> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (106 rotas).
+> Gerado por `backend/scripts/inventario_endpoints.py` a partir das rotas reais (107 rotas).
 > Não edite à mão: rode o script de novo quando a API mudar.
 
 - **pública**: sem login (as de autenticação têm limite por IP e/ou DPoP).
@@ -117,6 +117,7 @@
 | `POST` | `/admin/jobs/liberar-bloqueios` | admin + IP |  |  |
 | `POST` | `/admin/jobs/rendimento` | admin + IP |  |  |
 | `POST` | `/admin/jobs/recorrencias` | admin + IP |  |  |
+| `POST` | `/admin/jobs/conciliar-pendentes` | admin + IP |  | Admin; fecha operação presa em executando conferindo a chave de idempotência; nunca reexecuta |
 | `POST` | `/admin/jobs/webhooks` | admin + IP |  |  |
 | `GET` | `/` | pública |  |  |
 | `GET` | `/saude` | pública |  |  |
