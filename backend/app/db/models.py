@@ -488,7 +488,8 @@ class DesafioBiometria(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     publico_id: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
-    acao: Mapped[str] = mapped_column(String(20), nullable=False)  # virar_esquerda | virar_direita
+    # "modo:passo,passo" -- passos sorteados (ex.: "login:sorrir,piscar2"). Ver liveness_logic.
+    acao: Mapped[str] = mapped_column(String(80), nullable=False)
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     expira_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     usado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

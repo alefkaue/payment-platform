@@ -77,8 +77,8 @@ function Login() {
               <>
                 <h1 className="mt-6 text-2xl text-ink">Agora, o seu rosto</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Senha conferida. Para entrar, confirme que é você: olhe para a câmera e pisque
-                  devagar 3 vezes.
+                  Senha conferida. Para entrar, confirme que é você: olhe para a câmera e faça só o
+                  que a tela pedir (os passos mudam a cada vez).
                 </p>
                 {erro && (
                   <div className="mt-4">

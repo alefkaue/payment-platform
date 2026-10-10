@@ -62,13 +62,16 @@ def criar_desafio(repo, *, usuario_id: int | None, modo: str = "login") -> dict:
     s = get_settings()
     publico_id = secrets.token_urlsafe(24)
     expira = tempo.agora() + timedelta(seconds=s.desafio_validade_seg)
-    # O MODO vai na coluna `acao` do desafio: o conjunto de passos é fixo por modo.
-    repo.criar_desafio(publico_id=publico_id, acao=modo, usuario_id=usuario_id, expira_em=expira)
-    return {"desafio_id": publico_id, "modo": modo, "passos": liveness_logic.passos_do_modo(modo),
+    # Passos SORTEADOS a cada desafio (anti-replay): gravados na coluna `acao`
+    # ("login:sorrir,piscar2") e conferidos na ordem quando a prova chega.
+    passos = liveness_logic.sortear_passos(modo)
+    repo.criar_desafio(publico_id=publico_id, acao=liveness_logic.codificar(modo, passos),
+                       usuario_id=usuario_id, expira_em=expira)
+    return {"desafio_id": publico_id, "modo": modo, "passos": liveness_logic.passos_para_app(passos),
             "expira_em": expira, "quadros_min": liveness_logic.MIN_QUADROS, "quadros_max": 40}
 
 
-def _consumir_desafio(repo, desafio_id: str, usuario_id: int | None) -> str:
+def _consumir_desafio(repo, desafio_id: str, usuario_id: int | None) -> tuple[str, tuple[str, ...]]:
     d = repo.consumir_desafio(desafio_id)
     if d is None:
         raise HTTPException(status_code=401, detail="Desafio de biometria inválido ou já usado. Peça um novo.")
@@ -78,7 +81,7 @@ def _consumir_desafio(repo, desafio_id: str, usuario_id: int | None) -> str:
     # pedido pela MESMA pessoa -- um desafio anônimo não serve para MFA.
     if d["usuario_id"] != usuario_id:
         raise HTTPException(status_code=401, detail="Este desafio de biometria pertence a outra sessão.")
-    return d["acao"]
+    return liveness_logic.decodificar(d["acao"])
 
 
 # =============================================================================
@@ -140,13 +143,13 @@ def _amostras(n: int, frontais: list[int]) -> list[int]:
     return sorted(set(frontais + [0, n // 2, n - 1]))
 
 
-def _analisar_sequencia(quadros: list[str], modo: str) -> dict:
+def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...]) -> dict:
     import cv2
 
     imagens = [decodificar_imagem(q) for q in quadros]
     sinais = [landmarks_service.extrair(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)) for img in imagens]
 
-    ok, motivo = liveness_logic.verificar_sequencia(sinais, modo)
+    ok, motivo = liveness_logic.verificar_sequencia(sinais, passos)
     if not ok:
         raise HTTPException(status_code=401, detail=motivo)
 
@@ -191,7 +194,7 @@ def stub_ligado() -> bool:
 def cadastrar(repo, prova, *, usuario_id: int | None = None) -> dict:
     """Cadastro: confere o desafio (que precisa ser de CADASTRO), faz a prova de
     vida e devolve {"vetor", "modelo"}."""
-    modo = _consumir_desafio(repo, prova.desafio_id, usuario_id)
+    modo, passos = _consumir_desafio(repo, prova.desafio_id, usuario_id)
     _validar_quadros(prova.quadros)
     if stub_ligado():
         logger.warning("BIOMETRIA_STUB ligado -- cadastro NÃO confere o rosto (modo de teste).")
@@ -200,14 +203,14 @@ def cadastrar(repo, prova, *, usuario_id: int | None = None) -> dict:
         # Impede baixar o nível: usar um desafio curto (login) para cadastrar rosto.
         raise HTTPException(status_code=400, detail="Peça um desafio de cadastro (sequência completa).")
 
-    r = _executar(_analisar_sequencia, prova.quadros, modo)
+    r = _executar(_analisar_sequencia, prova.quadros, passos)
     return {"vetor": r["templates"][0], "modelo": r["modelo"], "prob_real_min": r["prob_real_min"]}
 
 
 def verificar(repo, prova, *, usuario_id: int, template: dict) -> dict:
     """MFA: confere desafio + prova de vida e compara com o template cadastrado.
     401 genérico se não bater (o número fica só no log)."""
-    modo = _consumir_desafio(repo, prova.desafio_id, usuario_id)
+    modo, passos = _consumir_desafio(repo, prova.desafio_id, usuario_id)
     _validar_quadros(prova.quadros)
     if stub_ligado():
         logger.warning("BIOMETRIA_STUB ligado -- verificação aprovada SEM conferir o rosto (modo de teste).")
@@ -217,7 +220,7 @@ def verificar(repo, prova, *, usuario_id: int, template: dict) -> dict:
     if template.get("modelo") != m.nome:
         raise HTTPException(status_code=409, detail="Seu cadastro facial é de uma versão anterior. Refaça a biometria no app.")
 
-    r = _executar(_analisar_sequencia, prova.quadros, modo)
+    r = _executar(_analisar_sequencia, prova.quadros, passos)
     pior = min(m.similaridade(t, template["vetor"]) for t in r["templates"])
     if pior < m.limiar:
         logger.info("MFA facial reprovado (similaridade=%.4f limiar=%.4f)", pior, m.limiar)

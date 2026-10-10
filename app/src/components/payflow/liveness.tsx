@@ -10,12 +10,16 @@ import type {
 } from "@/lib/types";
 
 /**
- * Verificação facial com prova de vida, guiada por um DESAFIO DO SERVIDOR, agora
- * em VÁRIOS PASSOS.
+ * Verificação facial com prova de vida, guiada por um DESAFIO DO SERVIDOR em
+ * VÁRIOS PASSOS. O servidor SORTEIA as ações e a ordem a cada vez (anti-replay:
+ * uma gravação antiga não serve para o desafio novo):
  *
- * - modo "cadastro": piscar 3x -> sorrir -> virar p/ esquerda -> virar p/ direita.
- * - modo "login": só piscar 3x (mais rápido). É o 2º fator do login: o desafio
- *   vem pronto da etapa da senha (POST /auth/login) e é passado em `desafio`.
+ * - modo "cadastro": piscar (2 ou 3x), sorrir e virar para os 2 lados, em ordem sorteada.
+ * - modo "login": 2 dessas ações. É o 2º fator do login: o desafio vem pronto
+ *   da etapa da senha (POST /auth/login) e é passado em `desafio`.
+ *
+ * Faça só o que for pedido: o servidor reprova ação fora do passo (ex.: virar
+ * para um lado que não foi pedido).
  *
  * Para cada passo guiamos a pessoa, detectamos o movimento com o FaceLandmarker
  * (MediaPipe) + blendshapes e guardamos os quadros DAQUELE passo (sem
@@ -39,12 +43,13 @@ const YAW_FRONTAL = 0.05;
 // Acima do limiar do servidor (0.22) de propósito: garante que os quadros que
 // capturamos passem com folga.
 const YAW_GIRO = 0.24;
-const PISCADAS_EXIGIDAS = 3;
 const GIRO_QUADROS = 2;
+const piscadasDo = (id: PassoBiometria) => (id === "piscar2" ? 2 : 3);
 
 // Captura ~1 quadro a cada CADENCIA ms, com um teto por passo (soma <= 40).
 const CADENCIA_MS = 100;
 const CAP: Record<PassoBiometria, number> = {
+  piscar2: 18,
   piscar3: 24,
   sorrir: 5,
   virar_esquerda: 5,
@@ -54,8 +59,9 @@ const CAP: Record<PassoBiometria, number> = {
 const POS_MS = 250;
 
 // DEV: desenha onde o rosto é detectado (malha + olhos abrindo/fechando + boca +
-// métricas ao vivo). Ajuda de desenvolvimento -- troque para `false` para esconder.
-const DEBUG_OVERLAY = true;
+// métricas ao vivo). Só no `npm run dev` -- nunca no build de produção (não dá
+// pistas a quem tenta burlar a prova de vida).
+const DEBUG_OVERLAY = import.meta.env.DEV;
 const OLHO_ESQ = [362, 385, 387, 263, 373, 380];
 const OLHO_DIR = [33, 160, 158, 133, 153, 144];
 const BOCA = [61, 13, 291, 14];
@@ -126,7 +132,7 @@ function desenharOverlay(
 
     const linhas = [
       `passo: ${hud.passo}`,
-      `piscadas: ${hud.piscadas}/${PISCADAS_EXIGIDAS}`,
+      `piscadas: ${hud.piscadas}`,
       `EAR E/D: ${hud.earE.toFixed(2)} / ${hud.earD.toFixed(2)}`,
       `sorriso: ${hud.smile.toFixed(2)}  giro: ${hud.yaw.toFixed(2)}`,
     ];
@@ -297,14 +303,15 @@ export function LivenessCheck({
         }
 
         let feito = false;
-        if (passo.id === "piscar3") {
+        if (passo.id === "piscar2" || passo.id === "piscar3") {
+          const exigidas = piscadasDo(passo.id);
           if (piscouEstado === "aberto" && blink > BLINK_FECHADO) piscouEstado = "fechado";
           else if (piscouEstado === "fechado" && blink < BLINK_ABERTO) {
             piscouEstado = "aberto";
             piscadas += 1;
           }
-          setProgresso(Math.min(1, piscadas / PISCADAS_EXIGIDAS));
-          feito = piscadas >= PISCADAS_EXIGIDAS;
+          setProgresso(Math.min(1, piscadas / exigidas));
+          feito = piscadas >= exigidas;
         } else if (passo.id === "sorrir") {
           if (smile < SORRISO_NEUTRO) viuNeutro = true;
           setProgresso(Math.min(1, smile / SORRISO_ALVO));
@@ -328,7 +335,7 @@ export function LivenessCheck({
           });
         }
 
-        const minQuadros = passo.id === "piscar3" ? 8 : 3;
+        const minQuadros = passo.id.startsWith("piscar") ? 6 : 3;
         if (feito && feitoEm === 0 && bufPasso.length >= minQuadros) feitoEm = agora;
         if (feitoEm > 0 && agora - feitoEm >= POS_MS) {
           quadrosFinais.push(...bufPasso);

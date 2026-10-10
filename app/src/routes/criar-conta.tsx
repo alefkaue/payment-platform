@@ -199,7 +199,8 @@ function CriarConta() {
             ) : (
               <>
                 <p className="mt-3 text-sm text-muted-foreground">
-                  Agora entre pela primeira vez: confirme seu rosto (pisque devagar 3 vezes).
+                  Agora entre pela primeira vez: confirme seu rosto (siga os passos que a tela
+                  pedir).
                   {empresa && " Em seguida abrimos a conta da empresa."}
                 </p>
                 {erro && (
@@ -539,7 +540,7 @@ function FacialStep({ ok, onStart }: { ok: boolean; onStart: () => void }) {
             {ok ? "Verificação facial concluída" : "Verificação facial (prova de vida)"}
           </p>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Pela câmera, ao vivo: pisque 3 vezes, sorria e vire o rosto para os dois lados.
+            Pela câmera, ao vivo: piscar, sorrir e virar o rosto, na ordem que a tela pedir.
             Guardamos só um código do rosto, criptografado.
           </p>
           {!ok && (

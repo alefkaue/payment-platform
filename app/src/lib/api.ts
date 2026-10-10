@@ -481,18 +481,33 @@ export async function sair(refresh = true): Promise<void> {
 // Biometria (prova de vida com desafio do servidor)
 // =============================================================================
 
-const PASSOS_DEMO: Record<import("./types").ModoBiometria, import("./types").PassoDesafio[]> = {
-  cadastro: [
-    { id: "piscar3", instrucao: "Pisque os olhos devagar, 3 vezes" },
-    { id: "sorrir", instrucao: "Agora dê um sorriso" },
-    { id: "virar_esquerda", instrucao: "Vire o rosto para a sua esquerda" },
-    { id: "virar_direita", instrucao: "Vire o rosto para a sua direita" },
-  ],
-  login: [{ id: "piscar3", instrucao: "Pisque os olhos devagar, 3 vezes" }],
+const INSTRUCAO_DEMO: Record<import("./types").PassoBiometria, string> = {
+  piscar2: "Pisque os olhos devagar, 2 vezes",
+  piscar3: "Pisque os olhos devagar, 3 vezes",
+  sorrir: "Dê um sorriso",
+  virar_esquerda: "Vire o rosto para a sua esquerda",
+  virar_direita: "Vire o rosto para a sua direita",
 };
 
+/** Demonstração: sorteia como o servidor (login = 2 ações; cadastro = as 4). */
+function passosDemo(modo: import("./types").ModoBiometria): import("./types").PassoDesafio[] {
+  const acoes: import("./types").PassoBiometria[] = [
+    Math.random() < 0.5 ? "piscar2" : "piscar3",
+    "sorrir",
+    "virar_esquerda",
+    "virar_direita",
+  ];
+  for (let i = acoes.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [acoes[i], acoes[j]] = [acoes[j]!, acoes[i]!];
+  }
+  return acoes
+    .slice(0, modo === "login" ? 2 : 4)
+    .map((id) => ({ id, instrucao: INSTRUCAO_DEMO[id] }));
+}
+
 function desafioDemo(modo: import("./types").ModoBiometria): Desafio {
-  return { desafio_id: `demo-${Date.now()}`, modo, passos: PASSOS_DEMO[modo] };
+  return { desafio_id: `demo-${Date.now()}`, modo, passos: passosDemo(modo) };
 }
 
 export async function pedirDesafio(

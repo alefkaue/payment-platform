@@ -103,7 +103,7 @@ describe("modo demonstração", () => {
 
   it("e-mail desconhecido continua entrando na conta da demonstração (Marina)", async () => {
     const etapa = await login({ email: "qualquer@exemplo.com", senha: "x" });
-    expect(etapa.desafio.passos.map((p) => p.id)).toEqual(["piscar3"]); // 2º fator: o rosto
+    expect(etapa.desafio.passos).toHaveLength(2); // 2º fator: o rosto, com passos sorteados
     const r = await concluirLogin(etapa, bio);
     expect(r.conta.nome).toBe("Marina Alves");
     expect(r.contas.map((c) => c.tipo)).toEqual(["PF", "PJ"]);

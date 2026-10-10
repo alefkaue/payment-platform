@@ -44,7 +44,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 
 | # | Item | Resolve | Estado |
 |---|---|---|---|
-| 1 | **Desafio aleatório** de prova de vida (ordem e ações sorteadas pelo servidor; quadros fora da ordem pedida não passam) | A1 | ⬜ |
+| 1 | **Desafio aleatório** de prova de vida (ordem e ações sorteadas pelo servidor; quadros fora da ordem pedida não passam) | A1 | ✅ |
 | 2 | **Prova de posse da chave (DPoP-like)**: o app gera um par de chaves **não exportável** (WebCrypto; no APK, Keystore/Keychain), registra a pública no login e **assina cada requisição** (método, caminho, horário, nonce). Token roubado sem a chave não serve. Tokens saem do `sessionStorage` (memória + refresh amarrado à chave). | A2 | ⬜ |
 | 3 | **Sessão**: máximo absoluto (ex.: 12 h) e inatividade (ex.: 15 min) no servidor; aviso de login em aparelho novo | A3 | ⬜ |
 | 4 | **Força bruta e enumeração**: rate limit em cadastro/refresh/convites; atraso progressivo; tentativas por `mfa_token`; resposta neutra no cadastro | A4 | ⬜ |
@@ -83,3 +83,12 @@ justamente ver se alguém burla.
 ## 5. Diário (o que foi feito)
 
 - 09/10 — Pesquisa, análise e esta lista. Nada implementado ainda.
+- 09/10 — **Item 1 feito.** `liveness_logic.py` reescrito: o servidor sorteia os passos (`secrets.SystemRandom`;
+  login = 2 ações entre piscar 2x/3x, sorrir, virar esq./dir.; cadastro = as 4, embaralhadas) e grava
+  `"modo:passos"` na coluna `acao` (migração `a1b2c3d4e5f6`, 20 → 80 caracteres). A conferência exige os
+  passos **na ordem** (janelas consecutivas da série) e **reprova ação não pedida** (virar para lado não
+  pedido, sorrir sem pedido, piscar além de 1 extra) — gravação antiga ou vídeo "que faz tudo" não passam.
+  Desafios antigos (só o modo) continuam aceitos até expirarem. App: `liveness.tsx` entende `piscar2` e
+  qualquer ordem; o **overlay de debug só aparece no `npm run dev`**. Testes: `test_liveness.py` com replay,
+  vídeo universal, fora de ordem e ação extra (155 testes no backend).
+  **Calibrar num aparelho real**: a tolerância de piscadas naturais (`PISCADAS_EXTRAS`, `PISCADAS_NATURAIS_MAX`).

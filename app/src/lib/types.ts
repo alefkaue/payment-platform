@@ -18,8 +18,8 @@ export interface ProvaBiometrica {
 }
 
 /** Passos de prova de vida que o servidor pode pedir. */
-export type PassoBiometria = "piscar3" | "sorrir" | "virar_esquerda" | "virar_direita";
-/** cadastro = sequência completa; login = só piscar 3x (mais rápido). */
+export type PassoBiometria = "piscar2" | "piscar3" | "sorrir" | "virar_esquerda" | "virar_direita";
+/** cadastro = as 4 ações; login = 2 ações. Passos e ordem SORTEADOS pelo servidor. */
 export type ModoBiometria = "cadastro" | "login";
 
 export interface PassoDesafio {
