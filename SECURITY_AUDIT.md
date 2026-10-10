@@ -32,7 +32,7 @@ dos itens 1–10).
 | A-06 | Média | **Bloqueio de conta por terceiro**: 10 senhas erradas de qualquer IP travavam a conta da vítima por 15 min | Corrigido |
 | A-07 | Média | Teto de corpo (48 MB) só olhava `Content-Length`: requisição **chunked** passava por fora | Corrigido |
 | A-15 | Média (residual) | Admin da plataforma entra **só com senha** (sem 2º fator) | Mitigado (lista de IPs obrigatória em produção); pendente |
-| A-16 | Média (funcional) | **Não existia** troca nem recuperação de senha | Corrigido (backend; telas no app pendentes) |
+| A-16 | Média (funcional) | **Não existia** troca nem recuperação de senha | Corrigido (backend e app) |
 | A-08 | Baixa | `Idempotency-Key` repetida com **outro valor/destino** devolvia a transação antiga como se fosse a nova | Corrigido |
 | A-10 | Baixa | `GET /cobrancas/{txid}` mostrava a qualquer logado o **CPF/CNPJ do pagador** e ids internos | Corrigido |
 | A-11 | Baixa | `limite` sem teto em `/seguranca/atividade` e `/empresas/atual/auditoria` (consulta enorme) | Corrigido |
@@ -92,7 +92,7 @@ dos itens 1–10).
 ### A-15 — Admin com fator único (Média, pendente)
 Em produção o admin **não entra** sem `ADMIN_IPS_PERMITIDOS` (confere no login e em cada rota `/admin`). Falta um 2º fator (TOTP ou rosto). Recomendação: TOTP com segredo no Key Vault antes de expor o painel.
 
-### A-16 — Troca e recuperação de senha (corrigido no backend)
+### A-16 — Troca e recuperação de senha (corrigido)
 Era lacuna de produto: quem esquecia a senha não voltava. Sem link mágico por e-mail/SMS (seria a única prova):
 - **Troca** (`POST /auth/senha`, logado): senha atual + rosto com prova de vida + política de senha; as outras sessões caem. Errar a senha atual conta no mesmo limite do login.
 - **Recuperação** (`POST /auth/recuperacao` → `/auth/recuperacao/concluir`): e-mail/CPF + data de nascimento, depois **prova de vida completa** (as 4 ações do cadastro) no mesmo aparelho e chave DPoP. A etapa 1 responde igual exista a conta ou não (a pessoa vai cifrada no token); a etapa 2 recusa com a mesma mensagem. Token de uso único (10 min); senha nova derruba **todas** as sessões. Limite por IP (10/h) e por conta (5/h). Admin e conta sem data de nascimento não recuperam.
@@ -146,7 +146,7 @@ Rodar localmente: ver `SECURITY.md` §3.
 
 ## 5. Pendências e riscos residuais
 
-1. **A-15** 2º fator do admin; telas de troca/recuperação de senha no app (A-16, backend pronto).
+1. **A-15** 2º fator do admin.
 2. **Concorrência no Postgres** só provada quando o CI rodar (`backend.yml`).
 3. **Usuário do banco**: o `DATABASE_URL` do Bicep usa o administrador do Postgres. O certo é um papel só com DML nas tabelas para a API e o dono do schema só para as migrações (ver §6).
 4. DNS rebinding no webhook (A-04) — fechar com egress na infra.
@@ -176,7 +176,7 @@ Rodar localmente: ver `SECURITY.md` §3.
 1. Rodar o CI `backend.yml` e conferir os 3 testes de Postgres e a migração.
 2. Papel `astro_app` com menor privilégio + egress restrito (configuração, sem código).
 3. 2º fator do admin (A-15).
-4. ~~Troca e recuperação de senha com rosto (A-16)~~: backend feito; falta a tela no app.
+4. ~~Troca e recuperação de senha com rosto (A-16)~~ (feito).
 5. Testar no celular os itens do APK (Keystore, atestação, pinning, FLAG_SECURE).
 6. Exportar a trilha de auditoria para fora do banco da API.
 7. Atualizar `@capacitor/cli` quando houver versão sem o `uuid` vulnerável.

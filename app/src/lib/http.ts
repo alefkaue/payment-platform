@@ -119,7 +119,7 @@ export function motivoSaida(): string | null {
 }
 
 /** Rotas de entrada/saída: um 401 nelas não é "sessão caiu". */
-const ROTA_DE_ENTRADA = /^\/auth\/(login|refresh|logout)(\/|$)/;
+const ROTA_DE_ENTRADA = /^\/auth\/(login|refresh|logout|recuperacao)(\/|$)/;
 
 function detalheDe(dados: unknown): string | null {
   const d = (dados as { detail?: unknown } | null)?.detail;

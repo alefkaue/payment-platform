@@ -14,6 +14,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as BemVindoRouteImport } from './routes/bem-vindo'
 import { Route as CriarContaRouteImport } from './routes/criar-conta'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as RecuperarSenhaRouteImport } from './routes/recuperar-senha'
 import { Route as AppAjudaRouteImport } from './routes/_app.ajuda'
 import { Route as AppCartoesRouteImport } from './routes/_app.cartoes'
 import { Route as AppConfigRouteImport } from './routes/_app.config'
@@ -53,6 +54,11 @@ const CriarContaRoute = CriarContaRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecuperarSenhaRoute = RecuperarSenhaRouteImport.update({
+  id: '/recuperar-senha',
+  path: '/recuperar-senha',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppAjudaRoute = AppAjudaRouteImport.update({
@@ -141,6 +147,7 @@ export interface FileRoutesByFullPath {
   '/bem-vindo': typeof BemVindoRoute
   '/criar-conta': typeof CriarContaRoute
   '/login': typeof LoginRoute
+  '/recuperar-senha': typeof RecuperarSenhaRoute
   '/ajuda': typeof AppAjudaRoute
   '/cartoes': typeof AppCartoesRoute
   '/config': typeof AppConfigRoute
@@ -163,6 +170,7 @@ export interface FileRoutesByTo {
   '/bem-vindo': typeof BemVindoRoute
   '/criar-conta': typeof CriarContaRoute
   '/login': typeof LoginRoute
+  '/recuperar-senha': typeof RecuperarSenhaRoute
   '/ajuda': typeof AppAjudaRoute
   '/cartoes': typeof AppCartoesRoute
   '/config': typeof AppConfigRoute
@@ -187,6 +195,7 @@ export interface FileRoutesById {
   '/bem-vindo': typeof BemVindoRoute
   '/criar-conta': typeof CriarContaRoute
   '/login': typeof LoginRoute
+  '/recuperar-senha': typeof RecuperarSenhaRoute
   '/_app/ajuda': typeof AppAjudaRoute
   '/_app/cartoes': typeof AppCartoesRoute
   '/_app/config': typeof AppConfigRoute
@@ -211,6 +220,7 @@ export interface FileRouteTypes {
     | '/bem-vindo'
     | '/criar-conta'
     | '/login'
+    | '/recuperar-senha'
     | '/ajuda'
     | '/cartoes'
     | '/config'
@@ -233,6 +243,7 @@ export interface FileRouteTypes {
     | '/bem-vindo'
     | '/criar-conta'
     | '/login'
+    | '/recuperar-senha'
     | '/ajuda'
     | '/cartoes'
     | '/config'
@@ -256,6 +267,7 @@ export interface FileRouteTypes {
     | '/bem-vindo'
     | '/criar-conta'
     | '/login'
+    | '/recuperar-senha'
     | '/_app/ajuda'
     | '/_app/cartoes'
     | '/_app/config'
@@ -280,6 +292,7 @@ export interface RootRouteChildren {
   BemVindoRoute: typeof BemVindoRoute
   CriarContaRoute: typeof CriarContaRoute
   LoginRoute: typeof LoginRoute
+  RecuperarSenhaRoute: typeof RecuperarSenhaRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -317,6 +330,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recuperar-senha': {
+      id: '/recuperar-senha'
+      path: '/recuperar-senha'
+      fullPath: '/recuperar-senha'
+      preLoaderRoute: typeof RecuperarSenhaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_app/ajuda': {
@@ -480,6 +500,7 @@ const rootRouteChildren: RootRouteChildren = {
   BemVindoRoute: BemVindoRoute,
   CriarContaRoute: CriarContaRoute,
   LoginRoute: LoginRoute,
+  RecuperarSenhaRoute: RecuperarSenhaRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

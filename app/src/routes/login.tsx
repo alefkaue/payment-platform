@@ -156,6 +156,12 @@ function Login() {
                 <p className="mt-3 flex items-center justify-center gap-1.5 text-center text-xs text-mut3">
                   <ScanFace size={14} /> Depois da senha, confirmamos o seu rosto.
                 </p>
+                <Link
+                  to="/recuperar-senha"
+                  className="mt-4 block text-center text-sm font-semibold text-ink underline underline-offset-4"
+                >
+                  Esqueci minha senha
+                </Link>
               </>
             )}
 

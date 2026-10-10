@@ -27,12 +27,13 @@ import {
   minhaConta,
   minhasChaves,
   MODO_API,
+  trocarSenha,
 } from "@/lib/api";
 import { PAPEIS, PORTES, REGIMES_APURACAO } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, fmtData, parseValor } from "@/lib/format";
 import type { Limites } from "@/lib/types";
-import { ErrorBox, PageTitle } from "@/components/payflow/ui";
+import { ErrorBox, Field, PageTitle } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
 import { cn } from "@/lib/utils";
 
@@ -55,6 +56,7 @@ function Config() {
       <CartaoSection />
       <LimitesSection podeEditar={!ehPJ || sessao?.papel === "admin"} />
       <AparelhoSection />
+      <SenhaSection />
 
       {ehPJ && (
         <section className="surface p-5">
@@ -255,6 +257,125 @@ function AparelhoSection() {
             confiarAparelho(prova)
               .then(() => qc.invalidateQueries({ queryKey: ["aparelho"] }))
               .catch((e: Error) => setErro(e.message));
+          }}
+        />
+      )}
+    </section>
+  );
+}
+
+/* --- Senha ---------------------------------------------------------------- */
+
+function SenhaSection() {
+  const [aberto, setAberto] = useState(false);
+  const [atual, setAtual] = useState("");
+  const [nova, setNova] = useState("");
+  const [repetida, setRepetida] = useState("");
+  const [liveness, setLiveness] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  function pedirRosto(e: React.FormEvent) {
+    e.preventDefault();
+    if (!atual || !nova) return setErro("Preencha a senha atual e a nova.");
+    if (nova.length < 10) return setErro("A senha nova precisa ter ao menos 10 caracteres.");
+    if (nova !== repetida) return setErro("As duas senhas novas não são iguais.");
+    setErro(null);
+    setLiveness(true);
+  }
+
+  function fechar() {
+    setAberto(false);
+    setAtual("");
+    setNova("");
+    setRepetida("");
+    setErro(null);
+  }
+
+  return (
+    <section className="surface p-5">
+      <div className="flex items-center gap-3">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-tint text-ink">
+          <KeyRound size={20} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-ink">Senha</p>
+          <p className="text-xs text-mut3">
+            Para trocar, informe a senha atual e confirme com o seu rosto. Os outros aparelhos saem
+            da conta.
+          </p>
+        </div>
+      </div>
+      {ok && !aberto && <p className="mt-3 text-sm text-pos">{ok}</p>}
+      {aberto ? (
+        <form onSubmit={pedirRosto} className="mt-4 space-y-4">
+          <Field label="Senha atual" id="senha-atual">
+            <input
+              id="senha-atual"
+              type="password"
+              autoComplete="current-password"
+              className="field"
+              value={atual}
+              onChange={(e) => setAtual(e.target.value)}
+            />
+          </Field>
+          <Field label="Senha nova" id="senha-nova" hint="Ao menos 10 caracteres.">
+            <input
+              id="senha-nova"
+              type="password"
+              autoComplete="new-password"
+              className="field"
+              value={nova}
+              onChange={(e) => setNova(e.target.value)}
+            />
+          </Field>
+          <Field label="Repita a senha nova" id="senha-repetida">
+            <input
+              id="senha-repetida"
+              type="password"
+              autoComplete="new-password"
+              className="field"
+              value={repetida}
+              onChange={(e) => setRepetida(e.target.value)}
+            />
+          </Field>
+          {erro && <ErrorBox>{erro}</ErrorBox>}
+          <button className="btn btn-ink w-full gap-2" disabled={enviando}>
+            <ScanFace size={18} /> {enviando ? "Trocando…" : "Confirmar com o rosto"}
+          </button>
+          <button type="button" className="btn btn-ghost w-full" onClick={fechar}>
+            Cancelar
+          </button>
+        </form>
+      ) : (
+        <button
+          className="btn btn-ghost mt-4 w-full"
+          onClick={() => {
+            setOk(null);
+            setAberto(true);
+          }}
+        >
+          Trocar senha
+        </button>
+      )}
+      {liveness && (
+        <LivenessCheck
+          onClose={() => setLiveness(false)}
+          onSuccess={(prova) => {
+            setLiveness(false);
+            setEnviando(true);
+            trocarSenha(atual, nova, prova)
+              .then((n) => {
+                fechar();
+                setOk(
+                  n > 0
+                    ? `Senha alterada. ${n} ${n === 1 ? "outra sessão foi encerrada" : "outras sessões foram encerradas"}.`
+                    : "Senha alterada.",
+                );
+              })
+              .catch((e: Error) => setErro(e.message))
+              .finally(() => setEnviando(false));
           }}
         />
       )}

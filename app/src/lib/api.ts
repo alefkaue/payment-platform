@@ -42,6 +42,7 @@ import type {
   Desafio,
   DestinoRef,
   EmpresaPayload,
+  EtapaRecuperacao,
   Fatura,
   KycResultado,
   Limites,
@@ -101,6 +102,7 @@ import {
   pessoaPorLogin,
   removerChaveDemo,
   resolverChave,
+  salvar,
   todasTransacoes,
 } from "@/mocks/banco";
 
@@ -361,6 +363,79 @@ export async function novoDesafioLogin(etapa: LoginEtapaMfa): Promise<LoginEtapa
       desafio: await post<Desafio>("/auth/login/mfa/desafio", { mfa_token: etapa.mfa_token }),
     };
   return { ...etapa, desafio: desafioDemo("login") };
+}
+
+/**
+ * Troca de senha da pessoa logada: senha atual + rosto. O servidor encerra as
+ * outras sessões e devolve quantas caíram.
+ */
+export async function trocarSenha(
+  senhaAtual: string,
+  novaSenha: string,
+  prova: ProvaBiometrica,
+): Promise<number> {
+  await delay();
+  if (MODO_API) {
+    const r = await post<{ sessoes_encerradas: number }>("/auth/senha", {
+      senha_atual: senhaAtual,
+      nova_senha: novaSenha,
+      biometria: prova,
+    });
+    return r.sessoes_encerradas;
+  }
+  const b = banco();
+  const p = b.pessoas.find((x) => x.contas.includes(sessao.conta.carteira_id));
+  if (p) {
+    if (!(await senhaConfere(p, senhaAtual))) throw new ApiError("Senha atual incorreta.", 401);
+    p.senha = await hashSenha(p.email, novaSenha);
+    salvar(b);
+  }
+  return 0;
+}
+
+/**
+ * Esqueci a senha, etapa 1: e-mail/CPF + data de nascimento. A resposta é a
+ * mesma exista a conta ou não; quem confirma é o rosto, na etapa 2.
+ */
+export async function iniciarRecuperacao(
+  login: string,
+  dataNascimento: string,
+): Promise<EtapaRecuperacao> {
+  await delay();
+  if (MODO_API) {
+    definirConta(null);
+    salvarTokens(null);
+    const r = await post<{ recuperacao_token: string; desafio: Desafio }>("/auth/recuperacao", {
+      login,
+      data_nascimento: dataNascimento,
+    });
+    return { token: r.recuperacao_token, desafio: r.desafio };
+  }
+  return { token: `demo:${login.trim().toLowerCase()}`, desafio: desafioDemo("cadastro") };
+}
+
+/** Etapa 2: rosto (prova de vida completa) + senha nova. Todas as sessões caem. */
+export async function concluirRecuperacao(
+  etapa: EtapaRecuperacao,
+  prova: ProvaBiometrica,
+  novaSenha: string,
+): Promise<void> {
+  await delay();
+  if (MODO_API) {
+    await post("/auth/recuperacao/concluir", {
+      recuperacao_token: etapa.token,
+      biometria: prova,
+      nova_senha: novaSenha,
+    });
+    return;
+  }
+  const b = banco();
+  const p = pessoaPorLogin(etapa.token.replace(/^demo:/, ""));
+  const daqui = p && b.pessoas.find((x) => x.email === p.email);
+  if (!daqui)
+    throw new ApiError("Não foi possível confirmar a sua identidade. Comece de novo.", 401);
+  daqui.senha = await hashSenha(daqui.email, novaSenha);
+  salvar(b);
 }
 
 /**

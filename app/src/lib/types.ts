@@ -441,3 +441,9 @@ export interface Fatura {
   vencimento: string; // ISO
   status: StatusFatura;
 }
+
+/** Esqueci a senha: etapa 1 feita (e-mail/CPF + nascimento); falta o rosto. */
+export interface EtapaRecuperacao {
+  token: string;
+  desafio: Desafio;
+}
