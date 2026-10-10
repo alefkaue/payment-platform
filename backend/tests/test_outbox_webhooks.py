@@ -53,6 +53,21 @@ def test_pix_recebido_vira_evento_e_reenvio_nao_duplica(cliente, loja):
     assert e["evento"] == "pix.recebido"
 
 
+def test_estorno_e_pendencia_tambem_vao_pelo_outbox(cliente, loja):
+    dono, n, _ = loja
+    cliente.post("/empresas/atual/webhooks", headers=dono.h(n), json={
+        "url": "https://erp2.exemplo.com/astro", "eventos": ["cobranca.estornada", "operacao.pendente"]})
+    pf = Pessoa(cliente, "estorno.outbox@ex.com")
+    depositar(cliente, pf.numero, 100)
+    [c] = _cobrar(cliente, dono, n, valor="10.00")
+    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h()).status_code == 200
+    r = cliente.post(f"/cobrancas/{c['txid']}/estornar", json={}, headers=dono.h(n))
+    assert r.status_code == 200, r.text
+    assert "_entregas" not in r.json()  # detalhe interno não vaza na resposta
+    eventos = sorted(e["evento"] for e in _entregas(cliente, dono, n))
+    assert eventos == ["cobranca.estornada", "cobranca.paga"]
+
+
 def test_pix_sem_saldo_nao_deixa_evento(cliente, loja):
     dono, n, _ = loja
     pf = Pessoa(cliente, "sem.saldo@ex.com")

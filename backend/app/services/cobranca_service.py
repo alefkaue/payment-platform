@@ -224,14 +224,16 @@ def estornar(repo: Repositorio, *, usuario: dict, conta: dict, txid: str, ip: st
     if cob["status"] != "paga":
         raise HTTPException(status_code=409, detail="Só cobranças pagas podem ser estornadas.")
     try:
-        t = repo.estornar_cobranca(cobranca_id=cob["id"], autor_usuario_id=usuario["id"])
+        t = repo.estornar_cobranca(
+            cobranca_id=cob["id"], autor_usuario_id=usuario["id"],
+            evento=lambda tx: (conta["empresa_id"], "cobranca.estornada",
+                               {"txid": txid, "transacao_id": tx["id"], "valor": tx["valor_bruto"]}))
     except SaldoInsuficienteError:
         raise HTTPException(status_code=400, detail="Saldo insuficiente para devolver o valor ao pagador.")
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     repo.registrar_log(ator=usuario["email"], acao="cobranca_estornada", ip=ip, detalhe={"txid": txid, "transacao_id": t["id"]})
-    webhook_service.emitir(repo, empresa_id=conta["empresa_id"], evento="cobranca.estornada",
-                           payload={"txid": txid, "transacao_id": t["id"], "valor": t["valor_bruto"]})
+    webhook_service.entregar_agora(repo, t.pop("_entregas", None))
     return t
 
 

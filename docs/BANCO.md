@@ -157,12 +157,12 @@ minimização de dados. Uma camada de criptografia de campos com chaves separada
 e rotação deve ser definida com os requisitos de busca/recuperação; isso não foi
 implantado aqui. O template facial já usa Fernet e senhas usam Argon2id.
 
-A trilha financeira é atômica, e os webhooks de dinheiro (`pix.recebido`, `cobranca.paga`)
+A trilha financeira é atômica, e todos os webhooks
 usam outbox transacional: a entrega é gravada na mesma transação do movimento
 (`executar_movimento(evento=...)`), então um crash depois do commit não perde o aviso
 (o job `/admin/jobs/webhooks` entrega) e um reenvio idempotente não duplica. O receptor
-deve deduplicar pelo `X-PayFlow-Entrega`. `operacao.pendente` e `cobranca.estornada`
-ainda são gravados logo depois do commit. Operações PJ ficam `executando` até o
+deve deduplicar pelo `X-PayFlow-Entrega`. `cobranca.estornada` e `operacao.pendente`
+seguem o mesmo caminho (estorno e pendência gravam o aviso no próprio commit). Operações PJ ficam `executando` até o
 resultado persistir. Crash nesse intervalo é fechado pelo job
 `POST /admin/jobs/conciliar-pendentes` (`pagamento_service.conciliar_executando`):
 passados `PENDENTE_EXECUTANDO_MIN` (10) minutos, procura as transações pela chave

@@ -129,8 +129,7 @@ def criar_pendente(repo: Repositorio, *, conta: dict, usuario: dict, tipo: str, 
                        empresa_id=conta["empresa_id"],
                        detalhe={"operacao_id": p["id"], "tipo": tipo, "valor": str(valor), "motivo": motivo,
                                 "aprovacoes_necessarias": necessarias})
-    webhook_service.emitir(repo, empresa_id=conta["empresa_id"], evento="operacao.pendente",
-                           payload={"operacao_id": p["id"], "tipo": tipo, "valor": valor})
+    webhook_service.entregar_agora(repo, p.pop("_entregas", None))
     return p
 
 

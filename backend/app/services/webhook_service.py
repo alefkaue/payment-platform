@@ -181,17 +181,6 @@ def entregar_agora(repo: Repositorio, entregas: list[int] | None) -> None:
         threading.Thread(target=entregar, args=(repo, entrega_id), daemon=True).start()
 
 
-def emitir(repo: Repositorio, *, empresa_id: int | None, evento: str, payload: dict) -> None:
-    if empresa_id is None:
-        return
-    for w in repo.listar_webhooks(empresa_id, so_ativos=True):
-        if evento not in w["eventos"]:
-            continue
-        entrega_id = repo.criar_entrega(webhook_id=w["id"], evento=evento, payload=json.loads(json.dumps(payload, default=str)))
-        if get_settings().webhook_entrega_imediata:
-            threading.Thread(target=entregar, args=(repo, entrega_id), daemon=True).start()
-
-
 def processar_pendentes(repo: Repositorio) -> dict:
     pendentes = repo.entregas_pendentes(get_settings().webhook_max_tentativas)
     for e in pendentes:

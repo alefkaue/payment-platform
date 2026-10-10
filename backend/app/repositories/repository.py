@@ -627,7 +627,8 @@ class Repositorio(RepositorioExtras):
                 s.commit()
             return {"valor_devolvido": total, "transacao": self._transacao_dict(s, dev)}
 
-    def estornar_cobranca(self, *, cobranca_id: int, autor_usuario_id: int) -> dict:
+    def estornar_cobranca(self, *, cobranca_id: int, autor_usuario_id: int,
+                          evento: Optional[Callable[[dict], tuple[Optional[int], str, dict]]] = None) -> dict:
         """Devolve ao pagador o valor bruto de uma cobrança paga. O recebedor
         devolve o líquido; os tributos ainda não repassados saem da conta
         TRIBUTOS; os já repassados saem do recebedor e viram crédito informado
@@ -686,8 +687,12 @@ class Repositorio(RepositorioExtras):
             t.status = StatusTransacao.DEVOLVIDA
             cob.status = "estornada"
             self._vincular_historico(s, dev.id)
+            entregas = self._enfileirar_webhooks(s, evento(self._transacao_dict(s, dev))) if evento else []
             s.commit()
-            return self._transacao_dict(s, dev)
+            r = self._transacao_dict(s, dev)
+            if evento:
+                r["_entregas"] = [e.id for e in entregas]
+            return r
 
     def _mover(self, s: Session, c: Carteira, delta: Decimal, *, motivo: str, bloqueado: Decimal = ZERO) -> None:
         anterior, bloq_ant = c.saldo, c.saldo_bloqueado
@@ -1047,8 +1052,14 @@ class Repositorio(RepositorioExtras):
                                  descricao=descricao, aprovacoes_necessarias=aprovacoes_necessarias, aprovacoes=[],
                                  criado_em=tempo.agora())
             s.add(p)
+            s.flush()
+            # Outbox: o aviso "operacao.pendente" nasce no mesmo commit da pendência.
+            entregas = self._enfileirar_webhooks(s, (empresa_id, "operacao.pendente", {
+                "operacao_id": p.id, "tipo": tipo, "valor": valor}))
             s.commit()
-            return self._pendente_dict(p)
+            r = self._pendente_dict(p)
+            r["_entregas"] = [e.id for e in entregas]
+            return r
 
     def obter_pendente(self, pendente_id: int) -> Optional[dict]:
         with self._sf() as s:
@@ -1385,13 +1396,6 @@ class Repositorio(RepositorioExtras):
         with self._sf() as s:
             w = s.get(Webhook, webhook_id)
             return {**self._webhook_dict(w), "segredo": w.segredo} if w else None
-
-    def criar_entrega(self, *, webhook_id: int, evento: str, payload: dict) -> int:
-        with self._sf() as s:
-            e = WebhookEntrega(webhook_id=webhook_id, evento=evento, payload=payload)
-            s.add(e)
-            s.commit()
-            return e.id
 
     def entregas_pendentes(self, max_tentativas: int) -> list[dict]:
         with self._sf() as s:
