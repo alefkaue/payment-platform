@@ -23,6 +23,7 @@ import { Route as AppConvitesRouteImport } from './routes/_app.convites'
 import { Route as AppDepositarRouteImport } from './routes/_app.depositar'
 import { Route as AppEquipeRouteImport } from './routes/_app.equipe'
 import { Route as AppExtratoRouteImport } from './routes/_app.extrato'
+import { Route as AppFolhaRouteImport } from './routes/_app.folha'
 import { Route as AppInicioRouteImport } from './routes/_app.inicio'
 import { Route as AppNotificacoesRouteImport } from './routes/_app.notificacoes'
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
@@ -102,6 +103,11 @@ const AppExtratoRoute = AppExtratoRouteImport.update({
   path: '/extrato',
   getParentRoute: () => AppRoute,
 } as any)
+const AppFolhaRoute = AppFolhaRouteImport.update({
+  id: '/folha',
+  path: '/folha',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppInicioRoute = AppInicioRouteImport.update({
   id: '/inicio',
   path: '/inicio',
@@ -162,6 +168,7 @@ export interface FileRoutesByFullPath {
   '/depositar': typeof AppDepositarRoute
   '/equipe': typeof AppEquipeRoute
   '/extrato': typeof AppExtratoRoute
+  '/folha': typeof AppFolhaRoute
   '/inicio': typeof AppInicioRoute
   '/notificacoes': typeof AppNotificacoesRoute
   '/pendentes': typeof AppPendentesRoute
@@ -186,6 +193,7 @@ export interface FileRoutesByTo {
   '/depositar': typeof AppDepositarRoute
   '/equipe': typeof AppEquipeRoute
   '/extrato': typeof AppExtratoRoute
+  '/folha': typeof AppFolhaRoute
   '/inicio': typeof AppInicioRoute
   '/notificacoes': typeof AppNotificacoesRoute
   '/pendentes': typeof AppPendentesRoute
@@ -212,6 +220,7 @@ export interface FileRoutesById {
   '/_app/depositar': typeof AppDepositarRoute
   '/_app/equipe': typeof AppEquipeRoute
   '/_app/extrato': typeof AppExtratoRoute
+  '/_app/folha': typeof AppFolhaRoute
   '/_app/inicio': typeof AppInicioRoute
   '/_app/notificacoes': typeof AppNotificacoesRoute
   '/_app/pendentes': typeof AppPendentesRoute
@@ -238,6 +247,7 @@ export interface FileRouteTypes {
     | '/depositar'
     | '/equipe'
     | '/extrato'
+    | '/folha'
     | '/inicio'
     | '/notificacoes'
     | '/pendentes'
@@ -262,6 +272,7 @@ export interface FileRouteTypes {
     | '/depositar'
     | '/equipe'
     | '/extrato'
+    | '/folha'
     | '/inicio'
     | '/notificacoes'
     | '/pendentes'
@@ -287,6 +298,7 @@ export interface FileRouteTypes {
     | '/_app/depositar'
     | '/_app/equipe'
     | '/_app/extrato'
+    | '/_app/folha'
     | '/_app/inicio'
     | '/_app/notificacoes'
     | '/_app/pendentes'
@@ -407,6 +419,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppExtratoRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/folha': {
+      id: '/_app/folha'
+      path: '/folha'
+      fullPath: '/folha'
+      preLoaderRoute: typeof AppFolhaRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/inicio': {
       id: '/_app/inicio'
       path: '/inicio'
@@ -482,6 +501,7 @@ interface AppRouteChildren {
   AppDepositarRoute: typeof AppDepositarRoute
   AppEquipeRoute: typeof AppEquipeRoute
   AppExtratoRoute: typeof AppExtratoRoute
+  AppFolhaRoute: typeof AppFolhaRoute
   AppInicioRoute: typeof AppInicioRoute
   AppNotificacoesRoute: typeof AppNotificacoesRoute
   AppPendentesRoute: typeof AppPendentesRoute
@@ -502,6 +522,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppDepositarRoute: AppDepositarRoute,
   AppEquipeRoute: AppEquipeRoute,
   AppExtratoRoute: AppExtratoRoute,
+  AppFolhaRoute: AppFolhaRoute,
   AppInicioRoute: AppInicioRoute,
   AppNotificacoesRoute: AppNotificacoesRoute,
   AppPendentesRoute: AppPendentesRoute,

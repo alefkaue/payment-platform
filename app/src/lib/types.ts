@@ -1,4 +1,33 @@
 export type TipoConta = "PF" | "PJ";
+/** Valores da folha permanecem strings decimais, como no servidor. */
+export interface Funcionario {
+  id: number;
+  nome: string;
+  cpf: string;
+  cargo: string | null;
+  salario: string | null;
+  ativo: boolean;
+}
+export interface FuncionarioCreate {
+  nome: string;
+  cpf: string;
+  cargo?: string;
+  salario?: string;
+}
+export interface FolhaItem {
+  funcionario_id: number;
+  valor?: string;
+}
+export type ResultadoFolha =
+  | { pendente: { id: number; valor: string; aprovacoes_necessarias: number } }
+  | {
+      resultados: {
+        funcionario_id: number;
+        situacao: "pago" | "erro";
+        transacao_id?: number;
+        erro?: string;
+      }[];
+    };
 /** Ano da tabela de transição da Reforma (2026 a 2033). */
 export type Vigencia = number;
 

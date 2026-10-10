@@ -11,6 +11,8 @@
  * continuam com dados de demonstração.
  */
 import { atestacaoDoAparelho } from "./dpop";
+import { centavosFolha, decimalFolha } from "./folha";
+import type { Funcionario, FuncionarioCreate, FolhaItem, ResultadoFolha } from "./types";
 import { calcularSplit, semSplit, VIGENCIA_ATUAL } from "./split";
 import {
   ApiError,
@@ -1828,9 +1830,10 @@ export async function pendentes(): Promise<OperacaoPendente[]> {
       .map(mapPendente)
       .sort((a, b) => b.criado_em.localeCompare(a.criado_em));
   }
-  return (ehContaDoRoteiro() ? [...pendentesDemo] : []).sort((a, b) =>
-    b.criado_em.localeCompare(a.criado_em),
-  );
+  return [
+    ...(ehContaDoRoteiro() ? pendentesDemo : []),
+    ...(pendentesFolhaDemo.get(sessao.conta.carteira_id) ?? []),
+  ].sort((a, b) => b.criado_em.localeCompare(a.criado_em));
 }
 
 /** Rosto de quem aprova: exigido acima do limite facial e em mudança de acesso. */
@@ -1851,6 +1854,16 @@ export async function decidirPendente(
     );
     return { ...mapPendente(r), ...(r.mensagem ? { mensagem: r.mensagem } : {}) };
   }
+  const minhaFolha = pendentesFolhaDemo.get(sessao.conta.carteira_id)?.find((o) => o.id === id);
+  if (minhaFolha) {
+    exigirFolhaDemo();
+    if (aprovar)
+      throw new ApiError("Quem lançou a folha não pode aprovar a própria operação.", 403);
+    if (minhaFolha.status !== "aguardando")
+      throw new ApiError("Esta operação já foi decidida.", 409);
+    minhaFolha.status = "recusada";
+    return { ...minhaFolha, mensagem: "Folha cancelada." };
+  }
   const op = pendentesDemo.find((o) => o.id === id);
   if (!op) throw new ApiError("Operação não encontrada.", 404);
   op.status = aprovar ? "aprovada" : "recusada";
@@ -1858,3 +1871,183 @@ export async function decidirPendente(
 }
 
 export { VIGENCIA_ATUAL };
+
+// Folha: nenhum pedido recebe conta de destino.
+const funcionariosDemo = new Map<number, Funcionario[]>();
+const cpfsFuncionariosDemo = new Map<number, string>();
+const pendentesFolhaDemo = new Map<number, OperacaoPendente[]>();
+const gastosFolhaDemo = new Map<string, bigint>();
+function exigirFolhaDemo(admin = false) {
+  if (sessao.conta.tipo !== "PJ") throw new ApiError("A folha é exclusiva para empresas.", 403);
+  if (
+    admin
+      ? sessao.conta.papel !== "admin"
+      : !["admin", "aprovador", "operador"].includes(sessao.conta.papel ?? "")
+  )
+    throw new ApiError("Seu papel não permite esta ação na folha.", 403);
+}
+function listaFuncionariosDemo(): Funcionario[] {
+  const id = sessao.conta.carteira_id;
+  let lista = funcionariosDemo.get(id);
+  if (!lista) {
+    lista = ehContaDoRoteiro()
+      ? [
+          {
+            id: genId(),
+            nome: "Ana Lima",
+            cpf: "***.444.777-**",
+            cargo: "Financeiro",
+            salario: "3200.00",
+            ativo: true,
+          },
+          {
+            id: genId(),
+            nome: "Bruno Souza",
+            cpf: "***.982.247-**",
+            cargo: "Atendimento",
+            salario: "2400.00",
+            ativo: true,
+          },
+        ]
+      : [];
+    if (ehContaDoRoteiro()) {
+      if (lista[0]) cpfsFuncionariosDemo.set(lista[0].id, "11144477735");
+      if (lista[1]) cpfsFuncionariosDemo.set(lista[1].id, "52998224725");
+    }
+    funcionariosDemo.set(id, lista);
+  }
+  return lista;
+}
+export async function funcionarios(): Promise<Funcionario[]> {
+  if (MODO_API) return get("/empresas/atual/funcionarios");
+  exigirFolhaDemo();
+  return listaFuncionariosDemo().map((f) => ({ ...f }));
+}
+export async function cadastrarFuncionario(dados: FuncionarioCreate): Promise<Funcionario> {
+  if (MODO_API) return post("/empresas/atual/funcionarios", dados);
+  exigirFolhaDemo(true);
+  const cpf = dados.cpf.replace(/\D/g, "");
+  const digito = (tamanho: number) => {
+    const soma = [...cpf.slice(0, tamanho)].reduce(
+      (s, n, i) => s + Number(n) * (tamanho + 1 - i),
+      0,
+    );
+    const resto = (soma * 10) % 11;
+    return resto === 10 ? 0 : resto;
+  };
+  if (
+    cpf.length !== 11 ||
+    /^(\d)\1{10}$/.test(cpf) ||
+    digito(9) !== Number(cpf[9]) ||
+    digito(10) !== Number(cpf[10]) ||
+    dados.nome.trim().length < 3
+  )
+    throw new ApiError("Informe nome e CPF válidos.");
+  const mascarado = `***.${cpf.slice(3, 6)}.${cpf.slice(6, 9)}-**`;
+  const lista = listaFuncionariosDemo();
+  if (lista.some((f) => cpfsFuncionariosDemo.get(f.id) === cpf))
+    throw new ApiError("Funcionário já cadastrado.", 409);
+  if (sessao.conta.porte === "MEI" && lista.length >= 1)
+    throw new ApiError("MEI pode ter até 1 funcionário registrado.", 409);
+  const f: Funcionario = {
+    id: genId(),
+    nome: dados.nome.trim(),
+    cpf: mascarado,
+    cargo: dados.cargo ?? null,
+    salario: dados.salario == null ? null : decimalFolha(centavosFolha(dados.salario)),
+    ativo: true,
+  };
+  lista.push(f);
+  cpfsFuncionariosDemo.set(f.id, cpf);
+  return { ...f };
+}
+export async function removerFuncionario(id: number): Promise<void> {
+  if (MODO_API) {
+    await del(`/empresas/atual/funcionarios/${id}`);
+    return;
+  }
+  exigirFolhaDemo(true);
+  const lista = listaFuncionariosDemo();
+  const indice = lista.findIndex((f) => f.id === id);
+  if (indice < 0) throw new ApiError("Funcionário não encontrado.", 404);
+  lista.splice(indice, 1);
+  cpfsFuncionariosDemo.delete(id);
+}
+export async function pagarFolha(
+  itens: FolhaItem[],
+  descricao?: string,
+  biometria?: ProvaBiometrica,
+): Promise<ResultadoFolha> {
+  // Reconstruir os itens impede campos extras, inclusive destino, no pedido.
+  const pedido = {
+    itens: itens.map((i) => ({
+      funcionario_id: i.funcionario_id,
+      ...(i.valor?.trim() ? { valor: i.valor } : {}),
+    })),
+    ...(descricao ? { descricao } : {}),
+    ...(biometria ? { biometria } : {}),
+  };
+  if (MODO_API) return post("/empresas/atual/folha/pagar", pedido);
+  exigirFolhaDemo();
+  if (!itens.length || itens.length > 500)
+    throw new ApiError("Selecione entre 1 e 500 funcionários.");
+  const vistos = new Set<number>();
+  const total = pedido.itens.reduce((soma, item) => {
+    if (vistos.has(item.funcionario_id)) throw new ApiError("Funcionário repetido na mesma folha.");
+    vistos.add(item.funcionario_id);
+    const f = listaFuncionariosDemo().find((f) => f.id === item.funcionario_id);
+    if (!f) throw new ApiError("Funcionário não encontrado nesta empresa.", 404);
+    const valor = centavosFolha(item.valor ?? f.salario ?? "0");
+    if (valor <= 0n) throw new ApiError(`Informe o valor do pagamento de ${f.nome}.`);
+    return soma + valor;
+  }, 0n);
+  const dia = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const chave = `${sessao.conta.carteira_id}:${dia}`;
+  const gasto = gastosFolhaDemo.get(chave) ?? 0n;
+  const alcada =
+    sessao.conta.papel === "admin" || sessao.conta.alcada == null
+      ? null
+      : centavosFolha(sessao.conta.alcada.toFixed(2));
+  if (
+    (alcada != null && (total > alcada || gasto + total > alcada)) ||
+    (sessao.conta.porte === "GRANDE" && total >= 25000000n)
+  ) {
+    const id = genId();
+    const duas = sessao.conta.porte === "GRANDE" && total >= 25000000n;
+    const assina =
+      duas &&
+      (sessao.conta.papel === "admin" ||
+        (sessao.conta.papel === "aprovador" && (alcada == null || total <= alcada)));
+    const assinaturas = duas ? 2 : 1;
+    const lista = pendentesFolhaDemo.get(sessao.conta.carteira_id) ?? [];
+    lista.push({
+      id,
+      tipo: "folha",
+      descricao: descricao || "Folha de pagamento",
+      contraparte: "Folha de pagamento",
+      valor: Number(total) / 100,
+      criado_por: "Você",
+      criado_em: new Date().toISOString(),
+      status: "aguardando",
+      aprovacoes_necessarias: assinaturas,
+      aprovadores: assina ? ["Você"] : [],
+    });
+    pendentesFolhaDemo.set(sessao.conta.carteira_id, lista);
+    return { pendente: { id, valor: decimalFolha(total), aprovacoes_necessarias: assinaturas } };
+  }
+  if (total > 50000n && !biometria) throw new ApiError("Confirme o pagamento com seu rosto.");
+  await sincronizar();
+  const saldo = centavosFolha(sessao.conta.saldo.toFixed(2));
+  if (total > saldo) throw new ApiError("Saldo insuficiente.");
+  sessao.conta.saldo = Number(saldo - total) / 100;
+  gastosFolhaDemo.set(chave, gasto + total);
+  persistirSessao();
+  await aguardarEnvio();
+  return {
+    resultados: itens.map((i) => ({
+      funcionario_id: i.funcionario_id,
+      situacao: "pago",
+      transacao_id: genId(),
+    })),
+  };
+}
