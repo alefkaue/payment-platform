@@ -106,8 +106,11 @@ function CriarConta() {
 
   const digits = doc.replace(/\D/g, "");
   const precisaVerso = tipoDoc !== "passaporte";
-  // No servidor o documento é obrigatório; na demonstração dá para pular.
-  const docObrigatorio = MODO_API;
+  // No servidor o documento é obrigatório; na demonstração dá para pular. Para testar o
+  // fluxo sem documento em mãos: `npm run dev` com VITE_DOC_OPCIONAL=1 (e o backend com
+  // KYC_DOCUMENTO_OBRIGATORIO=0, que a produção recusa). DEV nunca é true no build.
+  const docOpcionalEmTeste = import.meta.env.DEV && import.meta.env["VITE_DOC_OPCIONAL"] === "1";
+  const docObrigatorio = MODO_API && !docOpcionalEmTeste;
 
   function irPara(e: Etapa) {
     setErro(null);
@@ -449,7 +452,9 @@ function CriarConta() {
                   </>
                 )}
                 {!docObrigatorio && (
-                  <p className="text-xs text-mut3">Demonstração: os documentos são opcionais.</p>
+                  <p className="text-xs text-mut3">
+                    {MODO_API ? "Ambiente de teste" : "Demonstração"}: os documentos são opcionais.
+                  </p>
                 )}
                 {erro && <ErrorBox>{erro}</ErrorBox>}
                 <button className="btn btn-ink w-full">Continuar</button>
