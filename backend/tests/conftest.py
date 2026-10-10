@@ -10,8 +10,9 @@ import os
 import pytest
 
 # Precisa estar setado ANTES de importar qualquer coisa que leia settings.
-os.environ["DATABASE_URL"] = "sqlite://"
-os.environ["JWT_SECRET"] = "test-secret-nao-use-em-producao"
+# TEST_DATABASE_URL (CI): roda contra um Postgres de verdade (ver test_concorrencia_postgres.py).
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL") or "sqlite://"
+os.environ["JWT_SECRET"] = "test-secret-nao-use-em-producao-32b+"
 os.environ["EMBEDDING_KEY"] = "OTglUQywNhpctpSAKAF71Rz5qH8BLx5plpEZLSij0kk="
 os.environ["ADMIN_SENHA"] = "admin-teste-123"
 os.environ["AMBIENTE"] = "desenvolvimento"

@@ -5,8 +5,10 @@
 services:
   backend:
     build: ./backend
+    # Só na própria máquina: numa VM, quem fala com a internet é o proxy (nginx/TLS),
+    # que encaminha para 127.0.0.1:8000. "8000:8000" publicaria a API sem TLS.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file: .env
     environment:
       # "db" é o nome do serviço abaixo (DNS interno do Compose), não localhost.

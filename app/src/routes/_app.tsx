@@ -21,7 +21,7 @@ function AppLayout() {
   if (!ready) return null;
   if (!conta) return <Navigate to="/login" replace />;
 
-  const primaria = navPrimaria(conta.tipo);
+  const primaria = navPrimaria(conta.tipo, conta.papel);
   const secundaria = navSecundaria(conta.tipo);
   const trocar = (c: Conta) => {
     trocarConta(c);

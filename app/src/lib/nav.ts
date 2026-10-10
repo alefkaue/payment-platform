@@ -76,8 +76,10 @@ const SECUNDARIA_PJ: NavItem[] = [
   { to: "/ajuda", label: "Ajuda", icon: CircleHelp, hint: "Dúvidas e suporte" },
 ];
 
-export function navPrimaria(tipo: TipoConta): NavItem[] {
-  return tipo === "PJ" ? PRIMARIA_PJ : PRIMARIA_PF;
+/** Quem só consulta não vê atalho para movimentar (o servidor recusa de qualquer jeito). */
+export function navPrimaria(tipo: TipoConta, papel?: string): NavItem[] {
+  if (tipo !== "PJ") return PRIMARIA_PF;
+  return papel === "consulta" ? PRIMARIA_PJ.filter((i) => i.to !== "/transferir") : PRIMARIA_PJ;
 }
 export function navSecundaria(tipo: TipoConta): NavItem[] {
   return tipo === "PJ" ? SECUNDARIA_PJ : SECUNDARIA_PF;

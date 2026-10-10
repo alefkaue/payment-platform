@@ -83,6 +83,20 @@ function Transferir() {
     else void enviar(null);
   }
 
+  if (conta?.tipo === "PJ" && conta.papel === "consulta")
+    return (
+      <div className="enter mx-auto max-w-md text-center">
+        <h1 className="text-2xl text-ink">Acesso só de consulta</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Seu papel nesta empresa permite ver saldo e extrato, mas não movimentar. Para pagar, peça
+          a um administrador para alterar seu acesso.
+        </p>
+        <Link to="/inicio" className="btn btn-ink mt-6 w-full">
+          Voltar ao início
+        </Link>
+      </div>
+    );
+
   if (pendente)
     return (
       <div className="enter mx-auto max-w-md text-center">

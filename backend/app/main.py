@@ -19,14 +19,15 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core import logs
 from app.core.config import get_settings
 from app.core.security import hash_senha
 from app.db.base import usando_postgres
 from app.repositories import get_repository
+from app.repositories.exceptions import IdempotenciaConflitanteError
 from app.routers import admin, auth, beneficios, biometria, cobrancas, contas, identidade, pagamentos, seguranca
 from app.services import beneficios_service, split_service
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
 # Dinheiro sai SEMPRE como string decimal ("1500.00"). Respostas com
 # response_model já fazem isso (Pydantic v2); as sem modelo passam pelo
@@ -35,6 +36,7 @@ fastapi.encoders.ENCODERS_BY_TYPE[Decimal] = str
 logger = logging.getLogger("payflow")
 
 settings = get_settings()
+logs.configurar(settings.em_producao)
 
 # Senha do admin quando ADMIN_SENHA não vem no ambiente (só em desenvolvimento;
 # em produção o boot falha). Documentada no README -- não vai para o log.
@@ -81,11 +83,51 @@ app.add_middleware(
                    "Idempotency-Key", "DPoP"],
     # WWW-Authenticate: o app distingue "sessão recusada" (volta ao login) de outros 401 (ex.: rosto).
     expose_headers=["X-Request-Id", "WWW-Authenticate", "Retry-After"],
-    allow_credentials=True,
+    # A autenticação vai no header (Bearer + DPoP), nunca em cookie: sem credenciais no CORS.
+    allow_credentials=False,
 )
 
 # Teto de corpo: até 40 quadros de biometria ou documentos (base64) + folga.
 _LIMITE_CORPO = 48 * 1024 * 1024
+
+
+class LimiteDeCorpo:
+    """Teto do corpo também SEM Content-Length (Transfer-Encoding: chunked). Nesse caso
+    lê o corpo antes, parando no teto (413 sem ler o resto), e entrega à app o que leu.
+    Com Content-Length o servidor HTTP já garante o tamanho, e o middleware de baixo
+    recusa acima do teto sem ler nada."""
+
+    def __init__(self, app, limite: int):
+        self.app, self.limite = app, limite
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or any(k == b"content-length" for k, _ in scope.get("headers", ())):
+            return await self.app(scope, receive, send)
+        mensagens, total = [], 0
+        while True:
+            msg = await receive()
+            mensagens.append(msg)
+            if msg["type"] != "http.request":
+                break
+            total += len(msg.get("body", b""))
+            if total > self.limite:
+                corpo = (b'{"type":"about:blank","title":"Content Too Large","status":413,'
+                         rb'"detail":"Requisi\u00e7\u00e3o muito grande."}')
+                await send({"type": "http.response.start", "status": 413,
+                            "headers": [(b"content-type", b"application/problem+json"),
+                                        (b"content-length", str(len(corpo)).encode())]})
+                await send({"type": "http.response.body", "body": corpo})
+                return
+            if not msg.get("more_body"):
+                break
+        fila = iter(mensagens)
+
+        async def reproduzir():
+            return next(fila, None) or await receive()
+
+        await self.app(scope, reproduzir, send)
+
+
 _REQ_ID_RE = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
 
 
@@ -95,6 +137,7 @@ async def seguranca_http(request: Request, call_next):
     (inclusive erro)."""
     recebido = request.headers.get("x-request-id", "")
     request.state.request_id = recebido if _REQ_ID_RE.match(recebido) else uuid.uuid4().hex
+    logs.request_id_atual.set(request.state.request_id)
     cl = request.headers.get("content-length")
     if cl and cl.isdigit() and int(cl) > _LIMITE_CORPO:
         resp = _problema(request, 413, "Requisição muito grande.")
@@ -136,6 +179,11 @@ async def _erro_http(request: Request, exc: StarletteHTTPException):
     return _problema(request, exc.status_code, detalhe, headers=getattr(exc, "headers", None))
 
 
+@app.exception_handler(IdempotenciaConflitanteError)
+async def _idempotencia(request: Request, exc: IdempotenciaConflitanteError):
+    return _problema(request, 409, "Esta Idempotency-Key já foi usada para outra operação. Gere uma chave nova.")
+
+
 @app.exception_handler(RequestValidationError)
 async def _erro_validacao(request: Request, exc: RequestValidationError):
     # Nunca ecoa o valor enviado (pode ser senha, documento, imagem...): só o campo e o motivo.
@@ -162,3 +210,7 @@ def raiz():
 def saude():
     """Liveness/readiness para o Azure Container Apps (sem dados internos)."""
     return {"status": "ok"}
+
+
+# Registrado por último = camada mais externa: corta o corpo antes de qualquer outra.
+app.add_middleware(LimiteDeCorpo, limite=_LIMITE_CORPO)

@@ -70,8 +70,11 @@ class Settings(BaseSettings):
     # Tentativas de biometria por usuário dentro da janela, antes de bloquear.
     biometria_max_tentativas: int = Field(default=5, alias="BIOMETRIA_MAX_TENTATIVAS")
     biometria_janela_min: int = Field(default=15, alias="BIOMETRIA_JANELA_MIN")
-    # Tentativas de login por e-mail dentro da janela.
+    # Falhas de login por conta A PARTIR DO MESMO IP dentro da janela (trava só esse IP).
     login_max_tentativas: int = Field(default=10, alias="LOGIN_MAX_TENTATIVAS")
+    # Falhas por conta somando todos os IPs (ataque distribuído): aí trava a conta. Bem
+    # maior que o de cima, para um atacante sozinho não conseguir bloquear a vítima.
+    login_max_tentativas_conta: int = Field(default=50, alias="LOGIN_MAX_TENTATIVAS_CONTA")
     login_janela_min: int = Field(default=15, alias="LOGIN_JANELA_MIN")
 
     # ---------- Split Payment (IBS/CBS - Reforma Tributária) ----------
@@ -173,6 +176,8 @@ class Settings(BaseSettings):
     # Grande empresa: acima deste valor a operação precisa de DUAS aprovações de
     # pessoas diferentes (além de quem lançou).
     limite_duas_aprovacoes_reais: float = Field(default=250000.0, alias="LIMITE_DUAS_APROVACOES_REAIS")
+    # Operação pendente que ninguém decide expira (não fica aprovável meses depois).
+    pendente_validade_horas: int = Field(default=72, ge=1, le=720, alias="PENDENTE_VALIDADE_HORAS")
     # MEI pode ter 1 empregado (LC 123/2006, art. 18-C). O PLP 186/2026 propõe 2 --
     # quando virar lei, basta trocar aqui.
     mei_max_funcionarios: int = Field(default=1, alias="MEI_MAX_FUNCIONARIOS")

@@ -7,6 +7,11 @@ class SaldoInsuficienteError(Exception):
     (executar_movimento), com as carteiras travadas."""
 
 
+class IdempotenciaConflitanteError(Exception):
+    """A Idempotency-Key já foi usada para OUTRA operação (outro destino ou valor).
+    Devolver a antiga em silêncio faria o cliente achar que a nova foi feita."""
+
+
 class EmailDuplicadoError(Exception):
     """e-mail já cadastrado."""
 

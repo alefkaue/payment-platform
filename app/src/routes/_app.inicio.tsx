@@ -265,7 +265,9 @@ function InicioPJ() {
           )}
         </p>
         <div className="mt-6 flex justify-between">
-          <QuickAction icon={ArrowUpRight} label="Pagar" to="/transferir" />
+          {sessaoConta?.papel !== "consulta" && (
+            <QuickAction icon={ArrowUpRight} label="Pagar" to="/transferir" />
+          )}
           <QuickAction icon={Plus} label="Depositar" to="/depositar" />
           <QuickAction icon={FileText} label="Contas" to="/contas" />
           <QuickAction icon={ListOrdered} label="Extrato" to="/extrato" />
@@ -410,7 +412,7 @@ function AcessoCard({ conta }: { conta: Conta | undefined }) {
         </div>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-3">
-        <MetricTile label="Seu papel" value={PAPEIS[sessao?.papel ?? "admin"]} />
+        <MetricTile label="Seu papel" value={sessao?.papel ? PAPEIS[sessao.papel] : "—"} />
         <MetricTile
           label="Sua alçada"
           value={sessao?.alcada == null ? "Sem limite" : fmtBRL(sessao.alcada)}

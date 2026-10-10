@@ -53,6 +53,27 @@ def _validar_papel_alcada(pol: politica_pj.Politica, papel: str, alcada: Decimal
     return alcada
 
 
+def _validar_diaria(papel: str, alcada: Decimal | None, diaria: Decimal | None) -> Decimal | None:
+    """Alçada diária só faz sentido para quem tem alçada (operador/aprovador). Nula = igual
+    à alçada por operação. Menor que a alçada por operação não faz sentido."""
+    if papel in (PapelVinculo.ADMIN.value, PapelVinculo.CONSULTA.value) or alcada is None:
+        return None
+    if diaria is not None and diaria < alcada:
+        raise HTTPException(status_code=400, detail="A alçada diária não pode ser menor que a alçada por operação.")
+    return diaria
+
+
+def _diaria_efetiva(alcada: Decimal | None, diaria: Decimal | None) -> Decimal | None:
+    """None = sem limite."""
+    if alcada is None:
+        return None
+    return diaria if diaria is not None else alcada
+
+
+def _str(v: Decimal | None) -> str | None:
+    return None if v is None else str(v)
+
+
 def _quatro_olhos(repo: Repositorio, pol: politica_pj.Politica, conta: dict) -> bool:
     return pol.quatro_olhos_acesso and repo.contar_admins_ativos(conta["empresa_id"]) >= 2
 
@@ -62,7 +83,8 @@ def para_api(v: dict, *, eu_id: int | None = None) -> dict:
     return {
         "id": v["id"], "usuario_id": v["usuario_id"], "nome": v["nome"], "email": v["email"],
         "cpf": mascarar_cpf(v["cpf"]) if v.get("cpf") else None, "celular": v.get("celular"), "cargo": v.get("cargo"),
-        "papel": v["papel"], "alcada": v["alcada"], "status": v["status"], "ativo": v["ativo"],
+        "papel": v["papel"], "alcada": v["alcada"], "alcada_diaria": v.get("alcada_diaria"),
+        "status": v["status"], "ativo": v["ativo"],
         "aceito_em": v.get("aceito_em"), "status_em": v.get("status_em"), "ultimo_acesso_em": v.get("ultimo_acesso_em"),
         "criado_em": v.get("criado_em"), "criado_por_usuario_id": v.get("criado_por_usuario_id"),
         "eu": eu_id is not None and v["usuario_id"] == eu_id,
@@ -76,7 +98,7 @@ def para_api(v: dict, *, eu_id: int | None = None) -> dict:
 
 def convidar(repo: Repositorio, *, conta: dict, autor: dict, cpf: str, nome: str, email: str | None,
              celular: str | None, cargo: str | None, papel: PapelVinculo, alcada: Decimal | None, prova,
-             ip: str | None) -> dict:
+             ip: str | None, alcada_diaria: Decimal | None = None) -> dict:
     exigir_pj(conta)
     exigir_papel(conta, PapelVinculo.ADMIN)
     cpf = somente_digitos(cpf)
@@ -85,6 +107,7 @@ def convidar(repo: Repositorio, *, conta: dict, autor: dict, cpf: str, nome: str
     empresa = _empresa(repo, conta)
     pol = politica_pj.politica(empresa["porte"])
     alcada = _validar_papel_alcada(pol, papel.value, alcada)
+    alcada_diaria = _validar_diaria(papel.value, alcada, alcada_diaria)
     if repo.contar_vagas_ocupadas(conta["empresa_id"]) >= pol.max_usuarios:
         raise HTTPException(status_code=409, detail=f"Limite de {pol.max_usuarios} usuários para conta {pol.porte} atingido.")
 
@@ -95,14 +118,15 @@ def convidar(repo: Repositorio, *, conta: dict, autor: dict, cpf: str, nome: str
     try:
         v = repo.criar_convite(empresa_id=conta["empresa_id"], cpf=cpf, nome=nome.strip(), email=email, celular=celular,
                                cargo=cargo, papel=papel, alcada=alcada, status="aguardando" if aguardar else "pendente",
-                               criado_por=autor["id"])
+                               criado_por=autor["id"], alcada_diaria=alcada_diaria)
     except CpfDuplicadoError as e:
         raise HTTPException(status_code=409, detail=str(e))
     if aguardar:
         _pedir_aprovacao_acesso(repo, conta=conta, autor=autor, vinculo=v, acao="convite",
-                                mudanca={"papel": papel.value, "alcada": None if alcada is None else str(alcada)}, ip=ip)
+                                mudanca={"papel": papel.value, "alcada": _str(alcada), "alcada_diaria": _str(alcada_diaria)},
+                                ip=ip)
     _log(repo, autor, conta, "usuario_convidado", ip, vinculo_id=v["id"], cpf=mascarar_cpf(cpf), papel=papel.value,
-         alcada=None if alcada is None else str(alcada), status=v["status"])
+         alcada=_str(alcada), alcada_diaria=_str(alcada_diaria), status=v["status"])
     return para_api(v, eu_id=autor["id"])
 
 
@@ -119,7 +143,8 @@ def _garantir_admin_restante(repo: Repositorio, conta: dict, v: dict) -> None:
 
 
 def alterar(repo: Repositorio, *, conta: dict, autor: dict, vinculo_id: int, papel: PapelVinculo | None,
-            alcada: Decimal | None, sem_limite: bool, prova, ip: str | None) -> dict:
+            alcada: Decimal | None, sem_limite: bool, prova, ip: str | None,
+            alcada_diaria: Decimal | None = None) -> dict:
     exigir_pj(conta)
     exigir_papel(conta, PapelVinculo.ADMIN)
     v = _vinculo_da_empresa(repo, conta, vinculo_id)
@@ -132,22 +157,31 @@ def alterar(repo: Repositorio, *, conta: dict, autor: dict, vinculo_id: int, pap
         nova_alcada = None  # admin continua admin (no MEI, o titular não é "convidável")
     else:
         nova_alcada = _validar_papel_alcada(pol, novo_papel, nova_alcada)
+    nova_diaria = _validar_diaria(novo_papel, nova_alcada,
+                                  None if sem_limite else (alcada_diaria if alcada_diaria is not None else v.get("alcada_diaria")))
     if v["papel"] == PapelVinculo.ADMIN.value and novo_papel != PapelVinculo.ADMIN.value:
         _garantir_admin_restante(repo, conta, v)
 
     sensivel = politica_pj.mudanca_sensivel(papel_atual=v["papel"], alcada_atual=v["alcada"],
                                             papel_novo=novo_papel, alcada_nova=nova_alcada)
+    # Aumentar a alçada DIÁRIA também é dar mais poder (rosto + quatro olhos na Grande).
+    diaria_antes, diaria_depois = _diaria_efetiva(v["alcada"], v.get("alcada_diaria")), _diaria_efetiva(nova_alcada, nova_diaria)
+    if novo_papel != PapelVinculo.CONSULTA.value and (
+            (diaria_depois is None and diaria_antes is not None)
+            or (diaria_antes is not None and diaria_depois is not None and diaria_depois > diaria_antes)):
+        sensivel = True
     if sensivel:
         seguranca_service.verificar_rosto(repo, usuario=autor, prova=prova, ip=ip, tipo="conceder_acesso")
         if _quatro_olhos(repo, pol, conta):
             op = _pedir_aprovacao_acesso(repo, conta=conta, autor=autor, vinculo=v, acao="alteracao",
-                                         mudanca={"papel": novo_papel, "alcada": None if nova_alcada is None else str(nova_alcada)},
+                                         mudanca={"papel": novo_papel, "alcada": _str(nova_alcada),
+                                                  "alcada_diaria": _str(nova_diaria)},
                                          ip=ip)
             return {**para_api(v, eu_id=autor["id"]), "aguardando_aprovacao": True, "operacao_id": op["id"]}
-    r = repo.atualizar_vinculo(vinculo_id, papel=PapelVinculo(novo_papel), alcada=nova_alcada)
-    _log(repo, autor, conta, "permissao_alterada", ip, vinculo_id=vinculo_id, de={"papel": v["papel"],
-         "alcada": None if v["alcada"] is None else str(v["alcada"])},
-         para={"papel": novo_papel, "alcada": None if nova_alcada is None else str(nova_alcada)})
+    r = repo.atualizar_vinculo(vinculo_id, papel=PapelVinculo(novo_papel), alcada=nova_alcada, alcada_diaria=nova_diaria)
+    _log(repo, autor, conta, "permissao_alterada", ip, vinculo_id=vinculo_id,
+         de={"papel": v["papel"], "alcada": _str(v["alcada"]), "alcada_diaria": _str(v.get("alcada_diaria"))},
+         para={"papel": novo_papel, "alcada": _str(nova_alcada), "alcada_diaria": _str(nova_diaria)})
     return para_api(r, eu_id=autor["id"])
 
 
@@ -221,7 +255,8 @@ def aplicar_aprovacao_acesso(repo: Repositorio, *, conta: dict, aprovador: dict,
         r = repo.atualizar_vinculo(v["id"], status="ativo")
     else:
         r = repo.atualizar_vinculo(v["id"], papel=PapelVinculo(m["papel"]),
-                                   alcada=None if m.get("alcada") is None else Decimal(m["alcada"]))
+                                   alcada=None if m.get("alcada") is None else Decimal(m["alcada"]),
+                                   alcada_diaria=None if m.get("alcada_diaria") is None else Decimal(m["alcada_diaria"]))
     _log(repo, aprovador, conta, "acesso_aprovado", ip, vinculo_id=v["id"], mudanca=payload["acao"])
     return r
 

@@ -29,7 +29,7 @@ from app.schemas.contas import (
     VinculoResponse,
     VinculoUpdate,
 )
-from app.services import contas_service, equipe_service, folha_service, politica_pj
+from app.services import contas_service, equipe_service, folha_service, pagamento_service, politica_pj
 
 router = APIRouter(tags=["contas"])
 
@@ -128,7 +128,8 @@ def convidar(dados: ConviteCreate, usuario: dict = Depends(usuario_atual), conta
     """Dá acesso a uma PESSOA pelo CPF. Nasce pendente; ela aceita no próprio app, com o rosto."""
     return equipe_service.convidar(
         repo, conta=conta, autor=usuario, cpf=dados.cpf, nome=dados.nome, email=dados.email, celular=dados.celular,
-        cargo=dados.cargo, papel=dados.papel, alcada=dados.alcada, prova=dados.biometria, ip=ip,
+        cargo=dados.cargo, papel=dados.papel, alcada=dados.alcada, alcada_diaria=dados.alcada_diaria,
+        prova=dados.biometria, ip=ip,
     )
 
 
@@ -137,7 +138,8 @@ def alterar_acesso(vinculo_id: int, dados: VinculoUpdate, usuario: dict = Depend
                    conta: dict = Depends(conta_atual), repo: Repositorio = Depends(get_repo),
                    ip: str | None = Depends(ip_cliente)):
     return equipe_service.alterar(repo, conta=conta, autor=usuario, vinculo_id=vinculo_id, papel=dados.papel,
-                                  alcada=dados.alcada, sem_limite=dados.sem_limite, prova=dados.biometria, ip=ip)
+                                  alcada=dados.alcada, alcada_diaria=dados.alcada_diaria, sem_limite=dados.sem_limite,
+                                  prova=dados.biometria, ip=ip)
 
 
 @router.post("/empresas/atual/vinculos/{vinculo_id}/suspender", response_model=VinculoResponse)
@@ -168,6 +170,7 @@ def operacoes_pendentes(conta: dict = Depends(conta_atual), repo: Repositorio = 
     exigir_pj(conta)
     if conta["vinculo"]["papel"] == PapelVinculo.CONSULTA.value:
         raise HTTPException(status_code=403, detail="Seu papel não permite ver operações pendentes.")
+    pagamento_service.expirar_vencidas(repo, conta["empresa_id"])
     pendentes = repo.listar_pendentes(conta["empresa_id"], status=status)
     nomes: dict[int, str] = {}
     for p in pendentes:

@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
+from app.core.documentos import mascarar_cnpj, mascarar_cpf
 from app.deps import conta_atual, dispositivo_atual, exigir_pj, get_repo, ip_cliente, usuario_atual
 from app.repositories.repository import Repositorio
 from app.routers.pagamentos import resposta_pendente
@@ -46,12 +47,25 @@ def listar_cobrancas(
 
 
 @router.get("/cobrancas/{txid}", response_model=CobrancaResponse)
-def ver_cobranca(txid: str, _: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo)):
-    """O que o pagador vê antes de pagar (quem cobra, valor, imposto que será retido)."""
+def ver_cobranca(txid: str, usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo)):
+    """O que o pagador vê antes de pagar (quem cobra, valor, imposto que será retido).
+
+    Quem tem o txid (QR/copia e cola) vê a cobrança, como no Pix. Mas só quem cobra e o
+    próprio pagador veem o documento do pagador e os ids internos (SECURITY_AUDIT.md A-10)."""
     c = repo.obter_cobranca(txid=txid)
     if not c:
         raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
-    return cobranca_service.para_resposta(c)
+    resposta = cobranca_service.para_resposta(c)
+    empresa = c["recebedor"].get("empresa_id")
+    e_quem_cobra = empresa is not None and repo.obter_vinculo(usuario["id"], empresa) is not None
+    e_o_pagador = bool(c["pagador_documento"]) and c["pagador_documento"] == usuario.get("cpf")
+    if not (e_quem_cobra or e_o_pagador):
+        doc = c["pagador_documento"]
+        resposta.update(
+            pagador_documento=(mascarar_cnpj(doc) if len(doc) == 14 else mascarar_cpf(doc)) if doc else None,
+            transacao_id=None, autorizacao_id=None, grupo_parcelamento=None,
+        )
+    return resposta
 
 
 @router.post("/cobrancas/{txid}/pagar", response_model=TransacaoResponse, responses={202: {"model": PendenteResponse}})

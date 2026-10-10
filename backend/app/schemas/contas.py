@@ -67,12 +67,15 @@ class ConviteCreate(BaseModel):
     cargo: str | None = Field(default=None, max_length=80, description="Ex.: Financeiro, Contabilidade.")
     papel: PapelVinculo
     alcada: DinheiroOuZero | None = Field(default=None, description="Máximo por operação sem aprovação. Vazio = sem limite.")
+    alcada_diaria: DinheiroOuZero | None = Field(
+        default=None, description="Soma por dia sem aprovação (≥ alçada). Vazio = igual à alçada.")
     biometria: ProvaBiometrica | None = Field(default=None, description="Rosto de quem concede (papéis/alçadas sensíveis).")
 
 
 class VinculoUpdate(BaseModel):
     papel: PapelVinculo | None = None
     alcada: DinheiroOuZero | None = None
+    alcada_diaria: DinheiroOuZero | None = None
     sem_limite: bool = False
     biometria: ProvaBiometrica | None = None
 
@@ -91,6 +94,7 @@ class VinculoResponse(BaseModel):
     cargo: str | None = None
     papel: str
     alcada: Decimal | None = None
+    alcada_diaria: Decimal | None = None
     status: str
     ativo: bool
     aceito_em: datetime | None = None

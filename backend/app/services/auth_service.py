@@ -46,9 +46,11 @@ def _hash_falso() -> str:
 def _checar_rate_limit(repo: Repositorio, ref: str, ip: str | None) -> None:
     s = get_settings()
     desde = tempo.agora() - timedelta(minutes=s.login_janela_min)
-    if repo.contar_eventos(tipo="login", desde=desde, referencia=ref) >= s.login_max_tentativas:
-        # Bloqueio temporário DA CONTA (não depende do IP: senha distribuída por
-        # muitos IPs também para aqui). Fica na trilha da própria pessoa.
+    # Por conta + IP: quem erra a senha de alguém trava a si mesmo, não a vítima.
+    # Por conta (todos os IPs, teto maior): senha distribuída por muitos IPs também para.
+    # As duas ficam na trilha da própria pessoa.
+    por_ip = ip is not None and repo.contar_eventos(tipo="login", desde=desde, referencia=ref, ip=ip) >= s.login_max_tentativas
+    if por_ip or repo.contar_eventos(tipo="login", desde=desde, referencia=ref) >= s.login_max_tentativas_conta:
         alvo = repo.obter_usuario_por_login(ref)
         if alvo:
             repo.registrar_log(ator=ref, acao="login_bloqueado_tentativas", ip=ip, usuario_id=alvo["id"])

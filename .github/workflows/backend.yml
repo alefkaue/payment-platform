@@ -1,0 +1,69 @@
+name: Backend (testes e segurança)
+
+# Testes do backend (SQLite) + testes de concorrência contra um Postgres de verdade
+# (lock de linha, idempotência e alçada diária em paralelo) + auditoria de dependências.
+# Não publica nada e não usa nenhum segredo.
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - ".github/workflows/backend.yml"
+  pull_request:
+    paths:
+      - "backend/**"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: astro
+          POSTGRES_PASSWORD: somente-ci
+          POSTGRES_DB: astro_teste
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U astro -d astro_teste"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Dependências
+        run: pip install -r requirements.txt pip-audit
+
+      - name: Testes (SQLite)
+        run: python -m pytest -q
+
+      - name: Concorrência no Postgres
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
+        run: python -m pytest -q -rs tests/test_concorrencia_postgres.py
+
+      - name: Migrações sobem e descem no Postgres
+        env:
+          DATABASE_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
+          JWT_SECRET: somente-ci-somente-ci-somente-ci-32
+          EMBEDDING_KEY: OTglUQywNhpctpSAKAF71Rz5qH8BLx5plpEZLSij0kk=
+        run: |
+          psql "postgresql://astro:somente-ci@localhost:5432/astro_teste" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
+          alembic upgrade head
+          alembic downgrade -1
+          alembic upgrade head
+
+      - name: Vulnerabilidades conhecidas (pip-audit)
+        run: pip-audit -r requirements.txt

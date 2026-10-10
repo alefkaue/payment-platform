@@ -1,0 +1,19 @@
+# Contexto do Dockerfile da raiz (demo/Render): só backend/ entra na imagem.
+# Nada de segredo, venv, histórico, app ou documentos no contexto do build.
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/.venv
+**/__pycache__
+**/node_modules
+app/
+site/
+payment/
+_legacy_*/
+*.pdf
+*.zip
+*.p12
+*.jks
+*.keystore
+backend/tests

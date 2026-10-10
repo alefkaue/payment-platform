@@ -45,10 +45,12 @@ from app.repositories.repository import Repositorio
 from app.services import pix_service, seguranca_service, webhook_service
 from app.services.pagamento_service import (
     PODE_MOVIMENTAR,
+    AlcadaDiariaExcedida,
+    _checar_alcada_diaria,
     _limite_facial,
     chave_idempotencia,
     criar_pendente,
-    precisa_aprovacao,
+    motivo_aprovacao,
 )
 from app.services.split_service import sem_split, split_da_nota
 
@@ -158,9 +160,10 @@ def pagar(
     if not automatico:
         exigir_papel(conta, *PODE_MOVIMENTAR)
         seguranca_service.exigir_dispositivo(dispositivo)
-        if not pular_alcada and precisa_aprovacao(conta, valor):
+        motivo = None if pular_alcada else motivo_aprovacao(repo, conta, usuario, valor)
+        if motivo:
             p = criar_pendente(repo, conta=conta, usuario=usuario, tipo="pagamento_cobranca", valor=valor, ip=ip,
-                               payload={"txid": txid})
+                               payload={"txid": txid}, motivo=motivo)
             return {"pendente": p}
 
     verificacao = verificacao_previa
@@ -172,6 +175,8 @@ def pagar(
     split = split_da_nota(valor, cob["cbs"], cob["ibs"]) if vai_reter(cob) else sem_split(valor)
     checar = None if automatico else seguranca_service.checador_de_limites(
         valor=valor, titular_tipo=conta["titular_tipo"], dispositivo=dispositivo)
+    if not automatico and not pular_alcada:
+        checar = _checar_alcada_diaria(conta, usuario, valor, checar)
     try:
         t = repo.executar_movimento(
             origem_id=conta["carteira_id"], destino_id=cob["recebedor"]["carteira_id"], split=split, tipo="cobranca",
@@ -181,6 +186,10 @@ def pagar(
         )
     except SaldoInsuficienteError:
         raise HTTPException(status_code=400, detail="Saldo insuficiente.")
+    except AlcadaDiariaExcedida:
+        p = criar_pendente(repo, conta=conta, usuario=usuario, tipo="pagamento_cobranca", valor=valor, ip=ip,
+                           payload={"txid": txid}, motivo="alcada_diaria")
+        return {"pendente": p}
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 

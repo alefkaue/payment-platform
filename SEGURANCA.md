@@ -224,6 +224,15 @@ justamente ver se alguém burla.
   sessionStorage do WebView, privados do app): presos à chave do Keystore, copiados não servem.
   **Não verificado**: o Java só compila no CI (sem SDK nesta máquina) e nada rodou num celular. Ficou de fora: CSP
   dentro do APK (o Capacitor injeta script inline em alguns aparelhos; testar antes) e iPhone nativo (é PWA).
+- 10/10 (6ª sessão) — **Auditoria completa** (`SECURITY_AUDIT.md`, `THREAT_MODEL.md`, `ENDPOINTS.md`,
+  `ACESSO_E_REGRAS_FINANCEIRAS.md`, `SECURITY.md`). Corrigidos com teste: assinatura conjunta da Grande valendo
+  também para admin (A-01), alçada diária contra fracionamento/lote conferida dentro do lock (A-02, migração
+  `d4e5f6a7b8c9`), FastAPI 0.143 / Starlette 1.7 / PyJWT 2.15 (A-09), SSRF em webhooks (A-04), pendência que vence,
+  é cancelável pelo autor e não executa se o autor perdeu o acesso (A-05), bloqueio de conta por terceiro (A-06),
+  teto de corpo chunked (A-07), idempotência com payload diferente (A-08), dados do pagador na cobrança (A-10),
+  paginação (A-11), front por papel (A-03), compose só em 127.0.0.1 (A-14), logs JSON com request_id e trilha que
+  não derruba Pix (logs). CI `backend.yml` com Postgres para concorrência e migrações. Pendentes: 2º fator do admin
+  (A-15), troca/recuperação de senha (A-16), papel de banco com menor privilégio.
 ### Próximos passos detalhados (itens 9 e 10)
 
 - ~~**7. Front**~~ (feito, ver diário): (a) quando o refresh falhar (401), limpar a sessão e ir para `/login` com o motivo (hoje só

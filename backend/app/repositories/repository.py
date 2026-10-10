@@ -62,6 +62,7 @@ from app.repositories.exceptions import (
     ContaSistemaAusenteError,
     CpfDuplicadoError,
     EmailDuplicadoError,
+    IdempotenciaConflitanteError,
     SaldoInsuficienteError,
 )
 from app.repositories.extras import RepositorioExtras
@@ -372,11 +373,16 @@ class Repositorio(RepositorioExtras):
         (no saldo bloqueado se `bloqueio_ate`), a conta TRIBUTOS recebe cbs+ibs.
         Levanta SaldoInsuficienteError; `checar` pode levantar qualquer erro de
         domínio (limite estourado etc.) -- tudo dentro do lock."""
+        def repetida(ja: Transacao) -> dict:
+            if (ja.origem_carteira_id, ja.destino_carteira_id, ja.valor_bruto) != (origem_id, destino_id, split.valor_bruto):
+                raise IdempotenciaConflitanteError()
+            return self._transacao_dict(s, ja)
+
         with self._sf() as s:
             if idempotency_key:
                 ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
                 if ja:
-                    return self._transacao_dict(s, ja)
+                    return repetida(ja)
 
             ids = {origem_id, destino_id}
             tributos = None
@@ -447,7 +453,7 @@ class Repositorio(RepositorioExtras):
                 if idempotency_key:
                     ja = s.scalar(select(Transacao).where(Transacao.idempotency_key == idempotency_key))
                     if ja:
-                        return self._transacao_dict(s, ja)
+                        return repetida(ja)
                 raise
             s.refresh(t)
             return self._transacao_dict(s, t)
@@ -603,6 +609,24 @@ class Repositorio(RepositorioExtras):
         if dispositivo_id is not None:
             stmt = stmt.where(Transacao.dispositivo_id == dispositivo_id)
         return Decimal(s.scalar(stmt) or 0)
+
+    @staticmethod
+    def soma_saidas_do_usuario(s: Session, carteira_id: int, usuario_id: int, desde: datetime) -> Decimal:
+        """O que ESTA pessoa tirou desta carteira desde `desde`, sem contar o que foi
+        executado por aprovação (já passou por outra pessoa) nem o que foi devolvido."""
+        stmt = select(func.coalesce(func.sum(Transacao.valor_bruto), 0)).where(
+            Transacao.origem_carteira_id == carteira_id,
+            Transacao.autor_usuario_id == usuario_id,
+            Transacao.tipo.in_(["transferencia", "cobranca"]),
+            Transacao.status != StatusTransacao.DEVOLVIDA,
+            Transacao.auth_metodo != AuthMetodo.APROVACAO,
+            Transacao.criado_em >= desde,
+        )
+        return Decimal(s.scalar(stmt) or 0)
+
+    def saidas_do_usuario_hoje(self, carteira_id: int, usuario_id: int) -> Decimal:
+        with self._sf() as s:
+            return self.soma_saidas_do_usuario(s, carteira_id, usuario_id, tempo.inicio_do_dia(tempo.agora()))
 
     def ja_transacionou(self, origem_id: int, destino_id: int) -> bool:
         with self._sf() as s:
@@ -878,7 +902,8 @@ class Repositorio(RepositorioExtras):
                        descricao: Optional[str] = None, aprovacoes_necessarias: int = 1) -> dict:
         with self._sf() as s:
             p = OperacaoPendente(empresa_id=empresa_id, tipo=tipo, valor=valor, payload=payload, criado_por_usuario_id=criado_por,
-                                 descricao=descricao, aprovacoes_necessarias=aprovacoes_necessarias, aprovacoes=[])
+                                 descricao=descricao, aprovacoes_necessarias=aprovacoes_necessarias, aprovacoes=[],
+                                 criado_em=tempo.agora())
             s.add(p)
             s.commit()
             return self._pendente_dict(p)
@@ -894,6 +919,16 @@ class Repositorio(RepositorioExtras):
             if status:
                 stmt = stmt.where(OperacaoPendente.status == status)
             return [self._pendente_dict(p) for p in s.scalars(stmt.order_by(OperacaoPendente.id.desc())).all()]
+
+    def expirar_pendentes(self, empresa_id: int, criadas_antes: datetime) -> int:
+        """pendente -> expirada para o que ninguém decidiu a tempo."""
+        with self._sf() as s:
+            n = s.query(OperacaoPendente).filter(
+                OperacaoPendente.empresa_id == empresa_id, OperacaoPendente.status == "pendente",
+                OperacaoPendente.criado_em < criadas_antes,
+            ).update({"status": "expirada", "decidido_em": tempo.agora()}, synchronize_session=False)
+            s.commit()
+            return int(n)
 
     def reservar_pendente(self, pendente_id: int, decidido_por: int, novo_status: str) -> bool:
         """pendente -> novo_status, só uma vez (UPDATE condicional)."""
@@ -1289,10 +1324,19 @@ class Repositorio(RepositorioExtras):
 
     def registrar_log(self, *, ator: str, acao: str, ip: Optional[str] = None, detalhe: Optional[dict] = None,
                       usuario_id: Optional[int] = None, empresa_id: Optional[int] = None) -> None:
-        with self._sf() as s:
-            s.add(LogAuditoria(ator=ator, acao=acao, ip=ip, detalhe=detalhe, usuario_id=usuario_id,
-                               empresa_id=empresa_id, criado_em=tempo.agora()))
-            s.commit()
+        """Trilha de auditoria (tabela) + evento no log estruturado. Falha ao gravar a
+        trilha NÃO derruba a operação que já aconteceu (ex.: um Pix já debitado): vira
+        erro no log, com o request_id, para alguém reconciliar."""
+        from app.core import logs
+
+        logs.evento(acao, usuario_id=usuario_id, empresa_id=empresa_id, ip=ip)
+        try:
+            with self._sf() as s:
+                s.add(LogAuditoria(ator=ator, acao=acao, ip=ip, detalhe=detalhe, usuario_id=usuario_id,
+                                   empresa_id=empresa_id, criado_em=tempo.agora()))
+                s.commit()
+        except Exception:  # noqa: BLE001
+            logs.auditoria.exception("falha ao gravar trilha de auditoria", extra={"evento": acao})
 
     # =========================================================================
     # Conversões para dict
@@ -1347,7 +1391,7 @@ class Repositorio(RepositorioExtras):
     def _vinculo_dict(v: Vinculo) -> dict:
         return {
             "id": v.id, "usuario_id": v.usuario_id, "empresa_id": v.empresa_id, "papel": v.papel.value,
-            "alcada": v.alcada, "ativo": v.ativo, "status": v.status,
+            "alcada": v.alcada, "alcada_diaria": v.alcada_diaria, "ativo": v.ativo, "status": v.status,
             "nome": v.usuario.nome if v.usuario else v.nome,
             "email": v.usuario.email if v.usuario else v.email,
             "cpf": v.cpf or (v.usuario.cpf if v.usuario else None), "celular": v.celular, "cargo": v.cargo,

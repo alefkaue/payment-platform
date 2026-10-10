@@ -52,3 +52,31 @@ def test_login_inexistente_e_senha_errada_respondem_igual(cliente):
     b = cliente.post("/auth/login", json={"email": "ninguem@ex.com", "senha": "errada-123456"})
     assert a.status_code == b.status_code == 401
     assert a.json()["detail"] == b.json()["detail"]
+
+
+def test_atacante_nao_trava_a_conta_da_vitima_de_outro_ip(cliente, monkeypatch):
+    """Erros de senha vindos de UM IP travam esse IP, não a conta (SECURITY_AUDIT.md A-06)."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "front_door_id", "fd")
+    p = Pessoa(cliente, "p@ex.com")
+    atacante = {"x-azure-fdid": "fd", "x-azure-clientip": "203.0.113.9"}
+    vitima = {"x-azure-fdid": "fd", "x-azure-clientip": "198.51.100.7", "X-Dispositivo-Id": p.dispositivo}
+    for _ in range(10):
+        cliente.post("/auth/login", json={"email": p.email, "senha": "errada-123456"}, headers=atacante)
+    assert cliente.post("/auth/login", json={"email": p.email, "senha": SENHA}, headers=atacante).status_code == 429
+    assert cliente.post("/auth/login", json={"email": p.email, "senha": SENHA}, headers=vitima).status_code == 200
+
+
+def test_ataque_distribuido_trava_a_conta(cliente, monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "front_door_id", "fd")
+    monkeypatch.setattr(get_settings(), "login_max_tentativas_conta", 12)
+    p = Pessoa(cliente, "p@ex.com")
+    for i in range(12):
+        cliente.post("/auth/login", json={"email": p.email, "senha": "errada-123456"},
+                     headers={"x-azure-fdid": "fd", "x-azure-clientip": f"203.0.113.{i + 1}"})
+    r = cliente.post("/auth/login", json={"email": p.email, "senha": SENHA},
+                     headers={"x-azure-fdid": "fd", "x-azure-clientip": "198.51.100.7"})
+    assert r.status_code == 429

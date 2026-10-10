@@ -192,6 +192,9 @@ class Vinculo(Base):
     cargo: Mapped[str | None] = mapped_column(String(80), nullable=True)
     papel: Mapped[PapelVinculo] = mapped_column(Enum(PapelVinculo, name="papel_vinculo"), nullable=False)
     alcada: Mapped[Decimal | None] = mapped_column(Dinheiro, nullable=True)
+    # Soma por dia (BRT) do que a pessoa movimenta sem aprovação. Nula = igual à alçada
+    # por operação: sem ela, 10 x R$ 900 passariam numa alçada de R$ 1.000.
+    alcada_diaria: Mapped[Decimal | None] = mapped_column(Dinheiro, nullable=True)
     status: Mapped[str] = mapped_column(String(12), nullable=False, default=StatusVinculo.ATIVO.value)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_por_usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)

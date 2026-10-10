@@ -281,11 +281,12 @@ class RepositorioExtras:
 
     def criar_convite(self, *, empresa_id: int, cpf: str, nome: str, email: Optional[str], celular: Optional[str],
                       cargo: Optional[str], papel: PapelVinculo, alcada: Optional[Decimal], status: str,
-                      criado_por: int) -> dict:
+                      criado_por: int, alcada_diaria: Optional[Decimal] = None) -> dict:
         with self._sf() as s:
             agora = tempo.agora()
             v = Vinculo(empresa_id=empresa_id, cpf=cpf, nome=nome, email=(email or "").lower().strip() or None,
-                        celular=celular, cargo=cargo, papel=papel, alcada=alcada, status=status, ativo=False,
+                        celular=celular, cargo=cargo, papel=papel, alcada=alcada, alcada_diaria=alcada_diaria,
+                        status=status, ativo=False,
                         criado_por_usuario_id=criado_por, status_em=agora, criado_em=agora)
             s.add(v)
             try:

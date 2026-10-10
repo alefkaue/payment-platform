@@ -49,3 +49,7 @@ _extract_pixel/
 payment/
 /inicio.jpeg
 *.zip
+
+# Chaves de assinatura do APK (app/scripts/chave_apk.py gera fora do repo)
+*.p12
+*.jks

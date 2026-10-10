@@ -103,9 +103,10 @@ def pagar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | 
     total = sum((Decimal(r["valor"]) for r in resolvidos), Decimal("0"))
     rotulo = descricao or f"Salário {tempo.hoje_brt():%m/%Y}"
 
-    if pagamento_service.precisa_aprovacao(conta, total):
+    motivo = pagamento_service.motivo_aprovacao(repo, conta, usuario, total)
+    if motivo:
         p = pagamento_service.criar_pendente(
-            repo, conta=conta, usuario=usuario, tipo="folha", valor=total, ip=ip,
+            repo, conta=conta, usuario=usuario, tipo="folha", valor=total, ip=ip, motivo=motivo,
             descricao=f"{rotulo} — {len(resolvidos)} funcionário(s)",
             payload={"itens": resolvidos, "descricao": rotulo},
         )

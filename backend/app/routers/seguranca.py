@@ -1,6 +1,6 @@
 """Limites, aparelhos, chaves Pix, tributos da empresa, créditos e webhooks."""
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from app.db.models import PapelVinculo
 from app.deps import (
@@ -108,13 +108,15 @@ def desbloquear_aparelho(dispositivo_id: int, prova: ProvaBiometrica, usuario: d
 
 
 @router.get("/seguranca/atividade")
-def minha_atividade(usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo), limite: int = 50):
+def minha_atividade(usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo),
+                    limite: int = Query(default=50, ge=1, le=200)):
     """O que eu fiz (logins, aparelhos, pagamentos, aprovações...)."""
     return repo.listar_auditoria(usuario_id=usuario["id"], limite=limite)
 
 
 @router.get("/empresas/atual/auditoria")
-def auditoria_da_empresa(conta: dict = Depends(conta_atual), repo: Repositorio = Depends(get_repo), limite: int = 100):
+def auditoria_da_empresa(conta: dict = Depends(conta_atual), repo: Repositorio = Depends(get_repo),
+                         limite: int = Query(default=100, ge=1, le=200)):
     """Trilha da empresa: quem convidou quem, quem mudou alçada, quem lançou e quem
     aprovou cada pagamento. Admin e aprovador."""
     exigir_pj(conta)
