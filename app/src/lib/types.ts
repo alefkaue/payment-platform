@@ -122,6 +122,8 @@ export interface Transacao {
   auth_metodo: "senha" | "selfie" | "aprovacao" | "automatico" | "sistema";
   /** concluida | retida (bloqueio cautelar) | devolvida | devolvida_parcial */
   status?: string;
+  /** Estado local do MED na demonstração; a API não expõe a contestação no extrato. */
+  contestacao_aberta?: boolean;
   categoria: CategoriaTx;
   /** Rótulo humano: "Padaria Aurora", "Voo GRU → GIG", "Pix para João". */
   descricao: string;
@@ -305,6 +307,9 @@ export interface ApuracaoPJ {
 export interface Cobranca {
   id: number;
   txid: string;
+  /** Vínculo com o pagamento no banco de demonstração. */
+  transacao_id?: number;
+  recebedor_carteira_id?: number;
   valor: number;
   descricao?: string | null;
   vencimento?: string | null;
@@ -463,6 +468,7 @@ export type StatusFatura = "liquidado" | "pendente" | "agendado";
  */
 export interface Fatura {
   id: number;
+  txid?: string;
   direcao: DirecaoFatura;
   contraparte: string; // cliente ou fornecedor ("Mercedes-Benz", "Scania"...)
   nf: string; // "NF-e 0012345"

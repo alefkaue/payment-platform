@@ -2,10 +2,10 @@ import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Copy, FileText, Plus } from "lucide-react";
-import { criarCobranca, listarFaturas } from "@/lib/api";
+import { criarCobranca, estornarCobranca, listarFaturas } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, parseValor } from "@/lib/format";
-import type { Cobranca, DirecaoFatura } from "@/lib/types";
+import type { Cobranca, DirecaoFatura, Fatura } from "@/lib/types";
 import { Empty, ErrorBox, Field, MetricTile, PageTitle, TxSkeleton } from "@/components/payflow/ui";
 import { FaturaRow } from "./_app.inicio";
 import { cn } from "@/lib/utils";
@@ -17,8 +17,26 @@ export const Route = createFileRoute("/_app/contas")({
 
 function Contas() {
   const { conta } = useAuth();
+  return <ContasEmpresa key={conta?.numero} />;
+}
+
+function ContasEmpresa() {
+  const { conta } = useAuth();
   const [aba, setAba] = useState<DirecaoFatura>("receber");
   const [nova, setNova] = useState(false);
+  const qc = useQueryClient();
+  const [pedido, setPedido] = useState<Fatura | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
+  const admin = conta?.tipo === "PJ" && conta.papel === "admin";
+  const estorno = useMutation({
+    mutationFn: estornarCobranca,
+    onSuccess: () => {
+      setPedido(null);
+      setAviso("Estorno feito");
+      for (const chave of ["faturas", "conta", "transacoes", "apuracao-pj", "tx"])
+        void qc.invalidateQueries({ queryKey: [chave] });
+    },
+  });
   const q = useQuery({ queryKey: ["faturas", conta?.numero], queryFn: () => listarFaturas() });
 
   // Contas a pagar/receber são um recurso da conta Empresa.
@@ -74,6 +92,46 @@ function Contas() {
         ))}
       </div>
 
+      {aviso && (
+        <p role="status" className="mt-4 text-sm text-pos">
+          {aviso}
+        </p>
+      )}
+      {estorno.error && (
+        <div className="mt-4">
+          <ErrorBox>{estorno.error.message}</ErrorBox>
+        </div>
+      )}
+      {pedido && admin && aba === "receber" && (
+        <section className="surface mt-4 p-5" aria-live="polite">
+          <p className="font-medium text-ink">Estornar cobrança?</p>
+          <p className="mt-1 text-sm text-mut2">
+            {fmtBRL(pedido.valor_bruto)} voltam ao pagador de {pedido.contraparte}.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <button
+              className="btn btn-ghost"
+              disabled={estorno.isPending}
+              onClick={() => {
+                setPedido(null);
+                estorno.reset();
+              }}
+            >
+              Cancelar
+            </button>
+            <button
+              className="btn btn-ink"
+              disabled={estorno.isPending}
+              onClick={() => {
+                if (pedido.txid) estorno.mutate(pedido.txid);
+              }}
+            >
+              {estorno.isPending ? "Aguarde…" : "Confirmar estorno"}
+            </button>
+          </div>
+        </section>
+      )}
+
       <section className="surface mt-4 px-5 py-2">
         {q.isLoading ? (
           <TxSkeleton n={4} />
@@ -86,7 +144,24 @@ function Contas() {
         ) : (
           <ul className="divide-y divide-border">
             {lista.map((f) => (
-              <FaturaRow key={f.id} f={f} />
+              <li key={f.id}>
+                <ul>
+                  <FaturaRow f={f} />
+                </ul>
+                {admin && f.direcao === "receber" && f.status === "liquidado" && f.txid && (
+                  <button
+                    className="btn btn-ghost mb-3 w-full"
+                    disabled={estorno.isPending}
+                    onClick={() => {
+                      setPedido(f);
+                      setAviso(null);
+                      estorno.reset();
+                    }}
+                  >
+                    Estornar
+                  </button>
+                )}
+              </li>
             ))}
           </ul>
         )}

@@ -1,10 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { Check } from "lucide-react";
-import { transacaoPorId } from "@/lib/api";
+import { ApiError, contestar, transacaoPorId } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { fmtBRL, fmtData, fmtId } from "@/lib/format";
-import type { CategoriaTx } from "@/lib/types";
-import { ErrorBox, SplitBar, ValueRow } from "@/components/payflow/ui";
+import type { CategoriaTx, Transacao } from "@/lib/types";
+import { ErrorBox, Field, SplitBar, ValueRow } from "@/components/payflow/ui";
 
 export const Route = createFileRoute("/_app/comprovante/$id")({
   head: () => ({
@@ -37,7 +39,11 @@ const AUTH: Record<string, string> = {
 
 function Comprovante() {
   const { id } = Route.useParams();
-  const q = useQuery({ queryKey: ["tx", id], queryFn: () => transacaoPorId(Number(id)) });
+  const { conta } = useAuth();
+  const q = useQuery({
+    queryKey: ["tx", conta?.numero, id],
+    queryFn: () => transacaoPorId(Number(id)),
+  });
 
   if (q.isLoading)
     return <div className="mx-auto mt-10 h-64 max-w-md animate-pulse rounded-[22px] bg-card" />;
@@ -94,9 +100,100 @@ function Comprovante() {
         </p>
       </section>
 
+      <Contestacao key={`${conta?.numero}:${id}`} transacao={t} />
+
       <Link to="/inicio" className="btn btn-ink mt-6 w-full">
         Voltar ao início
       </Link>
     </div>
+  );
+}
+
+function Contestacao({ transacao: t }: { transacao: Transacao }) {
+  const { conta } = useAuth();
+  const qc = useQueryClient();
+  const [aberto, setAberto] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [enviada, setEnviada] = useState(false);
+  const mut = useMutation({
+    mutationFn: () => contestar(t.id, motivo.trim()),
+    onSuccess: () => {
+      setEnviada(true);
+      setAberto(false);
+      void qc.invalidateQueries({ queryKey: ["tx"] });
+    },
+  });
+  const jaAberta =
+    enviada || t.contestacao_aberta || (mut.error instanceof ApiError && mut.error.status === 409);
+  const idade = Date.now() - new Date(t.criado_em).getTime();
+  const pode =
+    t.origem_carteira_id === conta?.carteira_id &&
+    t.status === "concluida" &&
+    idade >= 0 &&
+    idade <= 80 * 86400000 &&
+    (t.categoria === "transferencia" || t.categoria === "cobranca") &&
+    (conta.tipo === "PF" || conta.papel === "admin");
+
+  if (jaAberta)
+    return (
+      <div className="mt-5 space-y-3">
+        <p role="status" className="text-sm text-pending">
+          Contestação aberta
+        </p>
+        {mut.error && <ErrorBox>{mut.error.message}</ErrorBox>}
+      </div>
+    );
+  if (!pode) return null;
+  return (
+    <section className="surface mt-5 p-5 text-left">
+      <p className="text-sm text-mut2">
+        O valor pode ser devolvido após a análise, e o recebedor fica sabendo da contestação.
+      </p>
+      {aberto ? (
+        <form
+          className="mt-4 space-y-3"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (motivo.trim().length >= 5 && !mut.isPending) mut.mutate();
+          }}
+        >
+          <Field label="Motivo" id="contestacao-motivo" hint="Mínimo de 5 caracteres.">
+            <textarea
+              id="contestacao-motivo"
+              className="field"
+              rows={3}
+              minLength={5}
+              maxLength={280}
+              required
+              value={motivo}
+              disabled={mut.isPending}
+              onChange={(e) => setMotivo(e.target.value)}
+            />
+          </Field>
+          <p className="text-xs text-mut3">{motivo.length}/280 caracteres</p>
+          {mut.error && <ErrorBox>{mut.error.message}</ErrorBox>}
+          <div className="grid gap-3">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={mut.isPending}
+              onClick={() => {
+                setAberto(false);
+                mut.reset();
+              }}
+            >
+              Cancelar
+            </button>
+            <button className="btn btn-ink" disabled={mut.isPending || motivo.trim().length < 5}>
+              {mut.isPending ? "Enviando…" : "Enviar contestação"}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <button className="btn btn-ghost mt-4 w-full" onClick={() => setAberto(true)}>
+          Contestar
+        </button>
+      )}
+    </section>
   );
 }
