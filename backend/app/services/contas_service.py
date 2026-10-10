@@ -32,6 +32,9 @@ from app.services import biometria_service, cnpj_service, documento_service, sen
 from app.services.seguranca_service import LIMITES_PADRAO
 
 
+_DUPLICADO = "Não foi possível abrir a conta com estes dados. Se você já tem conta, entre com o seu e-mail ou CPF."
+
+
 def _idade(nascimento: date) -> int:
     hoje = date.today()
     return hoje.year - nascimento.year - ((hoje.month, hoje.day) < (nascimento.month, nascimento.day))
@@ -52,10 +55,10 @@ def criar_pessoa(repo: Repositorio, *, nome: str, email: str, senha: str, cpf: s
         if cel is None:
             raise HTTPException(status_code=400, detail="Celular inválido.")
     senha_policy.validar(senha, email=email, cpf=cpf, nome=nome)
-    if repo.obter_usuario_por_email(email):
-        raise HTTPException(status_code=409, detail="Já existe uma conta com esse e-mail.")
-    if repo.obter_usuario_por_cpf(cpf):
-        raise HTTPException(status_code=409, detail="Já existe uma conta com esse CPF.")
+    # Mesma resposta para e-mail ou CPF já usados: não diz QUAL dado existe na base
+    # (enumeração de clientes). O limite por IP do cadastro segura a varredura.
+    if repo.obter_usuario_por_email(email) or repo.obter_usuario_por_cpf(cpf):
+        raise HTTPException(status_code=409, detail=_DUPLICADO)
     if s.kyc_documento_obrigatorio and (documento is None or data_nascimento is None or not celular):
         raise HTTPException(status_code=400, detail="Para abrir a conta, envie data de nascimento, celular e um documento de identidade.")
 

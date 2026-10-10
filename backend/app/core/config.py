@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     # e queda por inatividade (refresh sem uso). Banco não deixa sessão aberta.
     sessao_max_horas: float = Field(default=12.0, alias="SESSAO_MAX_HORAS")
     sessao_inatividade_min: int = Field(default=30, alias="SESSAO_INATIVIDADE_MIN")
+    # Rotas públicas (SEGURANCA.md item 4): por IP, por hora / por 15 min.
+    cadastro_max_ip_hora: int = Field(default=10, alias="CADASTRO_MAX_IP_HORA")
+    refresh_max_ip_15min: int = Field(default=120, alias="REFRESH_MAX_IP_15MIN")
     dpop_janela_seg: int = Field(default=60, alias="DPOP_JANELA_SEG")
     # Access token curto (minutos): se vazar, a janela de uso é pequena.
     access_token_exp_min: int = Field(default=15, alias="ACCESS_TOKEN_EXP_MIN")

@@ -2,6 +2,8 @@
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 
+from app.core.config import get_settings
+from app.core.limites import limitar_por_ip
 from app.db.models import PapelVinculo
 from app.deps import (
     conta_atual,
@@ -44,6 +46,8 @@ def cadastrar_pessoa(
 ):
     """Cadastro público da pessoa: dados + prova de vida de CADASTRO (peça antes
     POST /biometria/desafios {"modo": "cadastro"}) + documento de identidade."""
+    limitar_por_ip(repo, tipo="limite_cadastro", ip=ip, maximo=get_settings().cadastro_max_ip_hora, janela_min=60,
+                   mensagem="Muitas contas abertas a partir desta rede. Tente mais tarde.")
     return contas_service.criar_pessoa(
         repo, nome=dados.nome, email=dados.email, senha=dados.senha, cpf=dados.cpf, prova=dados.biometria,
         dispositivo_hash=hash_dispositivo(x_dispositivo_id) if x_dispositivo_id else None, ip=ip,

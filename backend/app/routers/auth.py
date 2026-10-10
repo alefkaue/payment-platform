@@ -3,6 +3,8 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
 from app.core import dpop as dpop_prova
+from app.core.config import get_settings
+from app.core.limites import limitar_por_ip
 from app.deps import get_repo, hash_dispositivo, ip_cliente, usuario_atual
 from app.repositories.repository import Repositorio
 from app.schemas.auth import LoginMfaRequest, LoginRequest, LoginResponse, MfaDesafioRequest, RefreshRequest, TokenResponse
@@ -80,6 +82,8 @@ def refresh(
     x_dispositivo_id: str | None = Header(default=None, max_length=128),
     dpop: str | None = Header(default=None, alias="DPoP"),
 ):
+    limitar_por_ip(repo, tipo="limite_refresh", ip=ip, maximo=get_settings().refresh_max_ip_15min, janela_min=15,
+                   mensagem="Muitas renovações de sessão a partir desta rede. Tente mais tarde.")
     return auth_service.renovar(repo, refresh_token=dados.refresh_token, ip=ip,
                                 dispositivo_hash=_dev(x_dispositivo_id), user_agent=_ua(request),
                                 jkt=_jkt(request, dpop, repo))

@@ -47,7 +47,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 | 1 | **Desafio aleatório** de prova de vida (ordem e ações sorteadas pelo servidor; quadros fora da ordem pedida não passam) | A1 | ✅ |
 | 2 | **Prova de posse da chave (DPoP, RFC 9449)**: o app gera um par de chaves **não exportável** (WebCrypto; no APK, Keystore/Keychain), o login amarra os tokens à impressão da chave e **cada requisição vai assinada** (método, caminho, horário, id único, hash do token). Token roubado sem a chave não serve. | A2 | ✅ (falta Keystore no app nativo, item 10) |
 | 3 | **Sessão**: máximo absoluto (ex.: 12 h) e inatividade (ex.: 15 min) no servidor; aviso de login em aparelho novo | A3 | ✅ (aviso por e-mail/push: depois) |
-| 4 | **Força bruta e enumeração**: rate limit em cadastro/refresh/convites; atraso progressivo; tentativas por `mfa_token`; resposta neutra no cadastro | A4 | ⬜ |
+| 4 | **Força bruta e enumeração**: rate limit em cadastro/refresh/convites; atraso progressivo; tentativas por `mfa_token`; resposta neutra no cadastro | A4 | ✅ |
 | 5 | **Cadastro em etapas** (dados → documento → rosto, cada um numa página) e **documento frente e verso obrigatórios** (no app e no backend) | pedido do Alef | ⬜ |
 | 6 | **Arquivar Loja/Viagens/pontos**: telas para `app/src/_arquivado/`, fora da navegação; backend com `BENEFICIOS_HABILITADOS=0` por padrão | pedido do Alef, A8 | ⬜ |
 | 7 | **Front**: CSP e cabeçalhos no host (Static Web Apps), overlay de debug só em dev, build de produção recusa modo demonstração | A5 | ⬜ |
@@ -116,3 +116,11 @@ justamente ver se alguém burla.
   `test_sessao.py`. 169 testes.
   **Falta no app**: quando o refresh falha (401), mandar para a tela de login com o motivo, em vez de só
   mostrar erro na tela atual.
+- 09/10 — **Item 4 feito.** `app/core/limites.py` (`limitar_por_ip`, eventos no banco — vale com várias instâncias;
+  429 com `Retry-After`): cadastro `CADASTRO_MAX_IP_HORA` (10/h) e refresh `REFRESH_MAX_IP_15MIN` (120/15 min).
+  O bloqueio de login por conta (10 erros/15 min, independe do IP — segura senha distribuída por vários IPs)
+  agora grava `login_bloqueado_tentativas` na trilha da pessoa. Cadastro com e-mail **ou** CPF já usado responde
+  a mesma mensagem (não revela qual dado existe). Login de conta inexistente e senha errada já respondiam igual
+  (com hash falso para igualar o tempo). Testes: `test_forca_bruta.py`. 174 testes.
+  **Atenção**: numa rodada da suíte 1 teste falhou e não se repetiu em 5 rodadas seguidas. Se voltar a acontecer,
+  rodar `pytest -rf` para ver qual é (suspeitos: testes que usam o relógio real em `test_sessao.py`).

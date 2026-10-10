@@ -47,7 +47,13 @@ def _checar_rate_limit(repo: Repositorio, ref: str, ip: str | None) -> None:
     s = get_settings()
     desde = tempo.agora() - timedelta(minutes=s.login_janela_min)
     if repo.contar_eventos(tipo="login", desde=desde, referencia=ref) >= s.login_max_tentativas:
-        raise HTTPException(status_code=429, detail="Muitas tentativas de login. Tente novamente em alguns minutos.")
+        # Bloqueio temporário DA CONTA (não depende do IP: senha distribuída por
+        # muitos IPs também para aqui). Fica na trilha da própria pessoa.
+        alvo = repo.obter_usuario_por_login(ref)
+        if alvo:
+            repo.registrar_log(ator=ref, acao="login_bloqueado_tentativas", ip=ip, usuario_id=alvo["id"])
+        raise HTTPException(status_code=429, detail="Muitas tentativas de login. Tente novamente em alguns minutos.",
+                            headers={"Retry-After": str(s.login_janela_min * 60)})
     if ip and repo.contar_eventos(tipo="login", desde=desde, ip=ip) >= s.login_max_tentativas_ip:
         raise HTTPException(status_code=429, detail="Muitas tentativas de login a partir desta rede. Tente mais tarde.")
 
