@@ -11,6 +11,9 @@ const config: CapacitorConfig = {
   appName: "Astro",
   webDir: "www",
   backgroundColor: "#0A0A0A",
+  plugins: {
+    Keyboard: { resizeOnFullScreen: true },
+  },
   android: {
     // Nem o APK de debug abre o WebView no chrome://inspect: quem controla o JavaScript
     // do app pede assinaturas à chave do Keystore (SEGURANCA.md item 10).

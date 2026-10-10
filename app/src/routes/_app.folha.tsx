@@ -1,3 +1,4 @@
+import { useFecharAoVoltar, BotaoFinanceiro } from "@/lib/mobile";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -39,7 +40,9 @@ function FolhaConta() {
   const [cargo, setCargo] = useState("");
   const [salario, setSalario] = useState("");
   const [cadastroAberto, setCadastroAberto] = useState(false);
+  useFecharAoVoltar(cadastroAberto, () => setCadastroAberto(false));
   const [remover, setRemover] = useState<number | null>(null);
+  useFecharAoVoltar(remover !== null, () => setRemover(null), 10);
   const [selecionados, setSelecionados] = useState<Record<number, string>>({});
   const [descricao, setDescricao] = useState("");
   const [erro, setErro] = useState<string | null>(null);
@@ -211,6 +214,7 @@ function FolhaConta() {
               {selecionados[f.id] !== undefined && (
                 <Field id={`valor-${f.id}`} label={`Valor para ${f.nome} (R$)`}>
                   <input
+                    autoComplete="off"
                     id={`valor-${f.id}`}
                     className="field tabular"
                     inputMode="decimal"
@@ -226,13 +230,13 @@ function FolhaConta() {
                 (remover === f.id ? (
                   <div className="space-y-2 rounded-[14px] bg-tint p-3">
                     <p className="text-sm text-mut2">Remover {f.nome} dos funcionários?</p>
-                    <button
+                    <BotaoFinanceiro
                       className="btn btn-ink"
                       disabled={ocupada}
                       onClick={() => desligar.mutate(f.id)}
                     >
                       Confirmar remoção
-                    </button>
+                    </BotaoFinanceiro>
                     <button
                       className="btn btn-ghost"
                       disabled={ocupada}
@@ -280,13 +284,17 @@ function FolhaConta() {
         </p>
         {erro && <ErrorBox>{erro}</ErrorBox>}
         {pagar.isError && <ErrorBox>{pagar.error.message}</ErrorBox>}
-        <button className="btn btn-ink w-full" disabled={ocupada || !valido} onClick={confirmar}>
+        <BotaoFinanceiro
+          className="btn btn-ink w-full"
+          disabled={ocupada || !valido}
+          onClick={confirmar}
+        >
           {pagar.isPending
             ? "Enviando…"
             : acimaAlcada || conjunta
               ? "Enviar para aprovação"
               : "Pagar folha"}
-        </button>
+        </BotaoFinanceiro>
         {resultado &&
           ("pendente" in resultado ? (
             <p role="status" className="text-sm text-pending">
@@ -335,6 +343,7 @@ function FolhaConta() {
               >
                 <Field id="func-nome" label="Nome">
                   <input
+                    autoComplete="name"
                     id="func-nome"
                     className="field"
                     required
@@ -347,6 +356,7 @@ function FolhaConta() {
                 </Field>
                 <Field id="func-cpf" label="CPF">
                   <input
+                    autoComplete="off"
                     id="func-cpf"
                     className="field"
                     inputMode="numeric"
@@ -370,6 +380,7 @@ function FolhaConta() {
                 </Field>
                 <Field id="func-salario" label="Salário (R$, opcional)">
                   <input
+                    autoComplete="off"
                     id="func-salario"
                     className="field"
                     inputMode="decimal"
@@ -379,9 +390,9 @@ function FolhaConta() {
                   />
                 </Field>
                 {cadastrar.isError && <ErrorBox>{cadastrar.error.message}</ErrorBox>}
-                <button className="btn btn-ink w-full" disabled={ocupada}>
+                <BotaoFinanceiro className="btn btn-ink w-full" disabled={ocupada}>
                   {cadastrar.isPending ? "Cadastrando…" : "Cadastrar"}
-                </button>
+                </BotaoFinanceiro>
                 <button
                   type="button"
                   className="btn btn-ghost w-full"

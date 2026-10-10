@@ -1,3 +1,4 @@
+import { BotaoFinanceiro } from "@/lib/mobile";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -72,6 +73,7 @@ function DepositoDemo() {
       <form onSubmit={confirmar} className="surface space-y-4 p-5 md:p-7">
         <Field label="Valor (R$)" id="valor">
           <input
+            autoComplete="off"
             id="valor"
             inputMode="decimal"
             autoFocus
@@ -97,9 +99,9 @@ function DepositoDemo() {
           ))}
         </div>
         {erro && <ErrorBox>{erro}</ErrorBox>}
-        <button className="btn btn-ink w-full" disabled={loading}>
+        <BotaoFinanceiro className="btn btn-ink w-full" disabled={loading}>
           {loading ? "Depositando…" : "Depositar"}
-        </button>
+        </BotaoFinanceiro>
       </form>
     </div>
   );

@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 import { useQueryClient } from "@tanstack/react-query";
 import { sair as sairApi, selecionarConta } from "./api";
 import { aoExpirarSessao } from "./http";
+import { Capacitor } from "@capacitor/core";
 import type { Conta, LoginResposta, Pessoa } from "./types";
 
 /**
@@ -37,6 +38,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient();
 
   useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        sessionStorage.removeItem(KEY);
+      } catch {
+        /* segue em memória */
+      }
+      setReady(true);
+      return;
+    }
     try {
       const raw = sessionStorage.getItem(KEY);
       if (raw) {
@@ -78,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setContas(cs);
     setPessoa(p);
     try {
-      if (c)
+      if (c && !Capacitor.isNativePlatform())
         sessionStorage.setItem(
           KEY,
           JSON.stringify({ conta: c, contas: cs, pessoa: p } satisfies Salvo),

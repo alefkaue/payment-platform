@@ -1,3 +1,4 @@
+import { useFecharAoVoltar, BotaoFinanceiro } from "@/lib/mobile";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -26,8 +27,10 @@ function ContasEmpresa() {
   const { conta } = useAuth();
   const [aba, setAba] = useState<"receber" | "pagar" | "recebidas">("receber");
   const [nova, setNova] = useState(false);
+  useFecharAoVoltar(nova, () => setNova(false));
   const qc = useQueryClient();
   const [pedido, setPedido] = useState<Fatura | null>(null);
+  useFecharAoVoltar(pedido, () => setPedido(null), 10);
   const [aviso, setAviso] = useState<string | null>(null);
   const admin = conta?.tipo === "PJ" && conta.papel === "admin";
   const estorno = useMutation({
@@ -99,9 +102,9 @@ function ContasEmpresa() {
       {nova ? (
         <NovaCobranca fase={fase} onFechar={() => setNova(false)} />
       ) : (
-        <button className="btn btn-ink mt-5 w-full gap-2" onClick={() => setNova(true)}>
+        <BotaoFinanceiro className="btn btn-ink mt-5 w-full gap-2" onClick={() => setNova(true)}>
           <Plus size={18} /> Cobrar um cliente
-        </button>
+        </BotaoFinanceiro>
       )}
 
       <div role="tablist" className="mt-6 grid grid-cols-3 rounded-full bg-tint p-1">
@@ -148,7 +151,7 @@ function ContasEmpresa() {
             >
               Cancelar
             </button>
-            <button
+            <BotaoFinanceiro
               className="btn btn-ink"
               disabled={estorno.isPending}
               onClick={() => {
@@ -156,7 +159,7 @@ function ContasEmpresa() {
               }}
             >
               {estorno.isPending ? "Aguarde…" : "Confirmar estorno"}
-            </button>
+            </BotaoFinanceiro>
           </div>
         </section>
       )}
@@ -332,6 +335,7 @@ function NovaCobranca({
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Valor (R$)" id="cob-valor">
           <input
+            autoComplete="off"
             id="cob-valor"
             inputMode="decimal"
             className="field tabular"
@@ -388,6 +392,7 @@ function NovaCobranca({
             hint="44 dígitos. Conferimos o dígito e o CNPJ do emissor."
           >
             <input
+              autoComplete="off"
               id="cob-chave"
               inputMode="numeric"
               className="field tabular"
@@ -398,6 +403,7 @@ function NovaCobranca({
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="CBS da nota (R$)" id="cob-cbs">
               <input
+                autoComplete="off"
                 id="cob-cbs"
                 inputMode="decimal"
                 className="field tabular"
@@ -408,6 +414,7 @@ function NovaCobranca({
             </Field>
             <Field label="IBS da nota (R$)" id="cob-ibs">
               <input
+                autoComplete="off"
                 id="cob-ibs"
                 inputMode="decimal"
                 className="field tabular"
@@ -424,9 +431,9 @@ function NovaCobranca({
         <button type="button" className="btn btn-ghost" onClick={onFechar}>
           Cancelar
         </button>
-        <button className="btn btn-ink" disabled={mut.isPending}>
+        <BotaoFinanceiro className="btn btn-ink" disabled={mut.isPending}>
           {mut.isPending ? "Criando…" : "Criar cobrança"}
-        </button>
+        </BotaoFinanceiro>
       </div>
     </form>
   );

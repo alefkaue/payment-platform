@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { useState, type ReactNode } from "react";
 import { ArrowLeft, Check, ScanFace } from "lucide-react";
 import { concluirCadastro, MODO_API, novoDesafioLogin, registrar } from "@/lib/api";
@@ -70,6 +71,9 @@ function CriarConta() {
   const { entrar } = useAuth();
   const { tipo: tipoInicial } = Route.useSearch();
   const [etapa, setEtapa] = useState<Etapa>("dados");
+  useFecharAoVoltar(etapa === "documento" || etapa === "rosto", () => {
+    setEtapa(etapa === "rosto" ? "documento" : "dados");
+  });
 
   // 1. dados
   const [tipo, setTipo] = useState<"PF" | "PJ">(tipoInicial ?? "PF");
@@ -240,6 +244,7 @@ function CriarConta() {
                 </div>
                 <Field label={tipo === "PF" ? "Nome completo" : "Razão social"} id="nome">
                   <input
+                    autoComplete="name"
                     id="nome"
                     className="field"
                     value={nome}
@@ -248,6 +253,7 @@ function CriarConta() {
                 </Field>
                 <Field label={tipo === "PF" ? "CPF" : "CNPJ"} id="doc">
                   <input
+                    autoComplete="off"
                     id="doc"
                     inputMode="numeric"
                     className="field tabular"
@@ -306,6 +312,7 @@ function CriarConta() {
                     )}
                     <Field label="Seu nome (sócio que vai operar a conta)" id="rep">
                       <input
+                        autoComplete="name"
                         id="rep"
                         className="field"
                         value={representante}
@@ -314,6 +321,7 @@ function CriarConta() {
                     </Field>
                     <Field label="Seu CPF" id="cpf">
                       <input
+                        autoComplete="off"
                         id="cpf"
                         inputMode="numeric"
                         className="field tabular"
@@ -327,6 +335,7 @@ function CriarConta() {
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Data de nascimento" id="nasc">
                     <input
+                      autoComplete="bday"
                       id="nasc"
                       type="date"
                       className="field"
@@ -349,6 +358,7 @@ function CriarConta() {
                 </div>
                 <Field label="E-mail" id="email">
                   <input
+                    inputMode="email"
                     id="email"
                     type="email"
                     autoComplete="email"
