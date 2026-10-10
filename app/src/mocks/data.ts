@@ -1,4 +1,5 @@
 import { aliquotasDoAno, calcularSplit, semSplit, VIGENCIA_ATUAL } from "@/lib/split";
+import { faseSplitDemo, TEXTO_DEMONSTRACAO, TEXTO_INFORMATIVO } from "@/lib/split-fase";
 import type {
   ApuracaoPJ,
   Cartao,
@@ -311,9 +312,10 @@ function mk(
     valor_bruto: s.valor_bruto,
     cbs: s.cbs,
     ibs: s.ibs,
-    liquido: s.liquido,
+    liquido: faseSplitDemo() === "informativo" ? valor : s.liquido,
     tipo_destino: tipo,
-    aplicou_split: s.aplicou_split,
+    aplicou_split: faseSplitDemo() !== "informativo" && s.aplicou_split,
+    split_fase: faseSplitDemo(),
     auth_metodo: auth,
     status: "concluida",
     categoria,
@@ -346,9 +348,10 @@ function mkB2B(
     valor_bruto: r(bruto),
     cbs,
     ibs,
-    liquido: r(bruto - cbs - ibs),
+    liquido: faseSplitDemo() === "informativo" ? r(bruto) : r(bruto - cbs - ibs),
     tipo_destino: "PJ",
-    aplicou_split: true,
+    aplicou_split: faseSplitDemo() !== "informativo",
+    split_fase: faseSplitDemo(),
     auth_metodo: "senha",
     status: "concluida",
     categoria,
@@ -464,24 +467,37 @@ export const cartoes: Cartao[] = [
 
 // --- Tributos do mês (split "inteligente": retém o que a nota destaca) --------
 const nomeMes = new Date().toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
-const vendas = transacoes.filter((t) => t.destino_carteira_id === 3050 && t.aplicou_split);
+const vendas = transacoes.filter((t) => t.destino_carteira_id === 3050 && t.cbs + t.ibs > 0);
 const somar = (f: (t: Transacao) => number) =>
   Math.round(vendas.reduce((a, t) => a + f(t), 0) * 100) / 100;
 const cbsRetido = somar((t) => t.cbs);
 const ibsRetido = somar((t) => t.ibs);
+const retencaoDemo = faseSplitDemo() !== "informativo";
 export const apuracaoDemo: ApuracaoPJ = {
+  split_fase: faseSplitDemo(),
+  imposto_destacado: Math.round((cbsRetido + ibsRetido) * 100) / 100,
+  observacao:
+    faseSplitDemo() === "informativo"
+      ? TEXTO_INFORMATIVO
+      : faseSplitDemo() === "demonstracao"
+        ? TEXTO_DEMONSTRACAO
+        : "Imposto separado para o Fisco no recebimento.",
+  split_retencao_desde: "2027-01-01",
   periodo: nomeMes.charAt(0).toUpperCase() + nomeMes.slice(1),
   faturamento: somar((t) => t.valor_bruto),
-  cbs_retido: cbsRetido,
-  ibs_retido: ibsRetido,
-  imposto_retido: Math.round((cbsRetido + ibsRetido) * 100) / 100,
-  a_repassar: Math.round(vendas[0] ? (vendas[0].cbs + vendas[0].ibs) * 100 : 0) / 100, // venda de ontem: vai em D+1
-  repassado:
-    Math.round((cbsRetido + ibsRetido - (vendas[0] ? vendas[0].cbs + vendas[0].ibs : 0)) * 100) /
-    100,
+  cbs_retido: retencaoDemo ? cbsRetido : 0,
+  ibs_retido: retencaoDemo ? ibsRetido : 0,
+  imposto_retido: retencaoDemo ? Math.round((cbsRetido + ibsRetido) * 100) / 100 : 0,
+  a_repassar: retencaoDemo
+    ? Math.round(vendas[0] ? (vendas[0].cbs + vendas[0].ibs) * 100 : 0) / 100
+    : 0,
+  repassado: retencaoDemo
+    ? Math.round((cbsRetido + ibsRetido - (vendas[0] ? vendas[0].cbs + vendas[0].ibs : 0)) * 100) /
+      100
+    : 0,
   creditos_informados: contaPJ.creditos ?? 0,
-  restituicao_prevista: Math.min(contaPJ.creditos ?? 0, cbsRetido + ibsRetido),
-  vendas_com_split: vendas.length,
+  restituicao_prevista: retencaoDemo ? Math.min(contaPJ.creditos ?? 0, cbsRetido + ibsRetido) : 0,
+  vendas_com_split: retencaoDemo ? vendas.length : 0,
 };
 
 // --- Cobranças emitidas pela empresa (Pix dinâmico + boleto) -----------------

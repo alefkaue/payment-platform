@@ -18,6 +18,7 @@ import {
 import { fmtBRL, fmtData, fmtId } from "@/lib/format";
 import type { CategoriaTx, Produto, Transacao, Voo } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { SplitAviso } from "./split-aviso";
 
 /** Logotipo Astro (arquivo oficial da marca; cor só preto ou branco, nunca colorido). */
 export function Wordmark({
@@ -161,6 +162,7 @@ export function TxItem({
                 : `Imposto da nota ${fmtBRL(imposto)} → Fisco`}
             </p>
           )}
+          {t.aplicou_split && <SplitAviso fase={t.split_fase} />}
         </div>
       </div>
       <span className={cn("tabular shrink-0 font-semibold", entrada ? "text-pos" : "text-ink")}>

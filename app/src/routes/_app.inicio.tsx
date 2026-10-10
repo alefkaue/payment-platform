@@ -2,6 +2,8 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { Settings, TrendingUp } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { TEXTO_INFORMATIVO } from "@/lib/split-fase";
+import { SplitAviso } from "@/components/payflow/split-aviso";
 import {
   ArrowUpRight,
   Building2,
@@ -323,18 +325,23 @@ function InicioPJ() {
 }
 
 /** O herói do pitch B2B: o imposto das vendas separado no ato (split). */
-function ApuracaoCard() {
+export function ApuracaoCard() {
   const { conta } = useAuth();
   const q = useQuery({ queryKey: ["apuracao-pj", conta?.numero], queryFn: apuracaoPJ });
   const projecao2033 = q.data ? q.data.faturamento * ALIQUOTA_PLENA : 0;
+  const informativo = q.data?.split_fase === "informativo";
 
   return (
     <section className="surface overflow-hidden p-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg text-ink">Imposto das suas vendas</h2>
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-tax-bg px-3 py-1 text-xs font-semibold text-tax2">
-          <ShieldCheck size={13} /> separado no ato
-        </span>
+        <h2 className="text-lg text-ink">
+          {informativo ? "Imposto destacado nas suas notas" : "Imposto das suas vendas"}
+        </h2>
+        {q.data && !informativo && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-tax-bg px-3 py-1 text-xs font-semibold text-tax2">
+            <ShieldCheck size={13} /> separado no ato
+          </span>
+        )}
       </div>
 
       {q.isError ? (
@@ -346,26 +353,36 @@ function ApuracaoCard() {
       ) : (
         <>
           <p className="mt-1 text-sm text-muted-foreground">
-            {q.data.periodo} · {q.data.vendas_com_split} venda(s) com nota · alíquotas de{" "}
-            {VIGENCIA_ATUAL}
+            {q.data.periodo} ·{" "}
+            {informativo ? "Notas do período" : `${q.data.vendas_com_split} venda(s) com split`} ·
+            alíquotas de {VIGENCIA_ATUAL}
           </p>
 
-          <p className="mt-4 text-sm text-mut2">Retido das notas e enviado ao Fisco</p>
+          <SplitAviso fase={q.data.split_fase} />
+          <p className="mt-4 text-sm text-mut2">
+            {informativo
+              ? "Imposto destacado nas suas notas"
+              : "Retido das notas e separado para o Fisco"}
+          </p>
           <p className="tabular text-4xl font-semibold tracking-display text-ink">
-            {fmtBRL(q.data.imposto_retido)}
+            {fmtBRL(informativo ? q.data.imposto_destacado : q.data.imposto_retido)}
           </p>
-          <p className="mt-1 text-sm text-mut2">
-            CBS {fmtBRL(q.data.cbs_retido)} + IBS {fmtBRL(q.data.ibs_retido)}, exatamente o que está
-            destacado nas suas notas.
-          </p>
+          {!informativo && (
+            <p className="mt-1 text-sm text-mut2">
+              CBS {fmtBRL(q.data.cbs_retido)} + IBS {fmtBRL(q.data.ibs_retido)}, exatamente o que
+              está destacado nas suas notas.
+            </p>
+          )}
 
-          <div className="mt-5">
-            <SplitBar liquido={q.data.repassado} imposto={q.data.a_repassar} />
-            <div className="mt-2 flex justify-between text-xs">
-              <span className="text-pos">Já repassado {fmtBRL(q.data.repassado)}</span>
-              <span className="text-tax">Repasse amanhã {fmtBRL(q.data.a_repassar)}</span>
+          {!informativo && (
+            <div className="mt-5">
+              <SplitBar liquido={q.data.repassado} imposto={q.data.a_repassar} />
+              <div className="mt-2 flex justify-between text-xs">
+                <span className="text-pos">Já repassado {fmtBRL(q.data.repassado)}</span>
+                <span className="text-tax">Repasse amanhã {fmtBRL(q.data.a_repassar)}</span>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="mt-5 grid grid-cols-2 gap-3">
             <MetricTile label="Vendas com nota" value={fmtBRL(q.data.faturamento)} />
@@ -378,12 +395,18 @@ function ApuracaoCard() {
           </div>
 
           <p className="mt-4 rounded-[14px] bg-tax-bg px-4 py-3 text-sm text-tax2">
-            <strong className="font-semibold">
-              Imposto separado na hora, apuração quase pronta.
-            </strong>{" "}
-            Cada cobrança paga já chega líquida e com o imposto conciliado à nota. A apuração
-            continua (assistida pela Receita): seus créditos de compras entram nela e o que sobrar
-            volta como compensação ou restituição.
+            {informativo ? (
+              TEXTO_INFORMATIVO
+            ) : (
+              <>
+                <strong className="font-semibold">
+                  Imposto separado na hora, apuração quase pronta.
+                </strong>{" "}
+                Cada cobrança paga já chega líquida e com o imposto conciliado à nota. A apuração
+                continua (assistida pela Receita): seus créditos de compras entram nela e o que
+                sobrar volta como compensação ou restituição.
+              </>
+            )}
           </p>
 
           <Link
@@ -399,7 +422,7 @@ function ApuracaoCard() {
 }
 
 /** Créditos tributários + caixa preservado (pilar fluxo de caixa). */
-function CreditosCard({ creditos }: { creditos: number }) {
+export function CreditosCard({ creditos }: { creditos: number }) {
   const { conta } = useAuth();
   const q = useQuery({ queryKey: ["apuracao-pj", conta?.numero], queryFn: apuracaoPJ });
   return (
@@ -421,13 +444,24 @@ function CreditosCard({ creditos }: { creditos: number }) {
         <span className="grid h-10 w-10 place-items-center rounded-full bg-tint text-pos">
           <Landmark size={20} />
         </span>
-        <p className="mt-3 text-sm text-mut2">Caixa preservado no mês</p>
+        <p className="mt-3 text-sm text-mut2">
+          {q.data?.split_fase === "informativo"
+            ? "Imposto destacado no mês"
+            : "Imposto separado no recebimento"}
+        </p>
         <p className="tabular text-2xl font-semibold tracking-display text-pos">
-          {q.data ? fmtBRL(q.data.imposto_retido) : "—"}
+          {q.data
+            ? fmtBRL(
+                q.data.split_fase === "informativo"
+                  ? q.data.imposto_destacado
+                  : q.data.imposto_retido,
+              )
+            : "—"}
         </p>
         <p className="mt-1 text-xs text-mut3">
-          Imposto das suas notas que já saiu separado no recebimento — não passa pelo seu caixa e
-          você não precisa provisionar.
+          {q.data?.split_fase === "informativo"
+            ? "não saiu do seu caixa em 2026"
+            : "Imposto das suas notas que saiu separado no recebimento."}
         </p>
       </div>
     </section>
@@ -543,7 +577,9 @@ export function FaturaRow({ f }: { f: Fatura }) {
           {receber ? "+" : "−"} {fmtBRL(receber ? f.liquido : f.valor_bruto)}
         </p>
         <p className="text-[11px] text-mut3">
-          {receber ? `imposto ${fmtBRL(f.imposto)}` : `+${fmtBRL(f.credito_gerado)} crédito`}
+          {receber
+            ? `${f.split_fase === "informativo" ? "imposto destacado" : "imposto"} ${fmtBRL(f.imposto)}`
+            : `+${fmtBRL(f.credito_gerado)} crédito`}
         </p>
       </div>
     </li>
