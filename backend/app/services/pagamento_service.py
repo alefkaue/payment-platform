@@ -277,6 +277,7 @@ def conciliar_executando(repo: Repositorio) -> dict:
             elif p["tipo"] == "folha":
                 total = len(p["payload"].get("itens") or [])
                 status, resultado = "aprovada", {"transacoes": ids, "executados": len(ids), "itens": total,
+                                                 "parcial": len(ids) < total,
                                                  "conciliada": True}
             else:
                 status, resultado = "aprovada", {"transacao_id": ids[0], "conciliada": True}
