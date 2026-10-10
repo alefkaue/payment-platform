@@ -92,6 +92,8 @@ class CobrancaResponse(BaseModel):
     paga_em: datetime | None = None
     recebedor_nome: str | None = None
     vai_reter_imposto: bool
+    # informativo (2026: mostra, não retém) | retencao | demonstracao (apresentação)
+    split_fase: str = "retencao"
 
 
 class PagarCobranca(BaseModel):

@@ -30,6 +30,7 @@ from decimal import ROUND_DOWN, Decimal
 from fastapi import HTTPException
 
 from app.core import tempo
+from app.core.config import get_settings
 from app.core.documentos import (
     chave_nfe_valida,
     cnpj_valido,
@@ -62,13 +63,24 @@ def pix_copia_e_cola(txid: str) -> str:
     return f"PAYFLOW-SIMULADO.{txid}"
 
 
+def fase_split() -> str:
+    """informativo: antes do início do split (2026, ano de teste) -- mostra, não retém;
+    retencao: o split vale (a partir de SPLIT_RETENCAO_DESDE);
+    demonstracao: retém antes da data só para apresentação (o app mostra o selo)."""
+    s = get_settings()
+    if tempo.hoje_brt() >= s.split_retencao_desde:
+        return "retencao"
+    return "demonstracao" if s.split_demonstracao else "informativo"
+
+
 def vai_reter(cobranca: dict) -> bool:
-    return cobranca["recebedor"]["regime_apuracao"] == "regular" and (cobranca["cbs"] + cobranca["ibs"]) > 0
+    return (fase_split() != "informativo" and cobranca["recebedor"]["regime_apuracao"] == "regular"
+            and (cobranca["cbs"] + cobranca["ibs"]) > 0)
 
 
 def para_resposta(c: dict) -> dict:
     return {**c, "pix_copia_e_cola": pix_copia_e_cola(c["txid"]), "recebedor_nome": c["recebedor"]["nome"],
-            "vai_reter_imposto": vai_reter(c)}
+            "vai_reter_imposto": vai_reter(c), "split_fase": fase_split()}
 
 
 def _dividir(total: Decimal, n: int) -> list[Decimal]:

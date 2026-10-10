@@ -15,6 +15,7 @@ vêm do Azure Key Vault / variáveis do App Service.
 
 import ipaddress
 import secrets
+from datetime import date
 from functools import lru_cache
 
 from pydantic import Field
@@ -86,6 +87,13 @@ class Settings(BaseSettings):
     # quando o cliente não informa um ano. Vazio = ano corrente. Não afeta o split
     # de cobranças reais: ali o valor do imposto vem da própria NF-e.
     split_vigencia: str | None = Field(default=None, alias="SPLIT_VIGENCIA")
+    # Transição honesta (LC 214/2025): 2026 é ano de teste, o recolhimento de CBS/IBS é
+    # dispensado e o split só começa em 2027. Antes desta data a cobrança mostra o imposto
+    # destacado na nota, mas a empresa recebe o valor inteiro (nada é retido).
+    split_retencao_desde: date = Field(default=date(2027, 1, 1), alias="SPLIT_RETENCAO_DESDE")
+    # Só para apresentação: retém antes da data, e o app mostra o selo de simulação.
+    # Proibido em produção (reteria dinheiro que a empresa não deve).
+    split_demonstracao: bool = Field(default=False, alias="SPLIT_DEMONSTRACAO")
     # Acima deste valor (em reais), a transferência exige MFA facial (selfie).
     # Abaixo, basta o JWT. Espelha o LIMITE_FACIAL do design (padrão R$ 500).
     limite_facial_reais: float = Field(default=500.0, alias="LIMITE_FACIAL_REAIS")
@@ -279,6 +287,8 @@ def get_settings() -> Settings:
         )
     if s.deposito_demo and s.em_producao:
         raise RuntimeError("DEPOSITO_DEMO não pode ser usado em produção (cria dinheiro do nada).")
+    if s.split_demonstracao and s.em_producao:
+        raise RuntimeError("SPLIT_DEMONSTRACAO não pode ser usado em produção (reteria imposto que não é devido).")
     if s.cnpj_provedor == "stub" and s.em_producao:
         raise RuntimeError("CNPJ_PROVEDOR=stub não pode ser usado em produção (aceita qualquer CNPJ).")
     if s.documento_provedor == "stub" and s.em_producao:

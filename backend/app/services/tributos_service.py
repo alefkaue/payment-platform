@@ -18,6 +18,7 @@ from fastapi import HTTPException
 from decimal import Decimal
 
 from app.core import tempo
+from app.core.config import get_settings
 from app.repositories.repository import Repositorio
 
 
@@ -50,13 +51,26 @@ def resumo_empresa(repo: Repositorio, conta: dict, mes: str | None = None) -> di
     creditos = repo.listar_creditos(conta["empresa_id"])
     total_credito = sum((c["valor"] for c in creditos), Decimal("0.00"))
     retido = r["cbs_retido"] + r["ibs_retido"]
+    from app.services.cobranca_service import fase_split
+
+    fase = fase_split()
+    observacao = {
+        "informativo": "2026 é ano de teste da Reforma: o imposto aparece destacado na nota, mas não é retido "
+                       "(o recolhimento está dispensado e o split começa em 2027). Nada saiu do seu caixa.",
+        "demonstracao": "Simulação para apresentação: o split ainda não vale; os valores retidos aqui são de teste.",
+        "retencao": "O banco separa o imposto destacado na nota no recebimento. Créditos são abatidos pelo fisco "
+                    "na apuração; a restituição prevista é uma estimativa.",
+    }[fase]
     return {
         **r,
         "periodo": periodo,
         "faturamento": repo.faturamento_cobrancas(conta["carteira_id"], desde, ate),
+        # Quanto as notas pagas no mês destacaram de CBS+IBS (o que SERIA retido no informativo).
+        "imposto_destacado": repo.imposto_destacado_cobrancas(conta["carteira_id"], desde, ate),
         "creditos_informados": total_credito,
         "restituicao_prevista": min(total_credito, retido),
         "modo_split": "inteligente",
-        "observacao": "O banco retém o imposto destacado na nota. Créditos são abatidos pelo fisco na apuração; "
-                      "a restituição prevista é uma estimativa.",
+        "split_fase": fase,
+        "split_retencao_desde": get_settings().split_retencao_desde,
+        "observacao": observacao,
     }

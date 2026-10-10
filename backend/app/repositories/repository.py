@@ -1297,6 +1297,12 @@ class Repositorio(RepositorioExtras):
                 Cobranca.recebedor_carteira_id == recebedor_carteira_id, Cobranca.status == "paga",
                 Cobranca.paga_em >= desde, Cobranca.paga_em < ate)) or 0).quantize(Decimal("0.01"))
 
+    def imposto_destacado_cobrancas(self, recebedor_carteira_id: int, desde: datetime, ate: datetime) -> Decimal:
+        with self._sf() as s:
+            return Decimal(s.scalar(select(func.coalesce(func.sum(Cobranca.cbs + Cobranca.ibs), 0)).where(
+                Cobranca.recebedor_carteira_id == recebedor_carteira_id, Cobranca.status == "paga",
+                Cobranca.paga_em >= desde, Cobranca.paga_em < ate)) or 0).quantize(Decimal("0.01"))
+
     def registrar_credito(self, *, empresa_id: int, tributo: str, valor: Decimal, fonte: str, referencia: Optional[str]) -> dict:
         with self._sf() as s:
             c = CreditoTributario(empresa_id=empresa_id, tributo=tributo, valor=valor, fonte=fonte, referencia=referencia)
