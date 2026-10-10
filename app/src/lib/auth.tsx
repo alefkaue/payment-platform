@@ -90,14 +90,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const entrar = (r: LoginResposta) => {
+    qc.clear();
     selecionarConta(r.conta);
     salvar(r.conta, r.contas, r.pessoa ?? null);
   };
   const trocarConta = (c: Conta) => {
+    qc.clear();
     selecionarConta(c);
     salvar(c, contas, pessoa);
   };
   const sair = () => {
+    qc.clear();
     void sairApi();
     salvar(null, [], null);
   };

@@ -26,6 +26,7 @@ import {
   post,
   postAnonimo,
   requisitar,
+  refreshDaSessao,
   salvarTokens,
 } from "./http";
 import type {
@@ -552,17 +553,22 @@ export async function concluirCadastro(
 }
 
 export async function sair(refresh = true): Promise<void> {
+  let encerrando: Promise<unknown> | undefined;
   if (MODO_API && refresh) {
     try {
-      const raw = window.sessionStorage.getItem("payflow-tokens");
-      const rt = raw ? (JSON.parse(raw) as { refresh_token?: string }).refresh_token : undefined;
-      if (rt) await post("/auth/logout", { refresh_token: rt });
+      const rt = refreshDaSessao();
+      if (rt) encerrando = post("/auth/logout", { refresh_token: rt });
     } catch {
       /* logout é melhor esforço */
     }
   }
   salvarTokens(null);
   definirConta(null);
+  try {
+    await encerrando;
+  } catch {
+    /* logout é melhor esforço; a limpeza local já ocorreu */
+  }
 }
 
 // =============================================================================
