@@ -404,7 +404,7 @@ def contestar(repo: Repositorio, *, usuario: dict, conta: dict, transacao_id: in
     c = repo.criar_contestacao(transacao_id=transacao_id, usuario_id=usuario["id"], motivo=motivo)
     if c is None:
         raise HTTPException(status_code=409, detail="Esta transação já tem uma contestação.")
-    repo.registrar_log(ator=usuario["email"], acao="contestacao_aberta", ip=ip, detalhe={"transacao_id": transacao_id})
+    repo.registrar_log(ator=usuario["email"], acao="contestacao_aberta", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"), detalhe={"transacao_id": transacao_id})
     return c
 
 

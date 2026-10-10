@@ -37,7 +37,7 @@ def alterar_limites(dados: LimiteUpdate, usuario: dict = Depends(usuario_atual),
     """Reduzir vale na hora. Aumentar fica agendado (carência de LIMITE_CARENCIA_HORAS)."""
     exigir_papel(conta, PapelVinculo.ADMIN)
     r = seguranca_service.atualizar_limites(repo, conta=conta, novos=dados.model_dump())
-    repo.registrar_log(ator=usuario["email"], acao="limites_alterados", ip=ip,
+    repo.registrar_log(ator=usuario["email"], acao="limites_alterados", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"),
                        detalhe={"carteira_id": conta["carteira_id"], **{k: str(v) for k, v in dados.model_dump().items() if v is not None}})
     return r
 
@@ -178,7 +178,7 @@ def declarar_credito(dados: CreditoCreate, usuario: dict = Depends(usuario_atual
     exigir_papel(conta, PapelVinculo.ADMIN)
     c = repo.registrar_credito(empresa_id=conta["empresa_id"], tributo=dados.tributo, valor=dados.valor,
                                fonte="declarado", referencia=dados.referencia)
-    repo.registrar_log(ator=usuario["email"], acao="credito_declarado", ip=ip, detalhe={"credito_id": c["id"]})
+    repo.registrar_log(ator=usuario["email"], acao="credito_declarado", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"), detalhe={"credito_id": c["id"]})
     return c
 
 

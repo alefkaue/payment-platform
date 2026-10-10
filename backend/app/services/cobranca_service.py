@@ -125,7 +125,7 @@ def criar(repo: Repositorio, *, usuario: dict, conta: dict, dados, ip: str | Non
             "parcela_numero": i + 1, "parcelas_total": n, "criado_por_usuario_id": usuario["id"],
         })
     cobrancas = repo.criar_cobrancas(linhas)
-    repo.registrar_log(ator=usuario["email"], acao="cobranca_criada", ip=ip,
+    repo.registrar_log(ator=usuario["email"], acao="cobranca_criada", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"),
                        detalhe={"txids": [c["txid"] for c in cobrancas], "valor": str(valor), "nfe": bool(chave)})
     return cobrancas
 
@@ -197,7 +197,7 @@ def pagar(
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 
-    repo.registrar_log(ator=usuario["email"], acao="cobranca_paga", ip=ip, detalhe={
+    repo.registrar_log(ator=usuario["email"], acao="cobranca_paga", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"), detalhe={
         "txid": txid, "transacao_id": t["id"], "cbs": str(t["cbs"]), "ibs": str(t["ibs"]), "auth": metodo.value,
     })
     webhook_service.entregar_agora(repo, t.pop("_entregas", None))
@@ -212,7 +212,7 @@ def cancelar(repo: Repositorio, *, usuario: dict, conta: dict, txid: str, ip: st
         raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
     if not repo.cancelar_cobranca(cob["id"]):
         raise HTTPException(status_code=409, detail="Só cobranças abertas podem ser canceladas.")
-    repo.registrar_log(ator=usuario["email"], acao="cobranca_cancelada", ip=ip, detalhe={"txid": txid})
+    repo.registrar_log(ator=usuario["email"], acao="cobranca_cancelada", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"), detalhe={"txid": txid})
 
 
 def estornar(repo: Repositorio, *, usuario: dict, conta: dict, txid: str, ip: str | None) -> dict:
@@ -232,7 +232,7 @@ def estornar(repo: Repositorio, *, usuario: dict, conta: dict, txid: str, ip: st
         raise HTTPException(status_code=400, detail="Saldo insuficiente para devolver o valor ao pagador.")
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
-    repo.registrar_log(ator=usuario["email"], acao="cobranca_estornada", ip=ip, detalhe={"txid": txid, "transacao_id": t["id"]})
+    repo.registrar_log(ator=usuario["email"], acao="cobranca_estornada", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"), detalhe={"txid": txid, "transacao_id": t["id"]})
     webhook_service.entregar_agora(repo, t.pop("_entregas", None))
     return t
 
@@ -260,7 +260,7 @@ def criar_autorizacao(repo: Repositorio, *, usuario: dict, conta: dict, dados, i
         recebedor_carteira_id=conta["carteira_id"], pagador_carteira_id=pagador["carteira_id"],
         descricao=dados.descricao, valor_maximo=dados.valor_maximo, periodicidade=dados.periodicidade,
     )
-    repo.registrar_log(ator=usuario["email"], acao="pix_automatico_solicitado", ip=ip, detalhe={"autorizacao_id": a["id"]})
+    repo.registrar_log(ator=usuario["email"], acao="pix_automatico_solicitado", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"), detalhe={"autorizacao_id": a["id"]})
     return a
 
 
@@ -278,7 +278,7 @@ def responder_autorizacao(repo: Repositorio, *, usuario: dict, conta: dict, disp
         a = repo.atualizar_autorizacao(autorizacao_id, **campos)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
-    repo.registrar_log(ator=usuario["email"], acao="pix_automatico_" + ("aceito" if aceitar else "recusado"), ip=ip,
+    repo.registrar_log(ator=usuario["email"], acao="pix_automatico_" + ("aceito" if aceitar else "recusado"), ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"),
                        detalhe={"autorizacao_id": autorizacao_id})
     return a
 
@@ -299,7 +299,7 @@ def cancelar_autorizacao(repo: Repositorio, *, usuario: dict, conta: dict, autor
     for c in repo.cobrancas_da_autorizacao(autorizacao_id):
         if c["status"] == "aberta":
             repo.cancelar_cobranca(c["id"])
-    repo.registrar_log(ator=usuario["email"], acao="pix_automatico_cancelado", ip=ip,
+    repo.registrar_log(ator=usuario["email"], acao="pix_automatico_cancelado", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"),
                        detalhe={"autorizacao_id": autorizacao_id, "por": lado})
     return a
 
@@ -329,7 +329,7 @@ def cobrar_recorrente(repo: Repositorio, *, usuario: dict, conta: dict, autoriza
         }])
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
-    repo.registrar_log(ator=usuario["email"], acao="pix_automatico_cobranca", ip=ip,
+    repo.registrar_log(ator=usuario["email"], acao="pix_automatico_cobranca", ip=ip, usuario_id=usuario["id"], empresa_id=conta.get("empresa_id"),
                        detalhe={"autorizacao_id": autorizacao_id, "txid": cob["txid"]})
     return cob
 

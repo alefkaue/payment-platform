@@ -123,5 +123,5 @@ def criar_chave(repo: Repositorio, *, conta: dict, tipo: str, valor: str | None,
     k = repo.criar_chave(carteira_id=conta["carteira_id"], tipo=tipo, valor=valor_final)
     if k is None:
         raise HTTPException(status_code=409, detail="Esta chave já está cadastrada.")
-    repo.registrar_log(ator=autor["email"], acao="chave_pix_criada", ip=ip, detalhe={"tipo": tipo, "carteira_id": conta["carteira_id"]})
+    repo.registrar_log(ator=autor["email"], acao="chave_pix_criada", ip=ip, usuario_id=autor["id"], empresa_id=conta.get("empresa_id"), detalhe={"tipo": tipo, "carteira_id": conta["carteira_id"]})
     return k

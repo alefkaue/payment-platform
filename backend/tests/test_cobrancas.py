@@ -212,3 +212,12 @@ def test_simulador_de_split(cliente):
     assert len(cliente.get("/pagamentos/split/transicao").json()) == 8
 
 
+
+
+def test_acoes_de_cobranca_aparecem_na_auditoria_da_empresa(cliente):
+    """Antes, cobrança criada/cancelada não levava empresa_id e sumia da trilha da empresa."""
+    dono, n, _ = _empresa(cliente)
+    [c] = _cobrar(cliente, dono, n, valor="10.00")
+    assert cliente.post(f"/cobrancas/{c['txid']}/cancelar", json={}, headers=dono.h(n)).status_code in (200, 204)
+    acoes = [a["acao"] for a in cliente.get("/empresas/atual/auditoria", headers=dono.h(n)).json()]
+    assert "cobranca_criada" in acoes and "cobranca_cancelada" in acoes
