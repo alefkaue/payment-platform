@@ -216,6 +216,13 @@ export interface KycResultado {
   status: "aprovado" | "em_analise" | "reprovado" | "pendente";
   motivos: string[];
 }
+export interface VerificacaoIdentidade {
+  status: KycResultado["status"] | null;
+  caso: { id: number; status: KycResultado["status"]; motivos: string[] } | null;
+}
+export interface DocumentoReenvioResultado extends KycResultado {
+  caso_id: number;
+}
 
 export type TipoDocumentoEmpresa =
   "contrato_social" | "ccmei" | "cartao_cnpj" | "procuracao" | "outro";

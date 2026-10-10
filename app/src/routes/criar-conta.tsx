@@ -17,6 +17,7 @@ import type {
 import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
 import { CampoDocumento } from "@/components/payflow/documento";
+import { DocumentoPessoa } from "@/components/payflow/documento-pessoa";
 import { cn } from "@/lib/utils";
 
 type Busca = { tipo?: "PF" | "PJ" };
@@ -37,12 +38,6 @@ export const Route = createFileRoute("/criar-conta")({
 
 const SETORES = ["Indústria", "Autopeças", "Comércio", "Serviços", "Transporte", "Outro"];
 
-const DOCS_PESSOA: Record<TipoDocumentoPessoa, string> = {
-  rg: "RG",
-  cnh: "CNH",
-  cin: "Carteira de Identidade Nacional (CIN)",
-  passaporte: "Passaporte",
-};
 const DOCS_EMPRESA: Record<TipoDocumentoEmpresa, string> = {
   contrato_social: "Contrato social",
   ccmei: "CCMEI (certificado do MEI)",
@@ -399,32 +394,14 @@ function CriarConta() {
                   Foto nítida, sem reflexo, com o documento inteiro. Conferimos CPF, nome e o rosto
                   com a sua verificação facial. As imagens não ficam guardadas.
                 </p>
-                <Field label="Qual documento" id="tipo-doc">
-                  <select
-                    id="tipo-doc"
-                    className="field"
-                    value={tipoDoc}
-                    onChange={(e) => setTipoDoc(e.target.value as TipoDocumentoPessoa)}
-                  >
-                    {(Object.keys(DOCS_PESSOA) as TipoDocumentoPessoa[]).map((t) => (
-                      <option key={t} value={t}>
-                        {DOCS_PESSOA[t]}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <CampoDocumento
-                  rotulo={precisaVerso ? `${DOCS_PESSOA[tipoDoc]} — frente` : "Página com a foto"}
-                  valor={frente}
-                  onChange={setFrente}
+                <DocumentoPessoa
+                  tipo={tipoDoc}
+                  frente={frente}
+                  verso={verso}
+                  onTipo={setTipoDoc}
+                  onFrente={setFrente}
+                  onVerso={setVerso}
                 />
-                {precisaVerso && (
-                  <CampoDocumento
-                    rotulo={`${DOCS_PESSOA[tipoDoc]} — verso`}
-                    valor={verso}
-                    onChange={setVerso}
-                  />
-                )}
                 {tipo === "PJ" && (
                   <>
                     <Field label="Documento da empresa" id="tipo-doc-empresa">
