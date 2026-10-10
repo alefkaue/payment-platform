@@ -55,11 +55,14 @@ function Auditoria() {
             onChange={(e) => setTexto(e.target.value)}
             placeholder="Descrição ou quem fez"
           />
-          <div className="mt-3 flex flex-wrap gap-2" aria-label="Tipo de atividade">
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Tipo de atividade">
             {(["Todos", "Acessos", "Pagamentos", "Aprovações"] as const).map((opcao) => (
               <button
                 key={opcao}
-                className={`btn ${tipo === opcao ? "btn-ink" : "btn-ghost"}`}
+                // Mesmos chips do Extrato.
+                className={`shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition ${
+                  tipo === opcao ? "bg-ink text-ink-foreground" : "bg-tint text-mut2 hover:text-ink"
+                }`}
                 aria-pressed={tipo === opcao}
                 onClick={() => setTipo(opcao)}
               >
