@@ -530,7 +530,7 @@ export async function minhaConta(): Promise<Conta> {
   await delay(250);
   if (MODO_API) {
     const c = mapConta(await get<ContaApi>("/contas/atual"));
-    if (c.tipo === "PF") c.pontos = (await get<{ saldo: number }>("/pontos")).saldo;
+    // Pontos (Loja/Viagens) estão arquivados: app/src/_arquivado/beneficios.
     if (c.tipo === "PJ") {
       const e = await get<{ porte: Conta["porte"]; cnae: string | null; setor: string | null }>(
         "/empresas/atual",

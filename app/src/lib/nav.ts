@@ -34,7 +34,7 @@ const PRIMARIA_PF: NavItem[] = [
   { to: "/inicio", label: "Início", icon: Home },
   { to: "/pix", label: "Pix", icon: QrCode },
   { to: "/cartoes", label: "Cartões", icon: CreditCard },
-  { to: "/loja", label: "Loja", icon: ShoppingBag },
+  { to: "/extrato", label: "Extrato", icon: ListOrdered },
 ];
 const PRIMARIA_PJ: NavItem[] = [
   { to: "/inicio", label: "Início", icon: Home },
@@ -45,8 +45,6 @@ const PRIMARIA_PJ: NavItem[] = [
 
 /** Itens secundários — aparecem no menu "Mais" (mobile) e no rodapé da sidebar. */
 const SECUNDARIA_PF: NavItem[] = [
-  { to: "/extrato", label: "Extrato", icon: ListOrdered, hint: "Suas entradas e saídas" },
-  { to: "/viagens", label: "Viagens", icon: Plane, hint: "Voe pagando em reais ou com pontos" },
   { to: "/split", label: "Entenda o split", icon: Split, hint: "O imposto da Reforma, explicado" },
   { to: "/notificacoes", label: "Notificações", icon: Bell, hint: "Avisos da sua conta" },
   {

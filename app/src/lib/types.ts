@@ -348,7 +348,7 @@ export interface Notificacao {
   criado_em: string; // ISO
   lida: boolean;
   /** Rota do app para onde o toque leva (opcional). */
-  href?: "/extrato" | "/contas" | "/split" | "/pendentes" | "/viagens" | "/perfil";
+  href?: "/extrato" | "/contas" | "/split" | "/pendentes" | "/perfil";
 }
 
 /** Pessoa com vínculo na empresa (conta PJ) — papel + alçada. */

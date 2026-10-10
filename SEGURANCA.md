@@ -4,6 +4,11 @@
 > **foco em segurança (back e front), não em design**, preparando o projeto para subir no **Azure** e
 > passar por **pentest de outros grupos**. A seção 5 é o diário: o que já foi feito, em que commit, e
 > por onde continuar. Complementa o `HANDOFF-V9.md` (estado geral do projeto).
+>
+> **PARA A PRÓXIMA SESSÃO (parou em 09/10, fim da 3ª sessão):** itens 1 a 6 feitos e no GitHub. Continue no
+> **item 7** da tabela da seção 3 e siga a ordem. Antes de mexer: `git pull`. Rode os testes do backend
+> (`cd backend && .venv/Scripts/python.exe -m pytest`, 176 passando) e do app (`cd app && npx tsc --noEmit &&
+> npx vitest run`). Atenção: o PC do Alef fica sem memória com app + backend + câmera abertos ao mesmo tempo.
 
 ---
 
@@ -49,7 +54,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 | 3 | **Sessão**: máximo absoluto (ex.: 12 h) e inatividade (ex.: 15 min) no servidor; aviso de login em aparelho novo | A3 | ✅ (aviso por e-mail/push: depois) |
 | 4 | **Força bruta e enumeração**: rate limit em cadastro/refresh/convites; atraso progressivo; tentativas por `mfa_token`; resposta neutra no cadastro | A4 | ✅ |
 | 5 | **Cadastro em etapas** (dados → documento → rosto, cada um numa página) e **documento frente e verso obrigatórios** (no app e no backend) | pedido do Alef | ✅ |
-| 6 | **Arquivar Loja/Viagens/pontos**: telas para `app/src/_arquivado/`, fora da navegação; backend com `BENEFICIOS_HABILITADOS=0` por padrão | pedido do Alef, A8 | ⬜ |
+| 6 | **Arquivar Loja/Viagens/pontos**: telas para `app/src/_arquivado/`, fora da navegação; backend com `BENEFICIOS_HABILITADOS=0` por padrão | pedido do Alef, A8 | ✅ |
 | 7 | **Front**: CSP e cabeçalhos no host (Static Web Apps), overlay de debug só em dev, build de produção recusa modo demonstração | A5 | ⬜ |
 | 8 | **Segredos e config**: tirar a derivação de segredos e o CORS `*.netlify.app`; Key Vault no Azure | A6 | ⬜ |
 | 9 | **Azure + WAF + `PENTEST.md`** (escopo, regras, contas de teste, como reportar) e APK Android pelo CI | objetivo do pentest | ⬜ |
@@ -132,3 +137,37 @@ justamente ver se alguém burla.
   `documento_service` recusa RG/CNH/CIN sem verso (`TIPOS_COM_VERSO`) — vale também para quem chama a API direto.
   Teste `test_documento_exige_frente_e_verso`. 175 testes. **Não testado visualmente no navegador** (o PC estava
   sem memória para subir app + câmera); conferir as 4 telas no celular.
+- 09/10 — **Item 6 feito.** App: telas `_app.loja.tsx`, `_app.loja.$id.tsx`, `_app.viagens.tsx` e os cartões
+  `ProdutoCard`/`VooCard` movidos para `app/src/_arquivado/beneficios/` (fora de `src/routes`, do `tsc` e do
+  `eslint`; o `README.md` de lá explica como reativar). Saíram os atalhos (barra PF agora tem Extrato no lugar
+  de Loja; banners, atalhos e "pontos" da home; botão de pontos em Cartões; notificação de pontos do modo demo)
+  e a leitura de `/pontos` em `minhaConta()`. Backend: `BENEFICIOS_HABILITADOS=0` por padrão — rotas de
+  Loja/Viagens/pontos respondem 404 e o catálogo não é criado no boot (os testes ligam o módulo; teste novo
+  `test_beneficios_desligados_respondem_404`). 176 testes no backend; app `tsc`/`vitest` ok.
+
+### Próximos passos detalhados (itens 7 a 10)
+
+- **7. Front**: (a) quando o refresh falhar (401), limpar a sessão e ir para `/login` com o motivo (hoje só
+  mostra erro na tela) — ver `requisitar()` em `app/src/lib/http.ts` e `useAuth`; (b) build de produção deve
+  **falhar** se `VITE_API_URL` não estiver definida (senão vira modo demonstração, onde qualquer login entra) —
+  checar em `vite.config.ts` com `mode === "production"`; (c) CSP e cabeçalhos para o host do front:
+  `app/public/staticwebapp.config.json` (Azure Static Web Apps) com `Content-Security-Policy` (script-src
+  'self' + `https://cdn.jsdelivr.net` e `https://storage.googleapis.com` que o MediaPipe usa; `connect-src` com a
+  URL da API), `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, `Permissions-Policy: camera=(self)`.
+  Overlay de debug da câmera já está só no `npm run dev` (item 1).
+- **8. Segredos/config**: apagar a derivação de segredos do `DATABASE_URL` em `backend/entrypoint-demo.sh` (exigir
+  `JWT_SECRET`/`EMBEDDING_KEY`/`ADMIN_SENHA` no ambiente) e o `CORS_ORIGIN_REGEX` de `*.netlify.app` no
+  `Dockerfile` da raiz; atualizar `.env.example` com as variáveis novas (`DPOP_*`, `SESSAO_*`, `CADASTRO_MAX_IP_HORA`,
+  `REFRESH_MAX_IP_15MIN`, `BENEFICIOS_HABILITADOS`); no Azure, segredos no Key Vault.
+- **9. Azure + `PENTEST.md`**: Dockerfile endurecido (ver `HANDOFF-V9.md` §5), `infra/azure/` (Container Apps,
+  Postgres Flexible B1ms, Key Vault, Static Web Apps, Front Door Standard com regras de rate limit), workflow com
+  OIDC, e o `PENTEST.md` para os outros grupos: escopo (URLs do ambiente de pentest + APK), regras (sem DoS,
+  sem atacar outros recursos — Rules of Engagement da Microsoft), contas de teste por perfil (PF, MEI, PME,
+  Grande com papéis), como gerar provas DPoP para testar a API direto (`backend/tests/test_dpop.py`, classe
+  `Chave`), modelo de relatório de achados. Plano de distribuição: Android = APK do CI; iPhone = PWA (Safari →
+  Adicionar à Tela de Início), a menos que alguém tenha Mac + conta Apple Developer.
+- **10. App nativo** (depois do APK existir): chave DPoP no Keystore/Keychain, tokens em armazenamento seguro,
+  certificate pinning, Play Integrity / App Attest verificados no servidor (contra câmera virtual).
+- **Pendências soltas**: testar no celular o cadastro em etapas e a prova de vida sorteada; calibrar
+  `PISCADAS_EXTRAS`/`PISCADAS_NATURAIS_MAX` e `GIRO_MINIMO` num aparelho real; 1 teste intermitente visto uma
+  vez (item 4).

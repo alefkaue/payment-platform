@@ -106,26 +106,6 @@ const BANNERS_PF: Banner[] = [
     light: true,
   },
   {
-    id: "pontos",
-    eyebrow: "Viagens",
-    title: "Seus pontos viram passagem",
-    desc: "Voe pagando em reais ou com pontos Astro.",
-    cta: "Ver voos",
-    to: "/viagens",
-    emoji: "✈️",
-    bg: "bg-gradient-to-br from-tint to-line2",
-  },
-  {
-    id: "loja",
-    eyebrow: "Loja Astro",
-    title: "Compre e pague na hora",
-    desc: "Produtos de lojistas parceiros, direto do saldo.",
-    cta: "Explorar loja",
-    to: "/loja",
-    emoji: "🛍️",
-    bg: "bg-gradient-to-br from-tint to-tax-bg",
-  },
-  {
     id: "pix",
     eyebrow: "Pix",
     title: "Transfira de graça, na hora",
@@ -173,9 +153,6 @@ function InicioPF() {
         </p>
         {conta.data && (
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-            <span className="inline-flex items-center gap-1.5 text-marca">
-              <Sparkles size={14} /> {fmtPontos(conta.data.pontos)} pontos
-            </span>
             <span className="inline-flex items-center gap-1.5 text-pos">
               <TrendingUp size={14} /> Rende 100% do CDI
             </span>
@@ -184,8 +161,8 @@ function InicioPF() {
         <div className="mt-6 flex justify-between">
           <QuickAction icon={ArrowUpRight} label="Transferir" to="/transferir" />
           <QuickAction icon={Plus} label="Depositar" to="/depositar" />
-          <QuickAction icon={ShoppingBag} label="Loja" to="/loja" />
-          <QuickAction icon={Plane} label="Viagens" to="/viagens" />
+          <QuickAction icon={QrCode} label="Pix" to="/pix" />
+          <QuickAction icon={ListOrdered} label="Extrato" to="/extrato" />
         </div>
       </section>
 
@@ -200,8 +177,6 @@ function InicioPF() {
           <Shortcut icon={QrCode} label="Pix" to="/pix" />
           <Shortcut icon={CreditCard} label="Cartões" to="/cartoes" />
           <Shortcut icon={Plus} label="Depositar" to="/depositar" />
-          <Shortcut icon={ShoppingBag} label="Loja" to="/loja" />
-          <Shortcut icon={Plane} label="Viagens" to="/viagens" />
           <Shortcut icon={ListOrdered} label="Extrato" to="/extrato" />
         </div>
       </section>

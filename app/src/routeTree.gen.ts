@@ -23,16 +23,13 @@ import { Route as AppDepositarRouteImport } from './routes/_app.depositar'
 import { Route as AppEquipeRouteImport } from './routes/_app.equipe'
 import { Route as AppExtratoRouteImport } from './routes/_app.extrato'
 import { Route as AppInicioRouteImport } from './routes/_app.inicio'
-import { Route as AppLojaRouteImport } from './routes/_app.loja'
 import { Route as AppNotificacoesRouteImport } from './routes/_app.notificacoes'
 import { Route as AppPendentesRouteImport } from './routes/_app.pendentes'
 import { Route as AppPerfilRouteImport } from './routes/_app.perfil'
 import { Route as AppPixRouteImport } from './routes/_app.pix'
 import { Route as AppSplitRouteImport } from './routes/_app.split'
 import { Route as AppTransferirRouteImport } from './routes/_app.transferir'
-import { Route as AppViagensRouteImport } from './routes/_app.viagens'
 import { Route as AppComprovanteIdRouteImport } from './routes/_app.comprovante.$id'
-import { Route as AppLojaIdRouteImport } from './routes/_app.loja.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -103,11 +100,6 @@ const AppInicioRoute = AppInicioRouteImport.update({
   path: '/inicio',
   getParentRoute: () => AppRoute,
 } as any)
-const AppLojaRoute = AppLojaRouteImport.update({
-  id: '/loja',
-  path: '/loja',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppNotificacoesRoute = AppNotificacoesRouteImport.update({
   id: '/notificacoes',
   path: '/notificacoes',
@@ -138,20 +130,10 @@ const AppTransferirRoute = AppTransferirRouteImport.update({
   path: '/transferir',
   getParentRoute: () => AppRoute,
 } as any)
-const AppViagensRoute = AppViagensRouteImport.update({
-  id: '/viagens',
-  path: '/viagens',
-  getParentRoute: () => AppRoute,
-} as any)
 const AppComprovanteIdRoute = AppComprovanteIdRouteImport.update({
   id: '/comprovante/$id',
   path: '/comprovante/$id',
   getParentRoute: () => AppRoute,
-} as any)
-const AppLojaIdRoute = AppLojaIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => AppLojaRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
@@ -168,16 +150,13 @@ export interface FileRoutesByFullPath {
   '/equipe': typeof AppEquipeRoute
   '/extrato': typeof AppExtratoRoute
   '/inicio': typeof AppInicioRoute
-  '/loja': typeof AppLojaRouteWithChildren
   '/notificacoes': typeof AppNotificacoesRoute
   '/pendentes': typeof AppPendentesRoute
   '/perfil': typeof AppPerfilRoute
   '/pix': typeof AppPixRoute
   '/split': typeof AppSplitRoute
   '/transferir': typeof AppTransferirRoute
-  '/viagens': typeof AppViagensRoute
   '/comprovante/$id': typeof AppComprovanteIdRoute
-  '/loja/$id': typeof AppLojaIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -193,16 +172,13 @@ export interface FileRoutesByTo {
   '/equipe': typeof AppEquipeRoute
   '/extrato': typeof AppExtratoRoute
   '/inicio': typeof AppInicioRoute
-  '/loja': typeof AppLojaRouteWithChildren
   '/notificacoes': typeof AppNotificacoesRoute
   '/pendentes': typeof AppPendentesRoute
   '/perfil': typeof AppPerfilRoute
   '/pix': typeof AppPixRoute
   '/split': typeof AppSplitRoute
   '/transferir': typeof AppTransferirRoute
-  '/viagens': typeof AppViagensRoute
   '/comprovante/$id': typeof AppComprovanteIdRoute
-  '/loja/$id': typeof AppLojaIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -220,16 +196,13 @@ export interface FileRoutesById {
   '/_app/equipe': typeof AppEquipeRoute
   '/_app/extrato': typeof AppExtratoRoute
   '/_app/inicio': typeof AppInicioRoute
-  '/_app/loja': typeof AppLojaRouteWithChildren
   '/_app/notificacoes': typeof AppNotificacoesRoute
   '/_app/pendentes': typeof AppPendentesRoute
   '/_app/perfil': typeof AppPerfilRoute
   '/_app/pix': typeof AppPixRoute
   '/_app/split': typeof AppSplitRoute
   '/_app/transferir': typeof AppTransferirRoute
-  '/_app/viagens': typeof AppViagensRoute
   '/_app/comprovante/$id': typeof AppComprovanteIdRoute
-  '/_app/loja/$id': typeof AppLojaIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -247,16 +220,13 @@ export interface FileRouteTypes {
     | '/equipe'
     | '/extrato'
     | '/inicio'
-    | '/loja'
     | '/notificacoes'
     | '/pendentes'
     | '/perfil'
     | '/pix'
     | '/split'
     | '/transferir'
-    | '/viagens'
     | '/comprovante/$id'
-    | '/loja/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -272,16 +242,13 @@ export interface FileRouteTypes {
     | '/equipe'
     | '/extrato'
     | '/inicio'
-    | '/loja'
     | '/notificacoes'
     | '/pendentes'
     | '/perfil'
     | '/pix'
     | '/split'
     | '/transferir'
-    | '/viagens'
     | '/comprovante/$id'
-    | '/loja/$id'
   id:
     | '__root__'
     | '/'
@@ -298,16 +265,13 @@ export interface FileRouteTypes {
     | '/_app/equipe'
     | '/_app/extrato'
     | '/_app/inicio'
-    | '/_app/loja'
     | '/_app/notificacoes'
     | '/_app/pendentes'
     | '/_app/perfil'
     | '/_app/pix'
     | '/_app/split'
     | '/_app/transferir'
-    | '/_app/viagens'
     | '/_app/comprovante/$id'
-    | '/_app/loja/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -418,13 +382,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppInicioRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/loja': {
-      id: '/_app/loja'
-      path: '/loja'
-      fullPath: '/loja'
-      preLoaderRoute: typeof AppLojaRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/notificacoes': {
       id: '/_app/notificacoes'
       path: '/notificacoes'
@@ -467,13 +424,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppTransferirRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/viagens': {
-      id: '/_app/viagens'
-      path: '/viagens'
-      fullPath: '/viagens'
-      preLoaderRoute: typeof AppViagensRouteImport
-      parentRoute: typeof AppRoute
-    }
     '/_app/comprovante/$id': {
       id: '/_app/comprovante/$id'
       path: '/comprovante/$id'
@@ -481,26 +431,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppComprovanteIdRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/loja/$id': {
-      id: '/_app/loja/$id'
-      path: '/$id'
-      fullPath: '/loja/$id'
-      preLoaderRoute: typeof AppLojaIdRouteImport
-      parentRoute: typeof AppLojaRoute
-    }
   }
 }
-
-interface AppLojaRouteChildren {
-  AppLojaIdRoute: typeof AppLojaIdRoute
-}
-
-const AppLojaRouteChildren: AppLojaRouteChildren = {
-  AppLojaIdRoute: AppLojaIdRoute,
-}
-
-const AppLojaRouteWithChildren =
-  AppLojaRoute._addFileChildren(AppLojaRouteChildren)
 
 interface AppRouteChildren {
   AppAjudaRoute: typeof AppAjudaRoute
@@ -512,14 +444,12 @@ interface AppRouteChildren {
   AppEquipeRoute: typeof AppEquipeRoute
   AppExtratoRoute: typeof AppExtratoRoute
   AppInicioRoute: typeof AppInicioRoute
-  AppLojaRoute: typeof AppLojaRouteWithChildren
   AppNotificacoesRoute: typeof AppNotificacoesRoute
   AppPendentesRoute: typeof AppPendentesRoute
   AppPerfilRoute: typeof AppPerfilRoute
   AppPixRoute: typeof AppPixRoute
   AppSplitRoute: typeof AppSplitRoute
   AppTransferirRoute: typeof AppTransferirRoute
-  AppViagensRoute: typeof AppViagensRoute
   AppComprovanteIdRoute: typeof AppComprovanteIdRoute
 }
 
@@ -533,14 +463,12 @@ const AppRouteChildren: AppRouteChildren = {
   AppEquipeRoute: AppEquipeRoute,
   AppExtratoRoute: AppExtratoRoute,
   AppInicioRoute: AppInicioRoute,
-  AppLojaRoute: AppLojaRouteWithChildren,
   AppNotificacoesRoute: AppNotificacoesRoute,
   AppPendentesRoute: AppPendentesRoute,
   AppPerfilRoute: AppPerfilRoute,
   AppPixRoute: AppPixRoute,
   AppSplitRoute: AppSplitRoute,
   AppTransferirRoute: AppTransferirRoute,
-  AppViagensRoute: AppViagensRoute,
   AppComprovanteIdRoute: AppComprovanteIdRoute,
 }
 

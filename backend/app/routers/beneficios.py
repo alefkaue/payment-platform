@@ -1,16 +1,25 @@
-"""Loja, Viagens e pontos (benefícios da conta PF)."""
+"""Loja, Viagens e pontos (benefícios da conta PF).
+
+DESLIGADO por padrão (BENEFICIOS_HABILITADOS=0): todas as rotas respondem 404.
+As telas estão arquivadas em app/src/_arquivado/beneficios (ver o README de lá)."""
 
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from app.core.config import get_settings
 from app.deps import conta_atual, dispositivo_atual, get_repo, ip_cliente, usuario_atual
 from app.repositories.repository import Repositorio
 from app.schemas.comum import ProvaBiometrica, TransacaoResponse
 from app.services import beneficios_service
 
-router = APIRouter(tags=["beneficios"])
+def _beneficios_ligados() -> None:
+    if not get_settings().beneficios_habilitados:
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
+router = APIRouter(tags=["beneficios"], dependencies=[Depends(_beneficios_ligados)])
 
 
 class Produto(BaseModel):

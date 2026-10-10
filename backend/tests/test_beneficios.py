@@ -71,3 +71,14 @@ def test_login_so_com_biometria_nao_existe_mais(cliente):
     d = cliente.post("/biometria/desafios", json={"login": "p@ex.com"}).json()["desafio_id"]
     r = cliente.post("/auth/login/biometria", json={"email": "p@ex.com", "biometria": {"desafio_id": d, "quadros": QUADROS}})
     assert r.status_code in (404, 405)
+
+
+def test_beneficios_desligados_respondem_404(cliente, monkeypatch):
+    """Padrão em produção/pentest: Loja, Viagens e pontos fora do ar (SEGURANCA.md item 6)."""
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "beneficios_habilitados", False)
+    p = Pessoa(cliente, "p@ex.com")
+    for caminho in ("/loja/produtos", "/viagens/voos", "/pontos"):
+        assert cliente.get(caminho, headers=p.h()).status_code == 404, caminho
+    assert cliente.post("/loja/produtos/1/comprar", json={}, headers=p.h()).status_code == 404

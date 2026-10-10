@@ -2,7 +2,7 @@
 
 Documento de passagem de bastão: o que já foi feito, como rodar, as decisões
 tomadas e **o que falta**. Complementa o `PLANO.md` (plano de produto).
-Última atualização: 2026-10-09 (**v9**: login em 2 fatores, KYC, PJ por porte — o estado
+Última atualização: 2026-10-09 (**segurança: ver `SEGURANCA.md`**; **v9**: login em 2 fatores, KYC, PJ por porte — o estado
 atual e os próximos passos estão no **`HANDOFF-V9.md`**; resumo em §13).
 
 ---

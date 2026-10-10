@@ -55,11 +55,6 @@ function Cartoes() {
             </>
           )}
         </ul>
-        {!ehPJ && (
-          <Link to="/viagens" className="btn btn-ghost mt-5 w-full">
-            Usar meus pontos em viagens
-          </Link>
-        )}
       </section>
     </div>
   );

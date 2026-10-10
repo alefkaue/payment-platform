@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     sessao_inatividade_min: int = Field(default=30, alias="SESSAO_INATIVIDADE_MIN")
     # Rotas públicas (SEGURANCA.md item 4): por IP, por hora / por 15 min.
     cadastro_max_ip_hora: int = Field(default=10, alias="CADASTRO_MAX_IP_HORA")
+    # Loja, Viagens e pontos (SEGURANCA.md item 6): arquivados no app; aqui ficam
+    # desligados (404) para não serem superfície de ataque no pentest.
+    beneficios_habilitados: bool = Field(default=False, alias="BENEFICIOS_HABILITADOS")
     refresh_max_ip_15min: int = Field(default=120, alias="REFRESH_MAX_IP_15MIN")
     dpop_janela_seg: int = Field(default=60, alias="DPOP_JANELA_SEG")
     # Access token curto (minutos): se vazar, a janela de uso é pequena.

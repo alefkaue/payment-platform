@@ -6,6 +6,7 @@
     "vitest.config.ts",
     "eslint.config.js"
   ],
+  "exclude": ["src/_arquivado/**"],
   "compilerOptions": {
     "target": "ES2022",
     "jsx": "react-jsx",

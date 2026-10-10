@@ -25,6 +25,8 @@ os.environ["KYC_DOCUMENTO_OBRIGATORIO"] = "0"
 os.environ["DOCUMENTO_PROVEDOR"] = "stub"
 # DPoP: os testes de fluxo usam tokens sem chave; test_dpop.py liga a exigência.
 os.environ["DPOP_OBRIGATORIO"] = "0"
+# Loja/Viagens: desligados por padrão; test_beneficios.py testa o módulo ligado.
+os.environ["BENEFICIOS_HABILITADOS"] = "1"
 
 
 @pytest.fixture()

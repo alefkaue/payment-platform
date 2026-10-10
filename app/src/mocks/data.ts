@@ -492,15 +492,6 @@ const hAtras = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString()
 
 export const notificacoesPF: Notificacao[] = [
   {
-    id: 9101,
-    tipo: "pontos",
-    titulo: "Você ganhou 350 pontos",
-    texto: "Sua compra na Loja Astro rendeu 350 pontos. Já dá para usar em viagens.",
-    criado_em: hAtras(2),
-    lida: false,
-    href: "/viagens",
-  },
-  {
     id: 9102,
     tipo: "pagamento",
     titulo: "Pix recebido: R$ 1.200,00",

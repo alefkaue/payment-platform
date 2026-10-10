@@ -14,7 +14,8 @@ import { calcularSplit } from "@/lib/split";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, fmtPontos } from "@/lib/format";
 import type { ProvaBiometrica, Voo } from "@/lib/types";
-import { Empty, ErrorBox, PageTitle, SplitBar, ValueRow, VooCard } from "@/components/payflow/ui";
+import { Empty, ErrorBox, PageTitle, SplitBar, ValueRow } from "@/components/payflow/ui";
+import { VooCard } from "./cartoes-beneficios";
 import { LivenessCheck } from "@/components/payflow/liveness";
 
 export const Route = createFileRoute("/_app/viagens")({

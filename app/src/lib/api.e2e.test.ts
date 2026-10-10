@@ -78,12 +78,8 @@ describe.runIf(Boolean(URL_API))("api.ts contra o backend v9", () => {
     // Sem saldo: transferência falha com a mensagem do backend
     await expect(api.transferir({ destino: { chave: chave.valor }, valor: 10 })).rejects.toThrow();
 
-    // Loja e Viagens (PF): catálogo vem do backend; sem saldo a compra falha
-    expect((await api.listarProdutos()).length).toBe(8);
-    expect((await api.buscarVoos("CGH")).length).toBe(1);
-    await expect(api.comprarProduto({ produto_id: 4 })).rejects.toThrow(/insuficiente/i);
-    await expect(api.resgatarPassagem(2)).rejects.toThrow(/Pontos insuficientes/);
-    expect((await api.minhaConta()).pontos).toBe(0);
+    // Loja e Viagens estão arquivadas (backend com BENEFICIOS_HABILITADOS=0): 404
+    await expect(api.listarProdutos()).rejects.toThrow();
 
     const pj = r.contas.find((c) => c.tipo === "PJ")!;
     api.selecionarConta(pj);

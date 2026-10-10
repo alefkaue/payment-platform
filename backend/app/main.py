@@ -52,7 +52,8 @@ def _preparar():
         logger.warning("ADMIN_SENHA não definida: admin %s com a senha padrão de desenvolvimento (ver README).",
                        settings.admin_email)
     repo.garantir_admin(email=settings.admin_email, senha_hash=hash_senha(senha_admin))
-    beneficios_service.garantir_catalogo(repo)
+    if settings.beneficios_habilitados:
+        beneficios_service.garantir_catalogo(repo)
     logger.info("Astro pronto -- banco: %s | ano do simulador de split: %s",
                 "postgres" if usando_postgres() else "sqlite", split_service.ano_padrao())
 

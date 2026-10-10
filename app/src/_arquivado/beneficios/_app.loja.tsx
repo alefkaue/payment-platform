@@ -5,7 +5,8 @@ import { Lock } from "lucide-react";
 import { listarProdutos } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { cn } from "@/lib/utils";
-import { Empty, ErrorBox, PageTitle, ProdutoCard } from "@/components/payflow/ui";
+import { Empty, ErrorBox, PageTitle } from "@/components/payflow/ui";
+import { ProdutoCard } from "./cartoes-beneficios";
 
 export const Route = createFileRoute("/_app/loja")({
   head: () => ({
