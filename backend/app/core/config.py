@@ -42,6 +42,10 @@ class Settings(BaseSettings):
     # login de pessoas; proibido desligar em produção. A janela tolera relógio
     # de aparelho levemente adiantado/atrasado.
     dpop_obrigatorio: bool = Field(default=True, alias="DPOP_OBRIGATORIO")
+    # Sessão (SEGURANCA.md item 3): máximo absoluto desde o login (senha + rosto)
+    # e queda por inatividade (refresh sem uso). Banco não deixa sessão aberta.
+    sessao_max_horas: float = Field(default=12.0, alias="SESSAO_MAX_HORAS")
+    sessao_inatividade_min: int = Field(default=30, alias="SESSAO_INATIVIDADE_MIN")
     dpop_janela_seg: int = Field(default=60, alias="DPOP_JANELA_SEG")
     # Access token curto (minutos): se vazar, a janela de uso é pequena.
     access_token_exp_min: int = Field(default=15, alias="ACCESS_TOKEN_EXP_MIN")

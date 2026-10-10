@@ -22,6 +22,7 @@ Sessão (OWASP ASVS V7 / RFC 8725):
 
 import logging
 import secrets
+import time
 from datetime import timedelta
 from functools import lru_cache
 
@@ -158,6 +159,10 @@ def concluir_login(repo: Repositorio, *, mfa_token: str, prova, ip: str | None, 
     repo.registrar_sessao_mfa(tipo="mfa_usado", sucesso=True, referencia=payload["jti"], usuario_id=usuario["id"], ip=ip)
     repo.registrar_sessao_mfa(tipo="login", sucesso=True, usuario_id=usuario["id"], referencia=ref, ip=ip)
     disp = None
+    if dispositivo_hash and repo.obter_dispositivo(usuario["id"], dispositivo_hash) is None:
+        # Aparece em Segurança > Atividade: a pessoa vê se alguém entrou de outro lugar.
+        repo.registrar_log(ator=usuario["email"], acao="login_aparelho_novo", ip=ip, usuario_id=usuario["id"],
+                           detalhe={"aparelho": _nome_aparelho(user_agent)})
     if dispositivo_hash:
         # Rosto verificado NESTE aparelho = aparelho cadastrado/confiável.
         disp = repo.registrar_dispositivo(usuario_id=usuario["id"], id_hash=dispositivo_hash, nome=_nome_aparelho(user_agent),
@@ -183,16 +188,35 @@ def _nome_aparelho(user_agent: str | None) -> str | None:
 
 def emitir_tokens(repo: Repositorio, usuario: dict, *, dispositivo: dict | None = None,
                   dispositivo_hash: str | None = None, ip: str | None = None, user_agent: str | None = None,
-                  sessao_id: str | None = None, jkt: str | None = None) -> dict:
+                  sessao_id: str | None = None, jkt: str | None = None, auth_time: int | None = None) -> dict:
     sid = sessao_id or security.novo_sessao_id()
+    auth_time = auth_time or int(_relogio())  # login novo: a sessão começa agora
     access, access_exp = security.criar_access_token(usuario["id"], usuario["papel"], dispositivo_hash=dispositivo_hash,
-                                                     sessao_id=sid, jkt=jkt)
-    refresh_bruto, jti, refresh_exp = security.criar_refresh_token(usuario["id"], sessao_id=sid, jkt=jkt)
+                                                     sessao_id=sid, jkt=jkt, auth_time=auth_time)
+    refresh_bruto, jti, refresh_exp = security.criar_refresh_token(usuario["id"], sessao_id=sid, jkt=jkt,
+                                                                   auth_time=auth_time)
     repo.salvar_refresh(usuario_id=usuario["id"], jti=jti, token_hash=security.hash_refresh(refresh_bruto),
                         expira_em=refresh_exp, sessao_id=sid, dispositivo_id=dispositivo["id"] if dispositivo else None,
                         ip=ip, user_agent=user_agent)
     return {"access_token": access, "refresh_token": refresh_bruto, "token_type": "bearer",
             "access_expira_em": access_exp, "sessao_id": sid}
+
+
+def _relogio() -> float:
+    """Relógio REAL (o JWT também usa o real). Separado para os testes adiantarem."""
+    return time.time()
+
+
+def _checar_limites_da_sessao(payload: dict) -> None:
+    """Relógio real (o mesmo do JWT). Sessão sem `auth_time` (emitida antes) usa o iat."""
+    s = get_settings()
+    agora = _relogio()
+    inicio = payload.get("auth_time") or payload["iat"]
+    if agora - inicio > s.sessao_max_horas * 3600:
+        raise HTTPException(status_code=401, detail="Sua sessão chegou ao tempo máximo. Entre de novo com senha e rosto.")
+    # O refresh é trocado a cada renovação: o iat dele marca o último uso da sessão.
+    if agora - payload["iat"] > s.sessao_inatividade_min * 60:
+        raise HTTPException(status_code=401, detail="Sessão encerrada por inatividade. Entre de novo.")
 
 
 def renovar(repo: Repositorio, *, refresh_token: str, ip: str | None = None, dispositivo_hash: str | None = None,
@@ -205,6 +229,7 @@ def renovar(repo: Repositorio, *, refresh_token: str, ip: str | None = None, dis
     jkt_sessao = dpop.jkt_do_token(payload)
     if jkt_sessao != jkt or (jkt_sessao is None and get_settings().dpop_obrigatorio):
         raise HTTPException(status_code=401, detail="Esta sessão pertence a outro aparelho. Entre de novo.")
+    _checar_limites_da_sessao(payload)
     registro = repo.obter_refresh(security.hash_refresh(refresh_token))
     if not registro:
         raise HTTPException(status_code=401, detail="Sessão não reconhecida.")
@@ -224,7 +249,8 @@ def renovar(repo: Repositorio, *, refresh_token: str, ip: str | None = None, dis
         if disp["bloqueado"]:
             raise HTTPException(status_code=401, detail="Aparelho bloqueado.")
     novos = emitir_tokens(repo, usuario, dispositivo=disp, dispositivo_hash=dispositivo_hash if disp else None,
-                          ip=ip, user_agent=user_agent, sessao_id=registro["sessao_id"] or payload.get("sid"), jkt=jkt)
+                          ip=ip, user_agent=user_agent, sessao_id=registro["sessao_id"] or payload.get("sid"), jkt=jkt,
+                          auth_time=payload.get("auth_time"))
     novo_payload = security.decodificar_token(novos["refresh_token"], "refresh")
     repo.revogar_refresh(payload["jti"], substituido_por=novo_payload["jti"])
     return novos

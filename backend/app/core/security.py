@@ -147,21 +147,24 @@ def _cnf(jkt: str | None) -> dict | None:
 
 
 def criar_access_token(usuario_id: int, papel: str, *, dispositivo_hash: str | None = None,
-                       sessao_id: str | None = None, jkt: str | None = None) -> tuple[str, datetime]:
+                       sessao_id: str | None = None, jkt: str | None = None,
+                       auth_time: int | None = None) -> tuple[str, datetime]:
     s = get_settings()
     token, _, exp = _criar_token(
         usuario_id, "access", timedelta(minutes=s.access_token_exp_min),
-        extra={"papel": papel, "dev": dispositivo_hash, "sid": sessao_id, "cnf": _cnf(jkt)},
+        extra={"papel": papel, "dev": dispositivo_hash, "sid": sessao_id, "cnf": _cnf(jkt), "auth_time": auth_time},
     )
     return token, exp
 
 
-def criar_refresh_token(usuario_id: int, *, sessao_id: str | None = None,
-                        jkt: str | None = None) -> tuple[str, str, datetime]:
-    """Retorna (token_bruto, jti, expira_em). No banco vai só hash_refresh(token)."""
+def criar_refresh_token(usuario_id: int, *, sessao_id: str | None = None, jkt: str | None = None,
+                        auth_time: int | None = None) -> tuple[str, str, datetime]:
+    """Retorna (token_bruto, jti, expira_em). No banco vai só hash_refresh(token).
+    `auth_time` = quando a pessoa fez o login (senha + rosto); atravessa as
+    renovações e limita a duração total da sessão."""
     s = get_settings()
     return _criar_token(usuario_id, "refresh", timedelta(days=s.refresh_token_exp_dias),
-                        extra={"sid": sessao_id, "cnf": _cnf(jkt)})
+                        extra={"sid": sessao_id, "cnf": _cnf(jkt), "auth_time": auth_time})
 
 
 def criar_mfa_token(usuario_id: int, *, dispositivo_hash: str | None,

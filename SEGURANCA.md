@@ -46,7 +46,7 @@ segurança na API; `BIOMETRIA_STUB`/`DEPOSITO_DEMO`/stubs **proibidos em produç
 |---|---|---|---|
 | 1 | **Desafio aleatório** de prova de vida (ordem e ações sorteadas pelo servidor; quadros fora da ordem pedida não passam) | A1 | ✅ |
 | 2 | **Prova de posse da chave (DPoP, RFC 9449)**: o app gera um par de chaves **não exportável** (WebCrypto; no APK, Keystore/Keychain), o login amarra os tokens à impressão da chave e **cada requisição vai assinada** (método, caminho, horário, id único, hash do token). Token roubado sem a chave não serve. | A2 | ✅ (falta Keystore no app nativo, item 10) |
-| 3 | **Sessão**: máximo absoluto (ex.: 12 h) e inatividade (ex.: 15 min) no servidor; aviso de login em aparelho novo | A3 | ⬜ |
+| 3 | **Sessão**: máximo absoluto (ex.: 12 h) e inatividade (ex.: 15 min) no servidor; aviso de login em aparelho novo | A3 | ✅ (aviso por e-mail/push: depois) |
 | 4 | **Força bruta e enumeração**: rate limit em cadastro/refresh/convites; atraso progressivo; tentativas por `mfa_token`; resposta neutra no cadastro | A4 | ⬜ |
 | 5 | **Cadastro em etapas** (dados → documento → rosto, cada um numa página) e **documento frente e verso obrigatórios** (no app e no backend) | pedido do Alef | ⬜ |
 | 6 | **Arquivar Loja/Viagens/pontos**: telas para `app/src/_arquivado/`, fora da navegação; backend com `BENEFICIOS_HABILITADOS=0` por padrão | pedido do Alef, A8 | ⬜ |
@@ -108,3 +108,11 @@ justamente ver se alguém burla.
   aberta** — por isso o item 7 (CSP) continua importante.
   **Para o pentest**: quem for testar a API direto precisa gerar provas DPoP (ver `tests/test_dpop.py`, classe
   `Chave`, ou qualquer biblioteca DPoP); isso vai no `PENTEST.md`.
+- 09/10 — **Item 3 feito.** Refresh e access carregam `auth_time` (hora do login com senha + rosto), que
+  atravessa as renovações. `auth_service.renovar` recusa: sessão com mais de `SESSAO_MAX_HORAS` (12 h) desde o
+  login e refresh sem uso há mais de `SESSAO_INATIVIDADE_MIN` (30 min; como o access vive 15 min, a queda real
+  por inatividade fica entre 15 e 30 min). Relógio real (o mesmo do JWT), isolado em `_relogio()` para teste.
+  Login em aparelho novo grava `login_aparelho_novo` na trilha (`GET /seguranca/atividade`). Testes:
+  `test_sessao.py`. 169 testes.
+  **Falta no app**: quando o refresh falha (401), mandar para a tela de login com o motivo, em vez de só
+  mostrar erro na tela atual.
