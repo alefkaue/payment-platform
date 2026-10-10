@@ -60,7 +60,7 @@ Você pediu para tirar a web e deixar só celular, e deixou as decisões comigo:
 
 | Etapa | Situação |
 |---|---|
-| Gradle (dois APKs), CI com Release, Azure só com página de download, plugins | ✅ feito (commit `b11075c`) |
+| Gradle (dois APKs), CI com Release, Azure só com página de download, plugins | ✅ feito (commit `b11075c`); **build dos dois APKs passou no CI do GitHub** |
 | `RODAR-NO-PC.md`, `PENTEST.md`, `MOBILE.md`, `AZURE.md`, README | ✅ feito (commit `2ca6549`) |
 | App se comportar como Android (botão Voltar, áreas seguras, teclado, rede ruim, câmera traseira) | ⏳ com a Codex (cartão M1) |
 | Tag `apk-v1.0` (primeiro Release com os APKs) | ⏳ depois do M1 |
