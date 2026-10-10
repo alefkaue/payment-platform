@@ -269,11 +269,11 @@ function Seguranca() {
       {desbloquear && (
         <LivenessCheck
           onClose={() => setDesbloquear(null)}
-          onSuccess={(prova) => {
+          onSuccess={async (prova) => {
             const alvo = desbloquear;
+            await desbloquearAparelho(alvo.id, prova);
             setDesbloquear(null);
             void executar(async () => {
-              await desbloquearAparelho(alvo.id, prova);
               return "Aparelho desbloqueado.";
             });
           }}

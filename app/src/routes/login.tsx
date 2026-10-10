@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import type { LoginEtapaMfa } from "@/lib/types";
 import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
+import { recusaQualidade } from "@/lib/qualidade-rosto";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -193,16 +194,21 @@ function Login() {
         {etapa && camera && (
           <LivenessCheck
             desafio={etapa.desafio}
+            erroServidor={erro}
+            onRetry={tentarDeNovo}
             onClose={() => setCamera(false)}
             onSuccess={(prova) => {
-              setCamera(false);
               setLoading(true);
               concluirLogin(etapa, prova)
                 .then((r) => {
+                  setCamera(false);
                   entrar(r);
                   nav({ to: "/inicio" });
                 })
-                .catch((err: Error) => setErro(err.message))
+                .catch((err: Error) => {
+                  setErro(err.message);
+                  if (!recusaQualidade(err.message)) setCamera(false);
+                })
                 .finally(() => setLoading(false));
             }}
           />

@@ -268,9 +268,9 @@ function Linha({
       {rosto && (
         <LivenessCheck
           onClose={() => setRosto(false)}
-          onSuccess={(prova) => {
+          onSuccess={async (prova) => {
+            await mut.mutateAsync({ acao: "reativar", prova });
             setRosto(false);
-            mut.mutate({ acao: "reativar", prova });
           }}
         />
       )}
@@ -435,10 +435,10 @@ function EditarMembro({
       {rosto && (
         <LivenessCheck
           onClose={() => setRosto(null)}
-          onSuccess={(prova) => {
+          onSuccess={async (prova) => {
             const mudancas = rosto;
+            await mut.mutateAsync({ mudancas, prova });
             setRosto(null);
-            mut.mutate({ mudancas, prova });
           }}
         />
       )}
@@ -620,10 +620,10 @@ function NovoMembro({
       {rosto && (
         <LivenessCheck
           onClose={() => setRosto(null)}
-          onSuccess={(prova) => {
+          onSuccess={async (prova) => {
             const payload = rosto;
+            await mut.mutateAsync({ ...payload, biometria: prova });
             setRosto(null);
-            mut.mutate({ ...payload, biometria: prova });
           }}
         />
       )}

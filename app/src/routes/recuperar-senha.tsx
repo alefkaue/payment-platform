@@ -6,6 +6,7 @@ import { concluirRecuperacao, iniciarRecuperacao } from "@/lib/api";
 import type { EtapaRecuperacao } from "@/lib/types";
 import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
+import { recusaQualidade } from "@/lib/qualidade-rosto";
 
 export const Route = createFileRoute("/recuperar-senha")({
   head: () => ({
@@ -178,14 +179,25 @@ function RecuperarSenha() {
         {etapa && camera && (
           <LivenessCheck
             desafio={etapa.desafio}
+            erroServidor={erro}
+            onRetry={async () => {
+              const novaEtapa = await iniciarRecuperacao(login, nascimento);
+              setErro(null);
+              setEtapa(novaEtapa);
+            }}
             onClose={() => setCamera(false)}
             onSuccess={(prova) => {
-              setCamera(false);
               setLoading(true);
               concluirRecuperacao(etapa, prova, senha)
-                .then(() => setFeito(true))
+                .then(() => {
+                  setCamera(false);
+                  setFeito(true);
+                })
                 // O token e o desafio são de uso único: qualquer recusa recomeça do zero.
-                .catch((err: Error) => recomecar(err.message))
+                .catch((err: Error) => {
+                  if (recusaQualidade(err.message)) setErro(err.message);
+                  else recomecar(err.message);
+                })
                 .finally(() => setLoading(false));
             }}
           />

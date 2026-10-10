@@ -427,9 +427,9 @@ function FolhaConta() {
       {rosto && (
         <LivenessCheck
           onClose={() => setRosto(false)}
-          onSuccess={(prova) => {
+          onSuccess={async (prova) => {
+            await pagar.mutateAsync({ itens: pedido, prova, chave });
             setRosto(false);
-            pagar.mutate({ itens: pedido, prova, chave });
           }}
         />
       )}
