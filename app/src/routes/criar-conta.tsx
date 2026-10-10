@@ -18,6 +18,7 @@ import type {
 } from "@/lib/types";
 import { ErrorBox, Field, Wordmark } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
+import { recusaQualidade } from "@/lib/qualidade-rosto";
 import { CampoDocumento } from "@/components/payflow/documento";
 import { DocumentoPessoa } from "@/components/payflow/documento-pessoa";
 import { cn } from "@/lib/utils";
@@ -98,6 +99,7 @@ function CriarConta() {
   const [docEmpresa, setDocEmpresa] = useState<string | null>(null);
   // 3-4. rosto e entrada
   const [camera, setCamera] = useState<null | "cadastro">(null);
+  const [tentativaFacial, setTentativaFacial] = useState(0);
   const [criado, setCriado] = useState<{ kyc: KycResultado } | null>(null);
   const [erroEmpresa, setErroEmpresa] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -173,6 +175,7 @@ function CriarConta() {
         biometria: prova,
         ...(pj ? { empresa: pj } : {}),
       });
+      setCamera(null);
       setCriado({ kyc: r.kyc });
       entrar(r.resposta);
       if (r.erroEmpresa) {
@@ -185,6 +188,7 @@ function CriarConta() {
       // Erro de dados (senha fraca, CPF já usado…): volta para a etapa que resolve.
       const msg = (err as Error).message;
       setErro(msg);
+      if (!recusaQualidade(msg)) setCamera(null);
       if (/senha|e-mail|CPF|conta com estes dados|nome|celular|nascimento/i.test(msg))
         setEtapa("dados");
       else if (/documento|verso|imagem|arquivo|identidade/i.test(msg)) setEtapa("documento");
@@ -502,10 +506,15 @@ function CriarConta() {
 
         {camera === "cadastro" && (
           <LivenessCheck
+            key={tentativaFacial}
             modo="cadastro"
+            erroServidor={erro && recusaQualidade(erro) ? erro : null}
+            onRetry={() => {
+              setErro(null);
+              setTentativaFacial((n) => n + 1);
+            }}
             onClose={() => setCamera(null)}
             onSuccess={(p) => {
-              setCamera(null);
               void criarConta(p);
             }}
           />

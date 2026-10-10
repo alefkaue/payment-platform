@@ -136,9 +136,9 @@ function Card({ o, podeAprovar }: { o: OperacaoPendente; podeAprovar: boolean })
           {rosto && (
             <LivenessCheck
               onClose={() => setRosto(false)}
-              onSuccess={(prova) => {
+              onSuccess={async (prova) => {
+                await mut.mutateAsync({ aprovar: true, prova });
                 setRosto(false);
-                mut.mutate({ aprovar: true, prova });
               }}
             />
           )}

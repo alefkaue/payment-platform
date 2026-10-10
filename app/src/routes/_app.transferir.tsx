@@ -109,12 +109,14 @@ function TransferirConta() {
             idempotency_key: chave,
           });
       intencao.concluir();
+      setLiveness(false);
       setInfo(null);
       qc.invalidateQueries();
       if (r.tipo === "pendente") setPendente(r.mensagem);
       else nav({ to: "/comprovante/$id", params: { id: String(r.transacao.id) } });
     } catch (err) {
       setErro((err as Error).message);
+      if (prova) throw err;
     } finally {
       setLoading(false);
     }
@@ -272,13 +274,7 @@ function TransferirConta() {
       )}
 
       {liveness && (
-        <LivenessCheck
-          onClose={() => setLiveness(false)}
-          onSuccess={(prova) => {
-            setLiveness(false);
-            void enviar(prova);
-          }}
-        />
+        <LivenessCheck onClose={() => setLiveness(false)} onSuccess={(prova) => enviar(prova)} />
       )}
     </div>
   );

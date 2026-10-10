@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFecharAoVoltar } from "@/lib/mobile";
 import { Check, Loader2, X } from "lucide-react";
 import { pedirDesafio } from "@/lib/api";
+import { medirRosto, orientarRosto, PREPARO_MS } from "@/lib/qualidade-rosto";
 import type {
   Desafio,
   ModoBiometria,
@@ -152,7 +153,7 @@ function desenharOverlay(
   }
 }
 
-type Fase = "carregando" | "ativo" | "ok" | "erro";
+type Fase = "carregando" | "preparo" | "ativo" | "ok" | "erro";
 
 function capturar(v: HTMLVideoElement): string {
   const escala = Math.min(1, 480 / (v.videoWidth || 480));
@@ -168,13 +169,17 @@ export function LivenessCheck({
   onClose,
   desafio: desafioPronto,
   modo = "login",
+  erroServidor,
+  onRetry,
 }: {
-  onSuccess: (prova: ProvaBiometrica) => void;
+  onSuccess: (prova: ProvaBiometrica) => void | Promise<unknown>;
   onClose: () => void;
   /** Desafio já emitido pelo servidor (o do login vem junto com o mfa_token). */
   desafio?: Desafio;
   /** "cadastro" = sequência completa; "login" = só piscar 3x. */
   modo?: ModoBiometria;
+  erroServidor?: string | null;
+  onRetry?: () => void | Promise<void>;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   useFecharAoVoltar(true, onClose, 50);
@@ -183,12 +188,20 @@ export function LivenessCheck({
   const [erro, setErro] = useState<string | null>(null);
   const [desafio, setDesafio] = useState<Desafio | null>(null);
   const [temRosto, setTemRosto] = useState(false);
+  const [qualidadeBoa, setQualidadeBoa] = useState(false);
+  const [orientacao, setOrientacao] = useState<string | null>(null);
+  const [tentativa, setTentativa] = useState(0);
+  const [reiniciando, setReiniciando] = useState(false);
   const [passoIdx, setPassoIdx] = useState(0);
   const [progresso, setProgresso] = useState(0);
   const onSuccessRef = useRef(onSuccess);
   onSuccessRef.current = onSuccess;
 
   useEffect(() => {
+    setFase("carregando");
+    setPassoIdx(0);
+    setProgresso(0);
+    setOrientacao(null);
     let parar = false;
     let stream: MediaStream | null = null;
     let landmarker: import("@mediapipe/tasks-vision").FaceLandmarker | null = null;
@@ -196,6 +209,12 @@ export function LivenessCheck({
     let concluido = false;
     let desafioLocal: Desafio | null = null;
     let passos: PassoDesafio[] = [];
+    let preparado = false;
+    let bomDesde: number | null = null;
+    let pausado = false;
+    const qualidadeCanvas = document.createElement("canvas");
+    qualidadeCanvas.width = 320;
+    const qualidadeCtx = qualidadeCanvas.getContext("2d", { willReadFrequently: true });
 
     // acumulador final + estado do passo atual
     const quadrosFinais: string[] = [];
@@ -244,7 +263,19 @@ export function LivenessCheck({
         quadros: quadrosFinais.slice(0, 40),
       };
       setTimeout(() => {
-        if (!parar) onSuccessRef.current(prova);
+        if (!parar) {
+          Promise.resolve()
+            .then(() => onSuccessRef.current(prova))
+            .catch((e: unknown) => {
+              if (parar) return;
+              setErro(
+                e instanceof Error
+                  ? e.message
+                  : "Não foi possível conferir o rosto. Tente de novo.",
+              );
+              setFase("erro");
+            });
+        }
       }, 600);
     }
 
@@ -262,7 +293,7 @@ export function LivenessCheck({
         landmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
           baseOptions: { modelAssetPath: MODELO, delegate: "GPU" },
           runningMode: "VIDEO",
-          numFaces: 1,
+          numFaces: 2,
           outputFaceBlendshapes: true,
         });
         if (parar) {
@@ -282,7 +313,7 @@ export function LivenessCheck({
         v.srcObject = stream;
         await v.play();
         if (parar) return;
-        setFase("ativo");
+        setFase("preparo");
         loop();
       } catch (e) {
         if (parar) return;
@@ -310,6 +341,50 @@ export function LivenessCheck({
       const lm = r.faceLandmarks?.[0];
       const cats = r.faceBlendshapes?.[0]?.categories ?? [];
       setTemRosto(Boolean(lm));
+      qualidadeCanvas.height = Math.max(1, Math.round((320 * v.videoHeight) / v.videoWidth));
+      qualidadeCtx?.drawImage(v, 0, 0, qualidadeCanvas.width, qualidadeCanvas.height);
+      const pixels = qualidadeCtx?.getImageData(
+        0,
+        0,
+        qualidadeCanvas.width,
+        qualidadeCanvas.height,
+      );
+      const aviso = pixels
+        ? orientarRosto(
+            medirRosto(
+              pixels.data,
+              qualidadeCanvas.width,
+              qualidadeCanvas.height,
+              lm ?? [],
+              r.faceLandmarks.length,
+            ),
+            modo === "cadastro",
+            !preparado,
+          )
+        : "Não foi possível avaliar a câmera";
+      setOrientacao(aviso);
+      setQualidadeBoa(!aviso);
+      if (aviso) {
+        bomDesde = null;
+        if (!pausado) {
+          resetPasso();
+          setProgresso(0);
+        }
+        pausado = true;
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      if (!preparado || pausado) {
+        bomDesde ??= agora;
+        if (agora - bomDesde < PREPARO_MS) {
+          setOrientacao("Ótimo! Mantenha o rosto assim");
+          raf = requestAnimationFrame(loop);
+          return;
+        }
+        preparado = true;
+        pausado = false;
+        setFase("ativo");
+      }
 
       const passo = passos[idx];
       if (lm && passo && !concluido) {
@@ -419,10 +494,32 @@ export function LivenessCheck({
     };
     // Recomeça só quando muda o desafio (nova tentativa) ou o modo.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desafioPronto?.desafio_id, modo]);
+  }, [desafioPronto?.desafio_id, modo, tentativa]);
 
   const passoAtual = desafio?.passos[Math.min(passoIdx, desafio.passos.length - 1)];
-  const instrucao = passoAtual?.instrucao ?? "Preparando…";
+  const instrucao =
+    orientacao ??
+    (fase === "preparo"
+      ? "Posicione o rosto no círculo"
+      : (passoAtual?.instrucao ?? "Preparando…"));
+  const falha = (fase === "erro" ? erro : null) || erroServidor;
+
+  async function tentarNovamente() {
+    setReiniciando(true);
+    try {
+      if (erroServidor && onRetry) await onRetry();
+      else {
+        setErro(null);
+        setFase("carregando");
+        setTentativa((n) => n + 1);
+      }
+    } catch (e) {
+      setErro(e instanceof Error ? e.message : "Não foi possível recomeçar. Tente de novo.");
+      setFase("erro");
+    } finally {
+      setReiniciando(false);
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-ink text-ink-foreground">
@@ -441,14 +538,14 @@ export function LivenessCheck({
           ref={videoRef}
           muted
           playsInline
-          className="h-full w-full -scale-x-100 object-cover"
+          className="h-full w-full -scale-x-100 object-fill"
         />
         {DEBUG_OVERLAY && (
           <canvas ref={overlayRef} className="pointer-events-none absolute inset-0 h-full w-full" />
         )}
         <div
           className={`pointer-events-none absolute inset-6 rounded-[50%] border-2 transition-colors ${
-            fase === "ok" ? "border-pos" : temRosto ? "border-marca" : "border-ink-foreground/30"
+            falha ? "border-errt" : fase === "ok" || qualidadeBoa ? "border-pos" : "border-pending"
           }`}
         />
         {fase === "carregando" && (
@@ -458,7 +555,7 @@ export function LivenessCheck({
             </span>
           </div>
         )}
-        {fase === "ok" && (
+        {fase === "ok" && !falha && (
           <div className="absolute inset-0 grid place-items-center bg-black/50">
             <span className="grid h-16 w-16 place-items-center rounded-full bg-pos text-ink-foreground">
               <Check size={32} strokeWidth={3} />
@@ -468,18 +565,26 @@ export function LivenessCheck({
       </div>
 
       <div className="mt-7 px-6 text-center">
-        {fase === "erro" ? (
+        {falha ? (
           <>
-            <p className="text-ink-foreground/80">{erro}</p>
-            <button onClick={onClose} className="btn btn-glass mt-5 w-full">
-              Fechar
+            <p aria-live="assertive" className="text-xl font-semibold">
+              {falha}
+            </p>
+            <button
+              disabled={reiniciando}
+              onClick={() => void tentarNovamente()}
+              className="btn btn-glass mt-5 w-full"
+            >
+              {reiniciando ? "Preparando…" : "Tentar de novo"}
             </button>
           </>
         ) : fase === "ok" ? (
           <p className="text-lg font-semibold text-pos">Pronto! Conferindo com o banco…</p>
         ) : (
           <>
-            <p className="text-xl font-semibold">{instrucao}</p>
+            <p aria-live="polite" aria-atomic="true" className="text-2xl font-semibold">
+              {instrucao}
+            </p>
             <p className="mt-2 text-sm text-ink-foreground/60">
               {temRosto ? "Siga a instrução acima" : "Posicione o rosto dentro do oval"}
             </p>
@@ -489,16 +594,31 @@ export function LivenessCheck({
                   <span
                     key={p.id}
                     className={`h-1.5 w-8 rounded-full ${
-                      i < passoIdx ? "bg-pos" : i === passoIdx ? "bg-marca" : "bg-ink-foreground/20"
+                      i < passoIdx
+                        ? "bg-pos"
+                        : i === passoIdx
+                          ? "bg-pending"
+                          : "bg-ink-foreground/20"
                     }`}
                   />
                 ))}
               </div>
             )}
-            <div className="mx-auto mt-4 h-1.5 w-40 overflow-hidden rounded-full bg-ink-foreground/15">
+            <div
+              role="progressbar"
+              aria-label="Progresso dos passos"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={Math.round(
+                ((passoIdx + progresso) / (desafio?.passos.length || 1)) * 100,
+              )}
+              className="mx-auto mt-4 h-1.5 w-40 overflow-hidden rounded-full bg-ink-foreground/15"
+            >
               <div
-                className="h-full rounded-full bg-marca transition-all"
-                style={{ width: `${Math.round(progresso * 100)}%` }}
+                className="h-full rounded-full bg-pos transition-all"
+                style={{
+                  width: `${Math.round(((passoIdx + progresso) / (desafio?.passos.length || 1)) * 100)}%`,
+                }}
               />
             </div>
           </>

@@ -120,9 +120,9 @@ function Cartao({ c }: { c: ConviteRecebido }) {
       {rosto && (
         <LivenessCheck
           onClose={() => setRosto(false)}
-          onSuccess={(prova) => {
+          onSuccess={async (prova) => {
+            await aceitar.mutateAsync(prova);
             setRosto(false);
-            aceitar.mutate(prova);
           }}
         />
       )}

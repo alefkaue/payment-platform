@@ -258,11 +258,10 @@ function AparelhoSection() {
       {liveness && (
         <LivenessCheck
           onClose={() => setLiveness(false)}
-          onSuccess={(prova) => {
+          onSuccess={async (prova) => {
+            await confiarAparelho(prova);
             setLiveness(false);
-            confiarAparelho(prova)
-              .then(() => qc.invalidateQueries({ queryKey: ["aparelho"] }))
-              .catch((e: Error) => setErro(e.message));
+            void qc.invalidateQueries({ queryKey: ["aparelho"] });
           }}
         />
       )}
@@ -374,11 +373,11 @@ function SenhaSection() {
       {liveness && (
         <LivenessCheck
           onClose={() => setLiveness(false)}
-          onSuccess={(prova) => {
-            setLiveness(false);
+          onSuccess={async (prova) => {
             setEnviando(true);
-            trocarSenha(atual, nova, prova)
+            await trocarSenha(atual, nova, prova)
               .then((n) => {
+                setLiveness(false);
                 fechar();
                 setOk(
                   n > 0
@@ -386,7 +385,6 @@ function SenhaSection() {
                     : "Senha alterada.",
                 );
               })
-              .catch((e: Error) => setErro(e.message))
               .finally(() => setEnviando(false));
           }}
         />
