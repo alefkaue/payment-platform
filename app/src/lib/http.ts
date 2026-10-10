@@ -66,10 +66,16 @@ const local = () => window.localStorage;
 
 let tokens: Tokens | null = typeof window !== "undefined" ? ler<Tokens>(sess, K_TOKENS) : null;
 let contaNumero: string | null = typeof window !== "undefined" ? ler<string>(sess, K_CONTA) : null;
+/**
+ * Muda quando a IDENTIDADE da sessão muda (login, logout, queda). Resposta que chega
+ * depois disso é de outra sessão e é descartada. A rotação do refresh NÃO muda a versão:
+ * é a mesma sessão, e descartar a resposta de um Pix já executado levaria a pessoa a
+ * repetir o pagamento.
+ */
 let versaoSessao = 0;
 
-export function salvarTokens(t: Tokens | null) {
-  versaoSessao++;
+export function salvarTokens(t: Tokens | null, { renovacao = false }: { renovacao?: boolean } = {}) {
+  if (!renovacao) versaoSessao++;
   tokens = t;
   gravar(sess, K_TOKENS, t);
 }
@@ -170,7 +176,7 @@ async function renovarAgora(): Promise<Renovacao> {
   }
   const novos = (await r.json()) as Tokens;
   if (versao !== versaoSessao) return { ok: false, recusada: false, motivo: "A sessão mudou." };
-  salvarTokens(novos);
+  salvarTokens(novos, { renovacao: true });
   return { ok: true };
 }
 

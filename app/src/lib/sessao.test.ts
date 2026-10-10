@@ -177,3 +177,39 @@ describe("queda de sessão", () => {
     expect(aviso).not.toHaveBeenCalled();
   });
 });
+
+describe("renovação em paralelo (revisão do Claude sobre o C1-02)", () => {
+  const fetchMock = vi.fn<typeof fetch>();
+  beforeEach(() => {
+    sessionStorage.clear();
+    fetchMock.mockReset();
+    vi.stubGlobal("fetch", fetchMock);
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  it("um refresh feito por outra requisição não descarta a resposta de um Pix já executado", async () => {
+    const http = await carregar();
+    let concluirPix!: (r: Response) => void;
+    fetchMock.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.endsWith("/pagamentos/transferir"))
+        return new Promise<Response>((ok) => {
+          concluirPix = ok;
+        });
+      if (u.endsWith("/auth/refresh"))
+        return resposta(200, { access_token: "at2", refresh_token: "rt2" });
+      // A primeira chamada de /contas encontra o token vencido; depois do refresh, passa.
+      return fetchMock.mock.calls.filter((c) => String(c[0]).endsWith("/contas")).length === 1
+        ? resposta(401, {}, true)
+        : resposta(200, []);
+    });
+    const pix = http.post<{ id: number }>("/pagamentos/transferir", { valor: "10.00" });
+    await vi.waitFor(() => expect(concluirPix).toBeTypeOf("function"));
+    await http.get("/contas"); // renova o token no meio do Pix
+    concluirPix(resposta(200, { id: 42 }));
+    await expect(pix).resolves.toEqual({ id: 42 });
+  });
+});
