@@ -12,7 +12,8 @@ pagamento, a CBS e o IBS destacados na nota são separados e enviados ao Fisco.
 | Pasta | O que é |
 |---|---|
 | `backend/` | API FastAPI v7 (Python): contas PF/PJ, cobrança com split, Pix, limites, biometria |
-| `app/` | App web + Android (Vite, TanStack, React, Capacitor) |
+| `app/` | **App Android** (Capacitor; interface em Vite/TanStack/React). Não há versão web publicada |
+| `download/` | Página estática de download do APK (Static Web Apps) |
 | `site/` | Site institucional com simulador de split (Next.js) |
 
 ## Rodar rápido
@@ -70,3 +71,4 @@ administrador" no [HANDOFF.md](HANDOFF.md#node-sem-administrador).
   pendências): header `Idempotency-Key` ou campo `idempotency_key`; o app gera uma chave
   por intenção de pagamento. Reenvio devolve o resultado original.
 - Segurança e auditoria: `SECURITY.md` (índice) e `relatorios/AUDITORIA-2-SEGURANCA.md`.
+- **Só celular**: rodar o app no PC (emulador Android) em `RODAR-NO-PC.md`; regras do pentest em `PENTEST.md`.

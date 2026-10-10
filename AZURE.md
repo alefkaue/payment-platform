@@ -10,7 +10,7 @@ Regras do teste para os outros grupos: `PENTEST.md`. Contexto: `SEGURANCA.md` it
 ```
 Internet ──► Front Door Standard + WAF (rate limit) ──► Container Apps (API, dentro da VNet)
                                                            │ identidade gerenciada (sem senha)
-Static Web Apps (app web, CSP)                             ├─► Key Vault (JWT, Fernet, admin, banco)
+Static Web Apps (página de download do APK)                ├─► Key Vault (JWT, Fernet, admin, banco)
 APK Android (CI) ──► Front Door                            ├─► Container Registry (imagem)
                                                            └─► Postgres Flexible B1ms (só rede privada)
 ```
@@ -136,8 +136,9 @@ GitHub emite só para workflows do branch `main` deste repositório.
 Daí em diante, cada push no `main` que mexa em `backend/` ou `app/`:
 - **api**: `az acr build` com o SHA do commit, job isolado de migração
   (`AZURE_MIGRATION_JOB`) e só depois nova revisão no Container Apps;
-- **front**: `npm run build` com `VITE_API_URL=ASTRO_API_URL` (gera a CSP com a URL da API) e
-  publica no Static Web Apps.
+- **front**: publica a **página de download** (`download/`, HTML estático com CSP fechada) no
+  Static Web Apps. O Astro é só app Android: não há mais app web; o CORS da API só libera a
+  origem do APK (`https://localhost`).
 
 O `android.yml` usa a mesma `ASTRO_API_URL`: o APK do CI passa a falar com o Front Door, com
 certificate pinning das CAs que o Front Door apresenta (gerado no build, `app/scripts/pinos.mjs`).

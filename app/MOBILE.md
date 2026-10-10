@@ -1,27 +1,38 @@
-# PayFlow — app web + .apk (um código só)
+# Astro — app Android
 
-O mesmo app (Vite + TanStack Router em **modo SPA**) roda como **web** e como
-**.apk Android** (via [Capacitor](https://capacitorjs.com)). Não há duplicação de
-código: o build gera um SPA estático e o Capacitor o embute no app nativo.
+O Astro é **só app Android** (Capacitor): a interface (Vite + TanStack Router em modo SPA)
+vai embutida no APK e fala com a API na Azure. **Não há versão web publicada.** Os grupos do
+pentest rodam o APK num emulador no PC: `../RODAR-NO-PC.md`.
 
-## Versão web (simulação do app no navegador)
+## Dois apps (productFlavors em `android/app/build.gradle`)
+
+| Sabor | Pacote | Para quê |
+|---|---|---|
+| `astro` | `com.payflow.app` | O oficial: pinning (`scripts/pinos.mjs`), atestação da chave no Keystore, sem print (`FLAG_SECURE`), sem depuração do WebView |
+| `lab` | `com.payflow.app.lab` | Pentest: aceita CA do usuário (Burp/ZAP), sem pinning, print e `chrome://inspect` liberados, não manda atestação (`src/lab/`) |
+
+O CI (`.github/workflows/android.yml`) gera os dois. Uma tag `apk-vX.Y` publica um
+**GitHub Release** com `Astro.apk`, `Astro-Lab.apk` e `SHA256SUMS.txt`:
 
 ```bash
-npm run dev          # desenvolvimento (http://localhost:8081)
-# ou a build estática (igual à que vai pro apk):
-npm run build:mobile # gera www/ (SPA estático)
-npm run preview:mobile  # serve em http://localhost:8099
+git tag apk-v1.0 && git push origin apk-v1.0
 ```
 
-`www/` é 100% estático (dados mockados no cliente) — pode ser hospedado em
-qualquer lugar (Vercel, Netlify, GitHub Pages) como a "simulação web" do app.
+## Desenvolver
+
+```bash
+npm run dev          # no navegador do PC, só para desenvolver (http://localhost:8081)
+```
+
+O navegador serve para desenvolver a interface; o produto é o APK. Recursos nativos
+(botão Voltar, barra de status, rede, chave no Keystore) só existem no app.
 
 ## Versão .apk (Android)
 
 O projeto Android já está gerado em `android/`. Para **compilar o .apk** é preciso
 ter o toolchain Android na máquina (não vem neste repositório):
 
-- **JDK 17** e **Android SDK** (o jeito fácil é instalar o **Android Studio**).
+- **JDK 21** e **Android SDK** (o jeito fácil é instalar o **Android Studio**). O CI usa JDK 21.
 
 Com isso instalado:
 

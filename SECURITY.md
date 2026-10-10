@@ -28,7 +28,7 @@ pentest feito por outros grupos.
 
 ## 2. Escopo e limites
 
-- No escopo: app web, API, APK Android e PWA — ver a tabela do `PENTEST.md`.
+- No escopo: os apps Android (Astro e Astro Lab) e a API — ver a tabela do `PENTEST.md`. Não há versão web.
 - Fora: a plataforma de nuvem em si, serviços de terceiros, engenharia social, ataque
   físico, negação de serviço.
 - Não use dados reais de terceiros (documento, rosto). Se cair em dado de outra pessoa,
