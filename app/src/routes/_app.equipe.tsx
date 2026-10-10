@@ -1,3 +1,4 @@
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -56,6 +57,7 @@ const STATUS: Record<StatusVinculo, { rotulo: string; cor: string } | null> = {
 function Equipe() {
   const { conta } = useAuth();
   const [nova, setNova] = useState(false);
+  useFecharAoVoltar(nova, () => setNova(false));
   const q = useQuery({ queryKey: ["equipe", conta?.numero], queryFn: equipe });
   const pol = useQuery({ queryKey: ["politica", conta?.numero], queryFn: politicaEmpresa });
 
@@ -156,6 +158,7 @@ function Linha({
   const qc = useQueryClient();
   const [rosto, setRosto] = useState(false);
   const [editando, setEditando] = useState(false);
+  useFecharAoVoltar(editando, () => setEditando(false));
   const mut = useMutation({
     mutationFn: ({ acao, prova }: { acao: AcaoMembro; prova?: ProvaBiometrica }) =>
       mudarAcessoMembro(m.id, acao, prova),
@@ -392,6 +395,7 @@ function EditarMembro({
             <>
               <Field label="Alçada por operação (R$)" id={`${id}-alcada`}>
                 <input
+                  autoComplete="off"
                   id={`${id}-alcada`}
                   className="field tabular"
                   inputMode="decimal"
@@ -406,6 +410,7 @@ function EditarMembro({
                 hint="Vazio mantém a diária atual; se não definida, vale a alçada por operação."
               >
                 <input
+                  autoComplete="off"
                   id={`${id}-diaria`}
                   className="field tabular"
                   inputMode="decimal"
@@ -522,6 +527,7 @@ function NovoMembro({
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Nome completo" id="m-nome">
           <input
+            autoComplete="name"
             id="m-nome"
             className="field"
             value={nome}
@@ -530,6 +536,7 @@ function NovoMembro({
         </Field>
         <Field label="CPF" id="m-cpf" hint="O acesso fica preso a este CPF.">
           <input
+            autoComplete="off"
             id="m-cpf"
             inputMode="numeric"
             className="field tabular"
@@ -542,6 +549,8 @@ function NovoMembro({
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="E-mail (opcional)" id="m-email">
           <input
+            autoComplete="email"
+            inputMode="email"
             id="m-email"
             type="email"
             className="field"
@@ -588,6 +597,7 @@ function NovoMembro({
           }
         >
           <input
+            autoComplete="off"
             id="m-alcada"
             inputMode="decimal"
             className="field tabular"

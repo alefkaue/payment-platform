@@ -1,3 +1,4 @@
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -119,6 +120,7 @@ function LimitesSection({ podeEditar }: { podeEditar: boolean }) {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["limites"], queryFn: meusLimites });
   const [editando, setEditando] = useState<CampoLimite | null>(null);
+  useFecharAoVoltar(editando, () => setEditando(null));
   const [valor, setValor] = useState("");
   const mut = useMutation({
     mutationFn: alterarLimites,
@@ -159,6 +161,7 @@ function LimitesSection({ podeEditar }: { podeEditar: boolean }) {
                     }}
                   >
                     <input
+                      autoComplete="off"
                       autoFocus
                       inputMode="decimal"
                       aria-label={`Novo limite: ${label}`}
@@ -271,6 +274,12 @@ function AparelhoSection() {
 
 function SenhaSection() {
   const [aberto, setAberto] = useState(false);
+  useFecharAoVoltar(aberto, () => {
+    setAberto(false);
+    setAtual("");
+    setNova("");
+    setRepetida("");
+  });
   const [atual, setAtual] = useState("");
   const [nova, setNova] = useState("");
   const [repetida, setRepetida] = useState("");

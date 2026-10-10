@@ -1,3 +1,4 @@
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { createFileRoute, Link, Navigate, Outlet, useNavigate } from "@tanstack/react-router";
 import { Bell, LogOut, Menu, Settings, User, X } from "lucide-react";
 import { useState } from "react";
@@ -16,6 +17,7 @@ function AppLayout() {
   const nav = useNavigate();
   const qc = useQueryClient();
   const [mais, setMais] = useState(false);
+  useFecharAoVoltar(mais, () => setMais(false), 30);
   const alertas = useQuery({ queryKey: ["nao-lidas", conta?.numero], queryFn: naoLidas });
 
   if (!ready) return null;
@@ -40,7 +42,10 @@ function AppLayout() {
     <div className="flex min-h-[100dvh] justify-center bg-black">
       <div className="relative flex min-h-[100dvh] w-full max-w-[460px] flex-col bg-background shadow-2xl">
         {/* Header */}
-        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line2 bg-background/95 px-4 py-3 backdrop-blur">
+        <header
+          style={{ paddingTop: "calc(0.75rem + env(safe-area-inset-top))" }}
+          className="sticky top-0 z-20 flex items-center justify-between border-b border-line2 bg-background/95 px-4 py-3 backdrop-blur"
+        >
           <Link to="/inicio" aria-label="Início">
             <Wordmark size="sm" />
           </Link>
@@ -48,7 +53,7 @@ function AppLayout() {
             <Link
               to="/notificacoes"
               aria-label="Notificações"
-              className="relative grid h-10 w-10 place-items-center rounded-full border border-line2 text-mut2 transition hover:bg-tint hover:text-ink"
+              className="relative grid h-11 w-11 place-items-center rounded-full border border-line2 text-mut2 transition hover:bg-tint hover:text-ink"
             >
               <Bell size={18} />
               {naoLidasN > 0 && (
@@ -60,7 +65,7 @@ function AppLayout() {
             <Link
               to="/perfil"
               aria-label="Meu perfil"
-              className="grid h-10 w-10 place-items-center rounded-full bg-ink text-xs font-semibold text-ink-foreground"
+              className="grid h-11 w-11 place-items-center rounded-full bg-ink text-xs font-semibold text-ink-foreground"
             >
               {iniciais(conta.nome)}
             </Link>
@@ -68,7 +73,10 @@ function AppLayout() {
         </header>
 
         {/* Conteúdo */}
-        <main className="flex-1 px-4 pb-28 pt-5">
+        <main
+          style={{ paddingBottom: "calc(7rem + env(safe-area-inset-bottom))" }}
+          className="flex-1 px-4 pt-5"
+        >
           {contas.length > 1 && <SeletorConta atual={conta} contas={contas} onTrocar={trocar} />}
           <Outlet />
         </main>
@@ -83,7 +91,7 @@ function AppLayout() {
               <Link
                 key={to}
                 to={to}
-                className="flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-mut3"
+                className="flex min-h-11 min-w-11 flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-mut3"
                 activeProps={{ className: "text-ink" }}
               >
                 <Icon size={20} /> {label}
@@ -91,7 +99,7 @@ function AppLayout() {
             ))}
             <button
               onClick={() => setMais(true)}
-              className="flex flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-mut3"
+              className="flex min-h-11 min-w-11 flex-col items-center gap-1 py-2.5 text-[10px] font-medium text-mut3"
             >
               <Menu size={20} /> Mais
             </button>
@@ -130,7 +138,10 @@ function MaisDrawer({
         className="absolute inset-0 bg-ink/40 backdrop-blur-sm"
         onClick={onFechar}
       />
-      <div className="absolute bottom-0 left-1/2 max-h-[85vh] w-full max-w-[460px] -translate-x-1/2 overflow-y-auto rounded-t-[26px] bg-background p-5 pb-8 shadow-lift enter">
+      <div
+        style={{ paddingBottom: "calc(2rem + env(safe-area-inset-bottom))" }}
+        className="absolute bottom-0 left-1/2 max-h-[85vh] w-full max-w-[460px] -translate-x-1/2 overflow-y-auto rounded-t-[26px] bg-background p-5 pb-8 shadow-lift enter"
+      >
         <div className="mx-auto mb-4 h-1.5 w-10 rounded-full bg-line2" />
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-ink">Mais na Astro</h2>

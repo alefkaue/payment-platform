@@ -1,3 +1,4 @@
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -195,6 +196,7 @@ function Chaves({ ehPJ }: { ehPJ: boolean }) {
   const q = useQuery({ queryKey: ["chaves"], queryFn: minhasChaves });
   // Campo aberto para digitar a chave (e-mail ou celular); null = nenhum.
   const [digitando, setDigitando] = useState<null | "email" | "celular">(null);
+  useFecharAoVoltar(digitando, () => setDigitando(null));
   const [valor, setValor] = useState("");
   const mut = useMutation({
     mutationFn: (v: { tipo: string; valor?: string }) => criarChave(v.tipo, v.valor),

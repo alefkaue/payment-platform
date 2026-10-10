@@ -1,3 +1,4 @@
+import { AmbienteAndroid } from "@/lib/mobile";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -61,7 +62,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   head: () => ({
     meta: [
       { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
       { name: "theme-color", content: "#0A0A0A" },
       { title: "Astro — Pagamentos com split de IBS/CBS" },
       {
@@ -98,7 +99,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body className="select-none touch-manipulation [&_input]:select-text [&_textarea]:select-text">
         {children}
         <Scripts />
       </body>
@@ -111,6 +112,7 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <AmbienteAndroid />
         <Outlet />
       </AuthProvider>
     </QueryClientProvider>

@@ -1,3 +1,4 @@
+import { useFecharAoVoltar, BotaoFinanceiro } from "@/lib/mobile";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -44,6 +45,10 @@ function TransferirConta() {
   const [destino, setDestino] = useState("");
   const [valorStr, setValorStr] = useState("");
   const [info, setInfo] = useState<CarteiraInfo | null>(null);
+  useFecharAoVoltar(info, () => {
+    setInfo(null);
+    setErro(null);
+  });
   const [liveness, setLiveness] = useState(false);
   const [pendente, setPendente] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -185,6 +190,7 @@ function TransferirConta() {
           {!modoCobranca && (
             <Field label="Valor (R$)" id="valor">
               <input
+                autoComplete="off"
                 id="valor"
                 inputMode="decimal"
                 className="field tabular text-lg"
@@ -196,9 +202,9 @@ function TransferirConta() {
             </Field>
           )}
           {erro && <ErrorBox>{erro}</ErrorBox>}
-          <button className="btn btn-ink w-full" disabled={loading}>
+          <BotaoFinanceiro className="btn btn-ink w-full" disabled={loading}>
             {loading ? "Consultando…" : "Revisar"}
-          </button>
+          </BotaoFinanceiro>
         </form>
       ) : (
         <div className="space-y-4">
@@ -252,7 +258,7 @@ function TransferirConta() {
             >
               Voltar
             </button>
-            <button className="btn btn-ink" onClick={confirmar} disabled={loading}>
+            <BotaoFinanceiro className="btn btn-ink" onClick={confirmar} disabled={loading}>
               {loading
                 ? "Enviando…"
                 : acimaDaAlcada
@@ -260,7 +266,7 @@ function TransferirConta() {
                   : cobranca
                     ? "Confirmar pagamento"
                     : "Confirmar transferência"}
-            </button>
+            </BotaoFinanceiro>
           </div>
         </div>
       )}

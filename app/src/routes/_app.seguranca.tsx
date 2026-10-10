@@ -1,3 +1,4 @@
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -40,6 +41,7 @@ function Seguranca() {
   const sessoes = useQuery({ queryKey: ["seguranca", "sessoes"], queryFn: minhasSessoes });
   const atividade = useQuery({ queryKey: ["seguranca", "atividade"], queryFn: minhaAtividade });
   const [pedido, setPedido] = useState<Pedido | null>(null);
+  useFecharAoVoltar(pedido, () => setPedido(null), 10);
   const [desbloquear, setDesbloquear] = useState<Aparelho | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);

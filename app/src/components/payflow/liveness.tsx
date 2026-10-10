@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { Check, Loader2, X } from "lucide-react";
 import { pedirDesafio } from "@/lib/api";
 import type {
@@ -176,6 +177,7 @@ export function LivenessCheck({
   modo?: ModoBiometria;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  useFecharAoVoltar(true, onClose, 50);
   const overlayRef = useRef<HTMLCanvasElement>(null);
   const [fase, setFase] = useState<Fase>("carregando");
   const [erro, setErro] = useState<string | null>(null);
@@ -256,21 +258,30 @@ export function LivenessCheck({
 
         const vision = await import("@mediapipe/tasks-vision");
         const fileset = await vision.FilesetResolver.forVisionTasks(WASM);
+        if (parar) return;
         landmarker = await vision.FaceLandmarker.createFromOptions(fileset, {
           baseOptions: { modelAssetPath: MODELO, delegate: "GPU" },
           runningMode: "VIDEO",
           numFaces: 1,
           outputFaceBlendshapes: true,
         });
+        if (parar) {
+          landmarker.close();
+          return;
+        }
         stream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: "user", width: 480, height: 640 },
           audio: false,
         });
-        if (parar) return;
+        if (parar) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
+        }
         const v = videoRef.current;
         if (!v) return;
         v.srcObject = stream;
         await v.play();
+        if (parar) return;
         setFase("ativo");
         loop();
       } catch (e) {
@@ -415,7 +426,10 @@ export function LivenessCheck({
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-ink text-ink-foreground">
-      <div className="flex items-center justify-between px-5 pt-6">
+      <div
+        style={{ paddingTop: "calc(1.5rem + env(safe-area-inset-top))" }}
+        className="flex items-center justify-between px-5"
+      >
         <p className="font-semibold">Verificação facial</p>
         <button aria-label="Fechar" onClick={onClose} className="text-ink-foreground/70">
           <X size={22} />

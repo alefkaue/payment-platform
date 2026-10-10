@@ -1,3 +1,4 @@
+import { BotaoFinanceiro } from "@/lib/mobile";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -115,7 +116,7 @@ function Card({ o, podeAprovar }: { o: OperacaoPendente; podeAprovar: boolean })
               >
                 <X size={18} /> Recusar
               </button>
-              <button
+              <BotaoFinanceiro
                 className="btn btn-ink gap-2"
                 disabled={mut.isPending}
                 onClick={() =>
@@ -123,7 +124,7 @@ function Card({ o, podeAprovar }: { o: OperacaoPendente; podeAprovar: boolean })
                 }
               >
                 <ScanFace size={18} /> {mut.isPending ? "Enviando…" : "Aprovar"}
-              </button>
+              </BotaoFinanceiro>
             </div>
           )}
           {mut.isError && (

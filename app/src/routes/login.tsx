@@ -1,3 +1,4 @@
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Clock, ScanFace } from "lucide-react";
@@ -33,6 +34,10 @@ function Login() {
   const [loading, setLoading] = useState(false);
   // Senha conferida: falta o rosto.
   const [etapa, setEtapa] = useState<LoginEtapaMfa | null>(null);
+  useFecharAoVoltar(etapa, () => {
+    setEtapa(null);
+    setSenha("");
+  });
   const [camera, setCamera] = useState(false);
   // Por que a sessão anterior caiu (tempo máximo, inatividade...), se caiu.
   const [motivo] = useState(motivoSaida);
@@ -129,6 +134,7 @@ function Login() {
                     hint="E-mail ou CPF. Contas de empresa entram pelo login de quem as opera."
                   >
                     <input
+                      inputMode="email"
                       id="email"
                       autoComplete="username"
                       className="field"

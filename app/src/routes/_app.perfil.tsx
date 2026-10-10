@@ -1,3 +1,4 @@
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -35,6 +36,11 @@ function Perfil() {
   const cache = useQueryClient();
   const verificacao = useQuery({ queryKey: ["identidade"], queryFn: minhaVerificacao });
   const [enviando, setEnviando] = useState(false);
+  useFecharAoVoltar(enviando, () => {
+    setEnviando(false);
+    setFrente(null);
+    setVerso(null);
+  });
   const [tipoDoc, setTipoDoc] = useState<TipoDocumentoPessoa>("cnh");
   const [frente, setFrente] = useState<string | null>(null);
   const [verso, setVerso] = useState<string | null>(null);

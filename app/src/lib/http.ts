@@ -19,6 +19,7 @@
  */
 
 import { criarProva } from "./dpop";
+import { Capacitor } from "@capacitor/core";
 
 export const API_URL: string | undefined =
   (import.meta.env["VITE_API_URL"] as string | undefined)?.replace(/\/$/, "") || undefined;
@@ -64,8 +65,18 @@ function gravar(storage: () => Storage, chave: string, valor: unknown) {
 const sess = () => window.sessionStorage;
 const local = () => window.localStorage;
 
-let tokens: Tokens | null = typeof window !== "undefined" ? ler<Tokens>(sess, K_TOKENS) : null;
-let contaNumero: string | null = typeof window !== "undefined" ? ler<string>(sess, K_CONTA) : null;
+let tokens: Tokens | null =
+  typeof window !== "undefined" && !Capacitor.isNativePlatform()
+    ? ler<Tokens>(sess, K_TOKENS)
+    : null;
+let contaNumero: string | null =
+  typeof window !== "undefined" && !Capacitor.isNativePlatform()
+    ? ler<string>(sess, K_CONTA)
+    : null;
+if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
+  gravar(sess, K_TOKENS, null);
+  gravar(sess, K_CONTA, null);
+}
 /**
  * Muda quando a IDENTIDADE da sessão muda (login, logout, queda). Resposta que chega
  * depois disso é de outra sessão e é descartada. A rotação do refresh NÃO muda a versão:
@@ -74,10 +85,13 @@ let contaNumero: string | null = typeof window !== "undefined" ? ler<string>(ses
  */
 let versaoSessao = 0;
 
-export function salvarTokens(t: Tokens | null, { renovacao = false }: { renovacao?: boolean } = {}) {
+export function salvarTokens(
+  t: Tokens | null,
+  { renovacao = false }: { renovacao?: boolean } = {},
+) {
   if (!renovacao) versaoSessao++;
   tokens = t;
-  gravar(sess, K_TOKENS, t);
+  gravar(sess, K_TOKENS, Capacitor.isNativePlatform() ? null : t);
 }
 
 /** Permite encerrar também a sessão mantida só em memória (storage indisponível). */
@@ -87,7 +101,7 @@ export function refreshDaSessao(): string | undefined {
 
 export function definirConta(numero: string | null) {
   contaNumero = numero;
-  gravar(sess, K_CONTA, numero);
+  gravar(sess, K_CONTA, Capacitor.isNativePlatform() ? null : numero);
 }
 
 /** Id estável deste aparelho (o backend guarda só o hash). */

@@ -1,3 +1,4 @@
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -142,6 +143,7 @@ function Contestacao({ transacao: t }: { transacao: Transacao }) {
   const { conta } = useAuth();
   const qc = useQueryClient();
   const [aberto, setAberto] = useState(false);
+  useFecharAoVoltar(aberto, () => setAberto(false));
   const [motivo, setMotivo] = useState("");
   const [enviada, setEnviada] = useState(false);
   const mut = useMutation({

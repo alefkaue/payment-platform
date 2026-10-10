@@ -1,3 +1,4 @@
+import { useFecharAoVoltar } from "@/lib/mobile";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { CheckCircle2, ScanFace } from "lucide-react";
@@ -29,6 +30,11 @@ function RecuperarSenha() {
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [etapa, setEtapa] = useState<EtapaRecuperacao | null>(null);
+  useFecharAoVoltar(etapa, () => {
+    setEtapa(null);
+    setSenha("");
+    setRepetida("");
+  });
   const [camera, setCamera] = useState(false);
   const [feito, setFeito] = useState(false);
 
@@ -111,6 +117,7 @@ function RecuperarSenha() {
                 <form onSubmit={continuar} className="mt-7 space-y-4">
                   <Field label="Conta" id="login" hint="E-mail ou CPF.">
                     <input
+                      inputMode="email"
                       id="login"
                       autoComplete="username"
                       className="field"
