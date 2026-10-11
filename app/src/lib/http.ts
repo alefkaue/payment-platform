@@ -84,6 +84,7 @@ if (typeof window !== "undefined" && Capacitor.isNativePlatform()) {
  * repetir o pagamento.
  */
 let versaoSessao = 0;
+let versaoConta = 0;
 
 export function salvarTokens(
   t: Tokens | null,
@@ -100,6 +101,7 @@ export function refreshDaSessao(): string | undefined {
 }
 
 export function definirConta(numero: string | null) {
+  if (numero !== contaNumero) versaoConta++;
   contaNumero = numero;
   gravar(sess, K_CONTA, Capacitor.isNativePlatform() ? null : numero);
 }
@@ -188,9 +190,23 @@ async function renovarAgora(): Promise<Renovacao> {
     // 429/5xx: a sessão continua válida, só não deu para renovar agora.
     return { ok: false, recusada: r.status === 401 || r.status === 403, motivo };
   }
-  const novos = (await r.json()) as Tokens;
+  const novos: unknown = await r.json().catch(() => null);
   if (versao !== versaoSessao) return { ok: false, recusada: false, motivo: "A sessão mudou." };
-  salvarTokens(novos, { renovacao: true });
+  if (
+    !novos ||
+    typeof novos !== "object" ||
+    !("access_token" in novos) ||
+    !("refresh_token" in novos) ||
+    typeof novos.access_token !== "string" ||
+    typeof novos.refresh_token !== "string" ||
+    !novos.access_token.trim() ||
+    !novos.refresh_token.trim()
+  )
+    return { ok: false, recusada: false, motivo: "Resposta inválida do servidor." };
+  salvarTokens(
+    { access_token: novos.access_token, refresh_token: novos.refresh_token },
+    { renovacao: true },
+  );
   return { ok: true };
 }
 
@@ -206,6 +222,20 @@ export interface Resposta<T> {
   dados: T;
 }
 
+/** Conserva a identidade e a conta também entre chamadas de uma operação composta. */
+export function capturarContexto(anonimo = false): () => void {
+  const versao = versaoSessao;
+  const conta = versaoConta;
+  return () => {
+    if (versao !== versaoSessao) throw new ApiError("A sessão mudou. Tente de novo.", 409);
+    if (!anonimo && conta !== versaoConta)
+      throw new ApiError(
+        "A conta mudou. Confira o resultado na conta anterior antes de repetir a operação.",
+        409,
+      );
+  };
+}
+
 export async function requisitar<T>(
   metodo: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
   caminho: string,
@@ -214,13 +244,16 @@ export async function requisitar<T>(
   anonimo = false,
 ): Promise<Resposta<T>> {
   if (!API_URL) throw new ApiError("Backend não configurado (VITE_API_URL).", 500);
-  const versao = versaoSessao;
+  const conferirContexto = capturarContexto(anonimo);
   const headers: Record<string, string> = { "X-Dispositivo-Id": dispositivoId() };
   if (corpo !== undefined) headers["Content-Type"] = "application/json";
   if (!anonimo && tokens?.access_token) headers["Authorization"] = `Bearer ${tokens.access_token}`;
   if (!anonimo && contaNumero) headers["X-Conta"] = contaNumero;
   const url = `${API_URL}${caminho}`;
   if (!anonimo) headers["DPoP"] = await criarProva(metodo, url, tokens?.access_token);
+
+  // Logout revoga a sessão anterior depois de limpar o estado local.
+  if (!(metodo === "POST" && caminho === "/auth/logout")) conferirContexto();
 
   let r: Response;
   try {
@@ -233,7 +266,7 @@ export async function requisitar<T>(
     throw new ApiError("Sem conexão com o servidor. Verifique a internet e tente de novo.", 0);
   }
 
-  if (versao !== versaoSessao) throw new ApiError("A sessão mudou. Tente de novo.", 409);
+  conferirContexto();
 
   // 401 de sessão (token vencido, sessão encerrada, outra chave...). 401 de
   // biometria ("rosto não confere") não traz WWW-Authenticate e não derruba nada.
@@ -245,15 +278,38 @@ export async function requisitar<T>(
   let motivoQueda: string | null = null;
   if (sessaoRecusada && !tentouRenovar) {
     const rn = await renovar();
-    if (rn.ok) return requisitar<T>(metodo, caminho, corpo, true);
+    if (rn.ok) {
+      conferirContexto();
+      return requisitar<T>(metodo, caminho, corpo, true);
+    }
     if (!rn.recusada)
       throw new ApiError("Não deu para confirmar sua sessão agora. Tente de novo.", 503);
     motivoQueda = rn.motivo;
   }
   const versaoResposta = versaoSessao;
-  const texto = await r.text();
+  let texto: string;
+  try {
+    texto = await r.text();
+  } catch {
+    throw new ApiError(
+      "Não deu para ler a resposta do servidor. Confira o resultado antes de repetir a operação.",
+      502,
+    );
+  }
   if (versaoResposta !== versaoSessao) throw new ApiError("A sessão mudou. Tente de novo.", 409);
-  const dados = texto ? (JSON.parse(texto) as unknown) : null;
+  conferirContexto();
+  let dados: unknown = null;
+  if (texto) {
+    try {
+      dados = JSON.parse(texto) as unknown;
+    } catch {
+      if (r.ok)
+        throw new ApiError(
+          "Resposta inválida do servidor. Confira o resultado antes de repetir a operação.",
+          502,
+        );
+    }
+  }
   if (!r.ok) {
     const msg =
       detalheDe(dados) ??

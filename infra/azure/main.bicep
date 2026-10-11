@@ -289,6 +289,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
           resources: { cpu: json('1.0'), memory: '2Gi' }
           env: [
             { name: 'AMBIENTE', value: 'producao' }
+            { name: 'DPOP_ORIGEM_PUBLICA', value: 'https://${fdEndpoint!.properties.hostName}' }
             { name: 'CNPJ_PROVEDOR', value: 'brasilapi' }
             { name: 'DOCUMENTO_PROVEDOR', value: 'tesseract' }
             { name: 'ADMIN_EMAIL', value: adminEmail }

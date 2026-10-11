@@ -75,7 +75,7 @@ def test_corpo_grande_sem_content_length_e_recusado(cliente, monkeypatch):
     import app.main as main
 
     camada = main.app.middleware_stack
-    while camada is not None and not isinstance(camada, main.LimiteDeCorpo):
+    while camada is not None and not isinstance(camada, main.PerimetroHTTP):
         camada = getattr(camada, "app", None)
     assert camada is not None
     monkeypatch.setattr(camada, "limite", 1024)
@@ -101,7 +101,7 @@ def test_listagem_tem_teto(cliente, caminho):
 # ------------------------------------------------------------------ erros e entradas maliciosas
 
 
-def test_erro_interno_nao_vaza_detalhe(cliente, monkeypatch):
+def test_erro_interno_nao_vaza_detalhe(cliente, monkeypatch, caplog):
     def explode(*a, **kw):
         raise RuntimeError("postgresql://astroadmin:SENHA@10.20.2.4/astro C:\\app\\segredo.py")
 
@@ -118,6 +118,7 @@ def test_erro_interno_nao_vaza_detalhe(cliente, monkeypatch):
     texto = r.text
     assert "SENHA" not in texto and "10.20.2.4" not in texto and "segredo.py" not in texto and "Traceback" not in texto
     assert r.json()["request_id"]
+    assert "postgresql://" not in caplog.text and "SENHA" not in caplog.text
 
 
 def test_validacao_nao_ecoa_o_valor_enviado(cliente):

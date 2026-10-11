@@ -24,6 +24,7 @@ def producao(monkeypatch):
         "DOCUMENTO_PROVEDOR": "auto",
         "KYC_DOCUMENTO_OBRIGATORIO": "1",
         "DPOP_OBRIGATORIO": "1",
+        "DPOP_ORIGEM_PUBLICA": "https://api.astro.test",
     }
     for k, v in valido.items():
         monkeypatch.setenv(k, v)

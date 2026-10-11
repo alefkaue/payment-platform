@@ -29,7 +29,7 @@ REGRAS = {
     ("POST", "/auth/login/mfa"): "Rosto com prova de vida sorteada (2º fator); mesmo aparelho e chave DPoP; atestação opcional (APK)",
     ("POST", "/auth/login/totp"): "Admin da plataforma: código TOTP de uso único (2º fator); lista de IPs; conta no limite de login",
     ("POST", "/auth/refresh"): "Refresh preso à chave DPoP e ao aparelho; rotação; limite por IP",
-    ("POST", "/auth/logout"): "Revoga a sessão inteira (família de refresh)",
+    ("POST", "/auth/logout"): "DPoP da chave da sessão; revoga a sessão inteira (família de refresh)",
     ("POST", "/auth/senha"): "Senha atual + rosto; política de senha; encerra as outras sessões",
     ("POST", "/auth/recuperacao"): "E-mail/CPF + nascimento; resposta igual exista a conta ou não; limite por IP e por conta",
     ("POST", "/auth/recuperacao/concluir"): "Rosto com prova de vida completa, mesmo aparelho e chave; uso único; derruba todas as sessões",

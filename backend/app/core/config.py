@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Sem DATABASE_URL, desenvolvimento usa SQLite local.
     database_url: str | None = Field(default=None, alias="DATABASE_URL")
 
+    database_pool_size: int = Field(default=5, ge=1, le=30, alias="DATABASE_POOL_SIZE")
+    database_max_overflow: int = Field(default=5, ge=0, le=30, alias="DATABASE_MAX_OVERFLOW")
+    database_pool_timeout: int = Field(default=5, ge=1, le=30, alias="DATABASE_POOL_TIMEOUT")
+
     # ---------- JWT ----------
     jwt_secret: str | None = Field(default=None, alias="JWT_SECRET")
     jwt_algoritmo: str = Field(default="HS256", alias="JWT_ALGORITMO")
@@ -43,6 +47,7 @@ class Settings(BaseSettings):
     # Prova de posse da chave (DPoP, RFC 9449 -- app/core/dpop.py). Obrigatória no
     # login de pessoas; proibido desligar em produção. A janela tolera relógio
     # de aparelho levemente adiantado/atrasado.
+    dpop_origem_publica: str | None = Field(default=None, alias="DPOP_ORIGEM_PUBLICA")
     dpop_obrigatorio: bool = Field(default=True, alias="DPOP_OBRIGATORIO")
     # Sessão (SEGURANCA.md item 3): máximo absoluto desde o login (senha + rosto)
     # e queda por inatividade (refresh sem uso). Banco não deixa sessão aberta.
@@ -214,6 +219,14 @@ class Settings(BaseSettings):
     senha_min: int = Field(default=10, alias="SENHA_MIN")
 
     # ---------- HTTP ----------
+    http_requisicoes_minuto: int = Field(default=600, ge=30, le=10000, alias="HTTP_REQUISICOES_MINUTO")
+    # Configurar os domínios da API e das sondas ao publicar; vazio mantém compatibilidade local.
+    http_hosts: str = Field(default="", alias="HTTP_HOSTS")
+
+    @property
+    def http_hosts_lista(self) -> list[str]:
+        return [h.strip() for h in self.http_hosts.split(",") if h.strip()]
+
     # /docs e /openapi.json: None = automático (desligado em produção).
     docs_habilitados: bool | None = Field(default=None, alias="DOCS_HABILITADOS")
 
@@ -309,6 +322,20 @@ def get_settings() -> Settings:
         raise RuntimeError("DPOP_OBRIGATORIO=0 não pode ser usado em produção (token roubado voltaria a servir).")
     if s.biometria_motor not in ("opencv", "deepface"):
         raise RuntimeError(f"BIOMETRIA_MOTOR desconhecido: {s.biometria_motor!r} (use opencv ou deepface).")
+    if s.dpop_origem_publica:
+        from urllib.parse import urlsplit
+        try:
+            u = urlsplit(s.dpop_origem_publica)
+            porta = u.port
+            valido = (u.scheme in {"http", "https"} and u.hostname and u.path in {"", "/"}
+                      and not u.query and not u.fragment and u.username is None and u.password is None
+                      and not any(c.isspace() for c in s.dpop_origem_publica))
+        except ValueError:
+            valido = False
+        if not valido or (s.em_producao and u.scheme != "https"):
+            raise RuntimeError("DPOP_ORIGEM_PUBLICA deve ser uma origem HTTP(S), sem caminho ou credenciais; produção exige HTTPS.")
+    if s.em_producao and not s.dpop_origem_publica:
+        raise RuntimeError("DPOP_ORIGEM_PUBLICA é obrigatória em produção (origem HTTPS externa da API).")
     if s.em_producao:
         _conferir_producao(s)
     return s

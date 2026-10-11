@@ -2,6 +2,7 @@
 services:
   db:
     image: postgres:16-alpine
+    networks: [banco]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-payflow}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
@@ -25,6 +26,7 @@ services:
       AMBIENTE: desenvolvimento
       DATABASE_URL: postgresql+psycopg2://astro_migrator:${DATABASE_MIGRATION_PASSWORD:?defina DATABASE_MIGRATION_PASSWORD}@db:5432/${POSTGRES_DB:-payflow}
       DATABASE_MIGRATION_URL: postgresql+psycopg2://astro_migrator:${DATABASE_MIGRATION_PASSWORD:?defina DATABASE_MIGRATION_PASSWORD}@db:5432/${POSTGRES_DB:-payflow}
+    networks: [banco]
     entrypoint: [/bin/sh, -ec]
     command: ['alembic upgrade head && python scripts/restringir_runtime.py']
     depends_on:
@@ -35,6 +37,7 @@ services:
     build: ./backend
     ports:
       - 127.0.0.1:8000:8000
+    networks: [default, banco]
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg2://astro_app:${DATABASE_APP_PASSWORD:?defina DATABASE_APP_PASSWORD}@db:5432/${POSTGRES_DB:-payflow}
@@ -52,3 +55,7 @@ services:
 
 volumes:
   payflow_db_data:
+
+networks:
+  banco:
+    internal: true

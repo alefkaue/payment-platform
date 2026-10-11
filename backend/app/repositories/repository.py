@@ -1605,11 +1605,16 @@ class Repositorio(RepositorioExtras):
 
     def registrar_tentativa_entrega(self, entrega_id: int, *, sucesso: bool, resposta: str, max_tentativas: int) -> None:
         with self._sf() as s:
-            e = s.get(WebhookEntrega, entrega_id)
+            # Resultados de jobs simultâneos podem chegar fora de ordem.
+            # Serializa a contagem e preserva um sucesso já confirmado.
+            e = s.scalar(select(WebhookEntrega).where(WebhookEntrega.id == entrega_id).with_for_update())
+            if e is None:
+                return
             e.tentativas += 1
-            e.ultima_resposta = resposta[:300]
             e.atualizado_em = tempo.agora()
-            e.status = "entregue" if sucesso else ("falhou" if e.tentativas >= max_tentativas else "pendente")
+            if e.status != "entregue":
+                e.ultima_resposta = resposta[:300]
+                e.status = "entregue" if sucesso else ("falhou" if e.tentativas >= max_tentativas else "pendente")
             s.commit()
 
     def listar_entregas(self, empresa_id: int, limite: int = 50) -> list[dict]:

@@ -18,6 +18,7 @@ import { calcularSplit, semSplit, VIGENCIA_ATUAL } from "./split";
 import { faseSplitDemo, TEXTO_INFORMATIVO, TEXTO_DEMONSTRACAO } from "./split-fase";
 import {
   ApiError,
+  capturarContexto,
   definirConta,
   del,
   get,
@@ -318,7 +319,7 @@ async function contasDaPessoa(): Promise<{ pessoa: Pessoa; contas: Conta[] }> {
  * desafio de prova de vida. Nenhum token de acesso existe ainda.
  */
 export async function login({ email, senha }: LoginPayload): Promise<LoginEtapaMfa> {
-  await delay();
+  if (!MODO_API) await delay();
   if (!email || !senha) throw new ApiError("Informe e-mail (ou CPF) e senha.", 401);
   if (MODO_API) {
     definirConta(null);
@@ -346,7 +347,7 @@ export async function concluirLogin(
   etapa: LoginEtapaMfa,
   prova: ProvaBiometrica,
 ): Promise<LoginResposta> {
-  await delay();
+  if (!MODO_API) await delay();
   if (MODO_API) {
     const tk = await post<{ access_token: string; refresh_token: string }>("/auth/login/mfa", {
       mfa_token: etapa.mfa_token,
@@ -391,7 +392,7 @@ export async function trocarSenha(
   novaSenha: string,
   prova: ProvaBiometrica,
 ): Promise<number> {
-  await delay();
+  if (!MODO_API) await delay();
   if (MODO_API) {
     const r = await post<{ sessoes_encerradas: number }>("/auth/senha", {
       senha_atual: senhaAtual,
@@ -418,7 +419,7 @@ export async function iniciarRecuperacao(
   login: string,
   dataNascimento: string,
 ): Promise<EtapaRecuperacao> {
-  await delay();
+  if (!MODO_API) await delay();
   if (MODO_API) {
     definirConta(null);
     salvarTokens(null);
@@ -437,7 +438,7 @@ export async function concluirRecuperacao(
   prova: ProvaBiometrica,
   novaSenha: string,
 ): Promise<void> {
-  await delay();
+  if (!MODO_API) await delay();
   if (MODO_API) {
     await post("/auth/recuperacao/concluir", {
       recuperacao_token: etapa.token,
@@ -463,7 +464,7 @@ export async function concluirRecuperacao(
 export async function registrar(p: RegistrarPayload): Promise<CadastroResposta> {
   if (p.celular !== undefined && !normalizarCelular(p.celular))
     throw new ApiError("Informe um celular válido: DDD e 9 dígitos começando por 9.");
-  await delay(700);
+  if (!MODO_API) await delay(700);
   if (p.senha.length < 10) throw new ApiError("A senha precisa ter ao menos 10 caracteres.");
   if (MODO_API) {
     const conta = await postAnonimo<{ kyc?: KycResultado }>("/usuarios", {
@@ -675,18 +676,22 @@ export async function pedirDesafio(
 // =============================================================================
 
 export async function minhaConta(): Promise<Conta> {
-  await delay(250);
+  if (!MODO_API) await delay(250);
   if (MODO_API) {
+    const conferir = capturarContexto();
     const c = mapConta(await get<ContaApi>("/contas/atual"));
+    conferir();
     // Pontos (Loja/Viagens) estão arquivados: app/src/_arquivado/beneficios.
     if (c.tipo === "PJ") {
       const e = await get<{ porte: Conta["porte"]; cnae: string | null; setor: string | null }>(
         "/empresas/atual",
       );
+      conferir();
       if (e.porte) c.porte = e.porte;
       if (e.setor) c.setor = e.setor;
       else if (e.cnae) c.setor = `CNAE ${e.cnae}`;
       const creditos = await get<{ valor: string }[]>("/empresas/atual/creditos");
+      conferir();
       c.creditos = creditos.reduce((s, x) => s + num(x.valor), 0);
     }
     return c;
@@ -704,10 +709,13 @@ function nomeDaCarteira(id: number): string {
 }
 
 export async function transacoes_(): Promise<Transacao[]> {
-  await delay(350);
+  if (!MODO_API) await delay(350);
   if (MODO_API) {
+    const conferir = capturarContexto();
     const c = await get<ContaApi>("/contas/atual");
+    conferir();
     const ts = await get<TransacaoApi[]>("/pagamentos/transacoes?limite=100");
+    conferir();
     return ts.map((t) => mapTransacao(t, c.carteira_id));
   }
   await sincronizar();
@@ -727,15 +735,18 @@ export async function transacoes_(): Promise<Transacao[]> {
 export { transacoes_ as transacoes };
 
 export async function transacaoPorId(id: number): Promise<Transacao> {
-  await delay(200);
+  if (!MODO_API) await delay(200);
   if (MODO_API) {
+    const conferir = capturarContexto();
     const c = await get<ContaApi>("/contas/atual");
+    conferir();
     const t = await get<
       TransacaoApi & {
         contestacao?: { status: string } | null;
         nota?: { cbs: string; ibs: string } | null;
       }
     >(`/pagamentos/transacoes/${id}`);
+    conferir();
     return {
       ...mapTransacao(t, c.carteira_id),
       contestacao_aberta: Boolean(t.contestacao),
@@ -787,7 +798,7 @@ export async function contestar(id: number, motivo: string): Promise<void> {
  * número de conta. Devolve nome e documento mascarados, como no Pix.
  */
 export async function consultarDestino(texto: string): Promise<CarteiraInfo> {
-  await delay(300);
+  if (!MODO_API) await delay(300);
   const alvo = texto.trim();
   if (!alvo) throw new ApiError("Informe a chave Pix ou o número da conta.");
   if (MODO_API) {
@@ -873,8 +884,9 @@ function registrarPagamento(args: {
 export async function transferir(
   p: TransferirPayload & { idempotency_key?: string },
 ): Promise<ResultadoTransferencia> {
-  await delay(800);
+  if (!MODO_API) await delay(800);
   if (MODO_API) {
+    const conferir = capturarContexto();
     const r = await requisitar<TransacaoApi | { operacao_id: number; mensagem: string }>(
       "POST",
       "/pagamentos/transferir",
@@ -886,11 +898,13 @@ export async function transferir(
         idempotency_key: p.idempotency_key,
       },
     );
+    conferir();
     if (r.status === 202) {
       const d = r.dados as { operacao_id: number; mensagem: string };
       return { tipo: "pendente", operacao_id: d.operacao_id, mensagem: d.mensagem };
     }
     const c = await get<ContaApi>("/contas/atual");
+    conferir();
     return { tipo: "transacao", transacao: mapTransacao(r.dados as TransacaoApi, c.carteira_id) };
   }
   const destino = await consultarDestino(p.destino.chave ?? p.destino.numero ?? "");
@@ -919,16 +933,19 @@ export async function pagarCobranca(
   biometria: ProvaBiometrica | null,
 ): Promise<ResultadoTransferencia> {
   if (!MODO_API) throw new ApiError("Pagamento de cobrança disponível com a API.");
+  const conferir = capturarContexto();
   const r = await requisitar<TransacaoApi | { operacao_id: number; mensagem: string }>(
     "POST",
     `/cobrancas/${encodeURIComponent(txid)}/pagar`,
     { idempotency_key, biometria: biometria ?? undefined },
   );
+  conferir();
   if (r.status === 202) {
     const d = r.dados as { operacao_id: number; mensagem: string };
     return { tipo: "pendente", ...d };
   }
   const c = await get<ContaApi>("/contas/atual");
+  conferir();
   return { tipo: "transacao", transacao: mapTransacao(r.dados as TransacaoApi, c.carteira_id) };
 }
 
@@ -937,15 +954,18 @@ export async function depositar(p: DepositarPayload): Promise<Transacao> {
   if (!Number.isFinite(p.valor) || p.valor <= 0)
     throw new ApiError("Informe um valor válido, a partir de R$ 0,01.");
   if (p.valor > 10_000) throw new ApiError("O limite do banco é de R$ 10.000,00 por depósito.");
-  await delay(600);
+  if (!MODO_API) await delay(600);
   if (MODO_API) {
+    const conferir = capturarContexto();
     // Servidor de demonstração (DEPOSITO_DEMO=1) libera dinheiro de teste; num servidor
     // real o endpoint responde 403 e a mensagem explica como colocar dinheiro.
     try {
       const c = await get<ContaApi>("/contas/atual");
+      conferir();
       const t = await post<TransacaoApi>("/pagamentos/depositar-demo", {
         valor: p.valor.toFixed(2),
       });
+      conferir();
       return mapTransacao(t, c.carteira_id);
     } catch (e) {
       if (e instanceof ApiError && e.status === 403)
@@ -1141,7 +1161,7 @@ function demoSessoes(): SessaoAtiva[] {
 }
 
 export async function meusAparelhos(): Promise<Aparelho[]> {
-  await delay(250);
+  if (!MODO_API) await delay(250);
   if (MODO_API) {
     const [lista, atual] = await Promise.all([
       get<AparelhoApi[]>("/seguranca/dispositivos"),
@@ -1154,7 +1174,7 @@ export async function meusAparelhos(): Promise<Aparelho[]> {
 
 /** Bloqueia o aparelho e derruba as sessões dele. Desbloquear exige o rosto. */
 export async function bloquearAparelho(id: number): Promise<void> {
-  await delay();
+  if (!MODO_API) await delay();
   if (MODO_API) {
     await post(`/seguranca/dispositivos/${id}/bloquear`);
     return;
@@ -1164,7 +1184,7 @@ export async function bloquearAparelho(id: number): Promise<void> {
 }
 
 export async function desbloquearAparelho(id: number, prova: ProvaBiometrica): Promise<void> {
-  await delay();
+  if (!MODO_API) await delay();
   if (MODO_API) {
     await post(`/seguranca/dispositivos/${id}/desbloquear`, prova);
     return;
@@ -1174,7 +1194,7 @@ export async function desbloquearAparelho(id: number, prova: ProvaBiometrica): P
 }
 
 export async function removerAparelho(id: number): Promise<void> {
-  await delay();
+  if (!MODO_API) await delay();
   if (MODO_API) {
     await del(`/seguranca/dispositivos/${id}`);
     return;
@@ -1183,7 +1203,7 @@ export async function removerAparelho(id: number): Promise<void> {
 }
 
 export async function minhasSessoes(): Promise<SessaoAtiva[]> {
-  await delay(250);
+  if (!MODO_API) await delay(250);
   if (MODO_API) {
     const r = await get<
       {
@@ -1206,7 +1226,7 @@ export async function minhasSessoes(): Promise<SessaoAtiva[]> {
 }
 
 export async function encerrarSessao(sessaoId: string): Promise<void> {
-  await delay();
+  if (!MODO_API) await delay();
   if (MODO_API) {
     await del(`/auth/sessoes/${encodeURIComponent(sessaoId)}`);
     return;
@@ -1215,7 +1235,7 @@ export async function encerrarSessao(sessaoId: string): Promise<void> {
 }
 
 export async function encerrarOutrasSessoes(): Promise<number> {
-  await delay();
+  if (!MODO_API) await delay();
   if (MODO_API)
     return (await post<{ encerradas: number }>("/auth/sessoes/encerrar-outras")).encerradas;
   const antes = demoSessoes().length;
@@ -1278,7 +1298,7 @@ export function descreverAcao(acao: string): string {
 }
 
 export async function minhaAtividade(): Promise<Atividade[]> {
-  await delay(250);
+  if (!MODO_API) await delay(250);
   if (MODO_API) {
     const r = await get<{ id: number; acao: string; ip: string | null; criado_em: string }[]>(
       "/seguranca/atividade?limite=50",
@@ -1345,7 +1365,7 @@ export async function auditoriaEmpresa(limite = 50): Promise<AuditoriaEmpresa[]>
 // =============================================================================
 
 export async function apuracaoPJ(): Promise<ApuracaoPJ> {
-  await delay(400);
+  if (!MODO_API) await delay(400);
   if (MODO_API) {
     const t = await get<{
       split_fase: import("./types").SplitFase;
@@ -1448,7 +1468,7 @@ const minhasCobrancasDemo = () =>
   cobrancasDemo.filter((c) => c.recebedor_carteira_id === sessao.conta.carteira_id);
 
 export async function listarCobrancas(): Promise<Cobranca[]> {
-  await delay(300);
+  if (!MODO_API) await delay(300);
   if (MODO_API) return (await get<CobrancaApi[]>("/cobrancas?limite=100")).map(mapCobranca);
   return minhasCobrancasDemo().sort((a, b) => b.id - a.id);
 }
@@ -1504,7 +1524,7 @@ export async function estornarCobranca(txid: string): Promise<Transacao> {
 
 /** A empresa cobra um cliente. Com a nota fiscal, o pagamento retém a CBS e o IBS dela. */
 export async function criarCobranca(p: CobrancaPayload): Promise<Cobranca[]> {
-  await delay(500);
+  if (!MODO_API) await delay(500);
   if (MODO_API) {
     const corpo = {
       valor: p.valor.toFixed(2),
@@ -1549,7 +1569,7 @@ export async function criarCobranca(p: CobrancaPayload): Promise<Cobranca[]> {
 
 /** Contas a receber (cobranças) e a pagar. No modo API, só as cobranças emitidas. */
 export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura[]> {
-  await delay(350);
+  if (!MODO_API) await delay(350);
   if (MODO_API) {
     if (direcao === "pagar") return [];
     const cobs = await get<CobrancaApi[]>("/cobrancas?limite=100");
@@ -1623,14 +1643,14 @@ interface CompraApi {
 export const pontosDaCompra = (valor: number) => Math.floor(valor);
 
 export async function listarProdutos(): Promise<Produto[]> {
-  await delay(350);
+  if (!MODO_API) await delay(350);
   if (MODO_API)
     return (await get<ProdutoApi[]>("/loja/produtos")).map((p) => ({ ...p, preco: num(p.preco) }));
   return [...PRODUTOS];
 }
 
 export async function produtoPorId(id: number): Promise<Produto> {
-  await delay(200);
+  if (!MODO_API) await delay(200);
   if (MODO_API) {
     const p = await get<ProdutoApi>(`/loja/produtos/${id}`);
     return { ...p, preco: num(p.preco) };
@@ -1646,7 +1666,7 @@ async function compraApi(caminho: string, biometria?: ProvaBiometrica | null): P
 }
 
 export async function comprarProduto(p: ComprarProdutoPayload): Promise<Transacao> {
-  await delay(800);
+  if (!MODO_API) await delay(800);
   if (MODO_API) return compraApi(`/loja/produtos/${p.produto_id}/comprar`, p.biometria);
   if (sessao.conta.tipo !== "PF")
     throw new ApiError("A Loja é exclusiva para contas Pessoa Física.", 403);
@@ -1666,7 +1686,7 @@ export async function comprarProduto(p: ComprarProdutoPayload): Promise<Transaca
 }
 
 export async function buscarVoos(origem?: string, destino?: string): Promise<Voo[]> {
-  await delay(400);
+  if (!MODO_API) await delay(400);
   if (MODO_API) {
     const q = new URLSearchParams();
     if (origem) q.set("origem", origem);
@@ -1682,7 +1702,7 @@ export async function buscarVoos(origem?: string, destino?: string): Promise<Voo
 }
 
 export async function vooPorId(id: number): Promise<Voo> {
-  await delay(200);
+  if (!MODO_API) await delay(200);
   if (MODO_API) {
     const v = await get<VooApi>(`/viagens/voos/${id}`);
     return { ...v, preco: num(v.preco) };
@@ -1694,7 +1714,7 @@ export async function vooPorId(id: number): Promise<Voo> {
 
 /** Passagem paga em reais (rende 1 ponto por real). */
 export async function comprarPassagem(p: ComprarPassagemPayload): Promise<Transacao> {
-  await delay(900);
+  if (!MODO_API) await delay(900);
   if (MODO_API) {
     const t = await compraApi(`/viagens/voos/${p.voo_id}/comprar`, p.biometria);
     return { ...t, categoria: "viagem" };
@@ -1725,7 +1745,7 @@ export interface Resgate {
 
 /** Passagem com pontos: debita `milhas` pontos, sem tocar no saldo em reais. */
 export async function resgatarPassagem(vooId: number): Promise<Resgate> {
-  await delay(900);
+  if (!MODO_API) await delay(900);
   if (MODO_API) {
     const r = await post<Omit<Resgate, "voo"> & { voo: VooApi }>(`/viagens/voos/${vooId}/resgatar`);
     return { ...r, voo: { ...r.voo, preco: num(r.voo.preco) } };
@@ -1906,7 +1926,7 @@ function mapVinculo(v: VinculoApi): MembroEquipe {
 }
 
 export async function equipe(): Promise<MembroEquipe[]> {
-  await delay(300);
+  if (!MODO_API) await delay(300);
   if (MODO_API) return (await get<VinculoApi[]>("/empresas/atual/vinculos")).map(mapVinculo);
   return [...listaEquipe()];
 }
@@ -1942,7 +1962,7 @@ export async function politicaEmpresa(): Promise<PoliticaEmpresa> {
 
 /** O admin convida uma PESSOA pelo CPF; ela aceita com o próprio login e rosto. */
 export async function convidarMembro(p: ConvidarPayload): Promise<MembroEquipe> {
-  await delay(500);
+  if (!MODO_API) await delay(500);
   if (MODO_API)
     return mapVinculo(
       await post<VinculoApi>("/empresas/atual/vinculos", {
@@ -2055,7 +2075,7 @@ export async function mudarAcessoMembro(
   acao: AcaoMembro,
   biometria?: ProvaBiometrica,
 ): Promise<MembroEquipe> {
-  await delay(400);
+  if (!MODO_API) await delay(400);
   if (MODO_API) {
     if (acao === "revogar")
       return mapVinculo(await del<VinculoApi>(`/empresas/atual/vinculos/${id}`));
@@ -2135,7 +2155,7 @@ function mapPendente(p: PendenteApi): OperacaoPendente {
 }
 
 export async function pendentes(): Promise<OperacaoPendente[]> {
-  await delay(300);
+  if (!MODO_API) await delay(300);
   if (MODO_API) {
     const listas = await Promise.all(
       ["pendente", "aprovada", "rejeitada"].map((st) =>
@@ -2163,7 +2183,7 @@ export async function decidirPendente(
   aprovar: boolean,
   biometria?: ProvaBiometrica,
 ): Promise<OperacaoPendente & { mensagem?: string }> {
-  await delay(600);
+  if (!MODO_API) await delay(600);
   if (MODO_API) {
     const r = await post<PendenteApi & { mensagem?: string }>(
       `/pagamentos/pendentes/${id}/decidir`,

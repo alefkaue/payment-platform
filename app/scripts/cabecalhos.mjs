@@ -19,6 +19,33 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
+import { loadEnv } from "vite";
+
+/** Usa a mesma precedência e expansão de variáveis do build. */
+export function ambienteBuild(diretorio = process.cwd()) {
+  return loadEnv("production", diretorio, "VITE_");
+}
+
+/** Produção não envia credenciais ou documentos para uma API sem TLS. */
+export function validarApiProducao(env) {
+  const valor = env.VITE_API_URL;
+  if (!valor) {
+    if (env.VITE_MODO_DEMO === "1") return;
+    throw new Error(
+      "Build de produção sem VITE_API_URL: defina a API ou VITE_MODO_DEMO=1 para demonstração.",
+    );
+  }
+  let url;
+  try {
+    url = new URL(valor);
+  } catch {
+    throw new Error("VITE_API_URL inválida para produção.");
+  }
+  if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash)
+    throw new Error(
+      "VITE_API_URL de produção deve usar HTTPS, sem credenciais, query ou fragmento.",
+    );
+}
 
 export const MEDIAPIPE_WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/";
 export const MEDIAPIPE_MODELOS = "https://storage.googleapis.com/mediapipe-models/";
@@ -86,8 +113,10 @@ function main() {
   }
   const html = readFileSync(shell, "utf8");
   const hashes = hashesInline(html);
-  const apiUrl = process.env.VITE_API_URL || lerEnv("VITE_API_URL");
-  const syncUrl = process.env.VITE_DEMO_SYNC_URL || lerEnv("VITE_DEMO_SYNC_URL");
+  const env = ambienteBuild();
+  validarApiProducao(env);
+  const apiUrl = env.VITE_API_URL;
+  const syncUrl = env.VITE_DEMO_SYNC_URL;
   const h = cabecalhos(montarCsp({ hashes, apiUrl, syncUrl }));
 
   // Azure Static Web Apps: SPA → toda rota cai no shell; assets com hash no nome
@@ -123,17 +152,6 @@ function main() {
     writeFileSync(`${PUB}/_redirects`, "/*  /_shell.html  200\n");
 
   console.log(`✓ cabeçalhos de segurança gerados (${hashes.length} script(s) inline com hash).`);
-}
-
-/** Lê uma variável dos .env do Vite (modo production), como o próprio build faz. */
-function lerEnv(nome) {
-  for (const arq of [".env.production.local", ".env.local", ".env.production", ".env"]) {
-    if (!existsSync(arq)) continue;
-    const m = readFileSync(arq, "utf8").match(new RegExp(`^\\s*${nome}\\s*=\\s*(.*)$`, "m"));
-    const v = m?.[1]?.trim().replace(/^["']|["']$/g, "");
-    if (v) return v;
-  }
-  return undefined;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) main();

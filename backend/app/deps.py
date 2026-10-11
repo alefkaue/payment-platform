@@ -99,6 +99,7 @@ def usuario_atual(
     jkt = dpop_prova.jkt_do_token(payload)
     if jkt:
         prova_jkt = dpop_prova.verificar(dpop, metodo=request.method, caminho=request.url.path, repo=repo,
+                                         url_esperada=dpop_prova.url_da_requisicao(request),
                                          access_token=credenciais.credentials)
         if prova_jkt != jkt:
             raise HTTPException(status_code=401, detail="Prova de posse (DPoP) inválida: chave de outro aparelho.",

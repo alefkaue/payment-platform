@@ -437,12 +437,15 @@ def concluir_recuperacao(repo: Repositorio, *, recuperacao_token: str, prova, no
     repo.registrar_log(ator=usuario["email"], acao="senha_recuperada", ip=ip, usuario_id=usuario["id"])
 
 
-def logout(repo: Repositorio, *, refresh_token: str) -> None:
+def logout(repo: Repositorio, *, refresh_token: str, jkt: str | None = None) -> None:
     """Encerra a SESSÃO inteira (a família de refresh), não só o token atual."""
     try:
         payload = security.decodificar_token(refresh_token, "refresh")
     except (jwt.PyJWTError, ValueError):
         return
+    jkt_sessao = dpop.jkt_do_token(payload)
+    if jkt_sessao != jkt or (jkt_sessao is None and get_settings().dpop_obrigatorio):
+        raise HTTPException(status_code=401, detail="Esta sessão pertence a outro aparelho.")
     if payload.get("sid"):
         repo.revogar_sessao(int(payload["sub"]), payload["sid"])
     else:

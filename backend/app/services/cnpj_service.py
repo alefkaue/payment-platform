@@ -13,6 +13,7 @@ com a mesma assinatura de `consultar` e registre em `_PROVEDORES`.
 """
 
 import logging
+import re
 import unicodedata
 from dataclasses import dataclass, field
 
@@ -88,10 +89,18 @@ def eh_socio(dados: DadosCnpj, *, cpf: str, nome: str) -> bool | None:
         return None
     meio = cpf[3:9]
     alvo = _normalizar(nome)
+    incompleto = False
     for s in dados.socios:
-        mascarado = s.cpf_mascarado or ""
-        if meio and meio in mascarado:
+        mascarado = re.sub(r"[^0-9*]", "", s.cpf_mascarado or "")
+        nome_socio = _normalizar(s.nome)
+        if len(mascarado) == 11 and mascarado.isascii() and mascarado.isdigit():
+            cpf_confere = mascarado == cpf
+        elif len(mascarado) == 11 and mascarado[:3] == "***" and mascarado[-2:] == "**" and mascarado[3:9].isdigit():
+            cpf_confere = mascarado[3:9] == meio
+        else:
+            incompleto = True
+            continue
+        # Homônimo ou CPF parcialmente parecido sozinho não prova representação.
+        if cpf_confere and alvo and nome_socio == alvo:
             return True
-        if alvo and _normalizar(s.nome) == alvo:
-            return True
-    return False
+    return None if incompleto else False

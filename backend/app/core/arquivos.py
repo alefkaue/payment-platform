@@ -11,7 +11,9 @@ clássico de ataque contra quem for abrir o documento na análise manual.
 import base64
 import binascii
 import hashlib
+import io
 import re
+import time
 
 from fastapi import HTTPException
 
@@ -28,6 +30,46 @@ DOCUMENTOS = IMAGENS | {"application/pdf"}
 
 # Marcadores de conteúdo ativo em PDF.
 _PDF_ATIVO = (b"/JavaScript", b"/JS", b"/OpenAction", b"/Launch", b"/EmbeddedFile", b"/RichMedia", b"/XFA")
+
+
+def _validar_pdf(bruto: bytes) -> None:
+    """Nomes PDF aceitam escapes e objetos comprimidos: não basta buscar bytes."""
+    from pypdf import PdfReader
+    from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject, NameObject
+
+    ativos = {"/JavaScript", "/JS", "/OpenAction", "/AA", "/Launch", "/EmbeddedFile",
+              "/EmbeddedFiles", "/RichMedia", "/XFA"}
+    try:
+        leitor = PdfReader(io.BytesIO(bruto), strict=True)
+        if leitor.is_encrypted:
+            raise HTTPException(status_code=415, detail="PDF protegido por senha não é aceito.")
+        fila = [leitor.trailer]
+        vistos = set()
+        inicio = time.monotonic()
+        visitados = 0
+        while fila:
+            visitados += 1
+            if visitados > 10000 or len(fila) > 10000 or time.monotonic() - inicio > 1:
+                raise HTTPException(status_code=413, detail="PDF complexo demais para análise.")
+            obj = fila.pop()
+            if isinstance(obj, IndirectObject):
+                ref = (obj.idnum, obj.generation)
+                if ref in vistos:
+                    continue
+                vistos.add(ref)
+                obj = obj.get_object()
+            if isinstance(obj, DictionaryObject):
+                if any(str(k) in ativos for k in obj):
+                    raise HTTPException(status_code=415, detail="PDF com conteúdo ativo não é aceito. Gere um PDF simples.")
+                fila.extend(obj.values())
+            elif isinstance(obj, ArrayObject):
+                fila.extend(obj)
+            elif isinstance(obj, NameObject) and str(obj) in ativos:
+                raise HTTPException(status_code=415, detail="PDF com conteúdo ativo não é aceito. Gere um PDF simples.")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="PDF inválido ou corrompido.") from None
 
 
 def detectar_mime(bruto: bytes) -> str | None:
@@ -64,4 +106,5 @@ def validar_arquivo(conteudo_b64: str, *, permitidos: frozenset[str], limite_byt
             raise HTTPException(status_code=415, detail="PDF com conteúdo ativo (scripts/anexos) não é aceito. Gere um PDF simples.")
         if b"/Encrypt" in bruto:
             raise HTTPException(status_code=415, detail="PDF protegido por senha não é aceito.")
+        _validar_pdf(bruto)
     return bruto, mime, hashlib.sha256(bruto).hexdigest()

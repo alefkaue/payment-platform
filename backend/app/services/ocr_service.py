@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import difflib
 import logging
+import math
 import os
 import re
 import shutil
@@ -66,9 +67,12 @@ def _preprocessar(img_bgr):
 
     cinza = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
     h, w = cinza.shape[:2]
-    if w < 1600:
-        f = 1600 / w
-        cinza = cv2.resize(cinza, (int(w * f), int(h * f)), interpolation=cv2.INTER_CUBIC)
+    # Limita a imagem RESULTANTE: largura pequena não pode ampliar a altura
+    # até milhões de pixels apesar de o arquivo original caber no orçamento.
+    f = min(1600 / w if w < 1600 else 1, 2400 / max(w, h), math.sqrt(4_000_000 / (w * h)))
+    tamanho = (max(1, int(w * f)), max(1, int(h * f)))
+    if tamanho != (w, h):
+        cinza = cv2.resize(cinza, tamanho, interpolation=cv2.INTER_CUBIC)
     cinza = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(cinza)
     cinza = cv2.medianBlur(cinza, 3)
     return cv2.adaptiveThreshold(cinza, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 31, 15)

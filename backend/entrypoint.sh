@@ -20,4 +20,5 @@ fi
 # app/deps.py:ip_cliente (PROXIES_CONFIAVEIS / FRONT_DOOR_ID).
 echo "[entrypoint] Iniciando API..."
 exec uvicorn app.main:app --host 0.0.0.0 --port "${PORT:-8000}" \
-  --no-server-header --no-proxy-headers
+  --no-server-header --no-proxy-headers \
+  --limit-concurrency 64 --backlog 128 --timeout-keep-alive 5

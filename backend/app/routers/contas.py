@@ -69,7 +69,8 @@ def cadastrar_com_sessao(
     from app.core import dpop as dpop_prova
     from app.services import auth_service
 
-    jkt = dpop_prova.verificar(dpop, metodo=request.method, caminho=request.url.path, repo=repo) if dpop else None
+    jkt = dpop_prova.verificar(dpop, metodo=request.method, caminho=request.url.path, repo=repo,
+                                         url_esperada=dpop_prova.url_da_requisicao(request)) if dpop else None
     auth_service._exigir_jkt(jkt)
     nivel = auth_service._conferir_atestacao(repo, {"id": None, "email": dados.email}, dados.atestacao, jkt=jkt, ip=ip)
     conta = cadastrar_pessoa(dados, repo, ip, x_dispositivo_id)

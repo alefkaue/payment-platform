@@ -27,6 +27,7 @@ os.environ["KYC_DOCUMENTO_OBRIGATORIO"] = "0"
 os.environ["DOCUMENTO_PROVEDOR"] = "stub"
 # DPoP: os testes de fluxo usam tokens sem chave; test_dpop.py liga a exigência.
 os.environ["DPOP_OBRIGATORIO"] = "0"
+os.environ["DPOP_ORIGEM_PUBLICA"] = "https://api.astro.test"
 # Loja/Viagens: desligados por padrão; test_beneficios.py testa o módulo ligado.
 os.environ["BENEFICIOS_HABILITADOS"] = "1"
 # Atestação: sem baixar a lista de revogação da Google nos testes.
@@ -57,6 +58,14 @@ def cliente(monkeypatch):
     from app.main import app
 
     with TestClient(app) as c:
+        # Cada teste começa com o mesmo orçamento, sem herdar tráfego de outros.
+        from app.core.perimetro import PerimetroHTTP
+        camada = app.middleware_stack
+        while camada is not None:
+            if isinstance(camada, PerimetroHTTP):
+                camada.baldes.clear()
+                camada.ultimas_iscas.clear()
+            camada = getattr(camada, "app", None)
         yield c
     get_repository.cache_clear()
 

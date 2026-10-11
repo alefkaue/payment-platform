@@ -48,7 +48,17 @@ def _criar_engine():
         return create_engine(url, connect_args=connect_args)
     # pool_pre_ping evita erro de "conexão caiu" após ociosidade (VM que hiberna,
     # banco gerenciado que recicla conexões).
-    return create_engine(url, pool_pre_ping=True, hide_parameters=True, connect_args={"connect_timeout": 10})
+    settings = get_settings()
+    # DDL de desenvolvimento é sem schema explícito; produção nunca executa DDL.
+    # No modo dev, pg_catalog continua sendo buscado implicitamente antes de public.
+    caminho = "pg_catalog,public" if settings.em_producao else "public"
+    return create_engine(url, pool_pre_ping=True, hide_parameters=True,
+                         pool_size=settings.database_pool_size,
+                         max_overflow=settings.database_max_overflow,
+                         pool_timeout=settings.database_pool_timeout, pool_recycle=1800,
+                         connect_args={"connect_timeout": 10, "application_name": "astro-api",
+                                       "options": f"-c search_path={caminho} -c statement_timeout=15000 "
+                                                  "-c lock_timeout=5000 -c idle_in_transaction_session_timeout=30000"})
 
 
 engine = _criar_engine()
@@ -75,19 +85,10 @@ def criar_tabelas() -> None:
 
 
 def conferir_runtime_producao() -> None:
-    """A API de produção não pode ser superusuário nem dona das tabelas."""
+    """Produção recusa permissões fora da política explícita de runtime."""
+    from app.db.seguranca_runtime import conferir_permissoes
     with engine.connect() as connection:
-        privilegiado = connection.scalar(text("""
-            SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolbypassrls
-            FROM pg_roles WHERE rolname = current_user
-        """))
-        dono = connection.scalar(text("""
-            SELECT count(*) FROM pg_tables
-            WHERE schemaname = 'public' AND tableowner = current_user
-        """))
-        ddl = connection.scalar(text("SELECT has_schema_privilege(current_user, 'public', 'CREATE')"))
-        if privilegiado or dono or ddl:
-            raise RuntimeError("Credencial da API tem privilégios excessivos; use astro_app.")
+        conferir_permissoes(connection)
 
 
 def banco_disponivel() -> bool:

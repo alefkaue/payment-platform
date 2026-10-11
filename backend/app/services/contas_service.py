@@ -124,7 +124,7 @@ def criar_empresa(repo: Repositorio, *, usuario: dict, cnpj: str, razao_social: 
     if dados.situacao != "ATIVA":
         raise HTTPException(status_code=400, detail=f"CNPJ com situação '{dados.situacao}' na Receita. Só empresas ativas podem abrir conta.")
     socio = cnpj_service.eh_socio(dados, cpf=usuario["cpf"], nome=usuario["nome"])
-    if socio is False:
+    if socio is False or (s.em_producao and socio is not True):
         raise HTTPException(
             status_code=403,
             detail="Seu CPF não aparece no quadro de sócios desta empresa. Peça a um sócio para abrir a conta e te convidar.",

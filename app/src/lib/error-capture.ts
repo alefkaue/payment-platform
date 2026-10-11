@@ -16,6 +16,8 @@ const CAUSE_DEPTH_LIMIT = 5;
 const DESCRIPTION_LENGTH_LIMIT = 8_000;
 
 export function describeError(error: unknown): string {
+  // Mensagem, pilha e causas podem conter dados pessoais ou credenciais.
+  if (import.meta.env.PROD) return "Erro interno no servidor.";
   const parts: string[] = [];
   let current: unknown = error;
   for (let depth = 0; depth < CAUSE_DEPTH_LIMIT && current != null; depth++) {
@@ -53,13 +55,17 @@ function isErrorLike(value: unknown): value is Error {
 // unhandled-error logging, which this file cannot hook directly — are both
 // recorded for consumeLastCapturedError and expanded before serialization.
 const originalConsoleError = console.error.bind(console);
-console.error = (...args: unknown[]) => {
-  const expanded = args.map((arg) => {
+export function formatConsoleErrorArgs(args: unknown[]): unknown[] {
+  if (import.meta.env.PROD) return ["Erro interno no servidor."];
+  return args.map((arg) => {
     if (!isErrorLike(arg)) return arg;
     record(arg);
     return describeError(arg);
   });
-  originalConsoleError(...expanded);
+}
+
+console.error = (...args: unknown[]) => {
+  originalConsoleError(...formatConsoleErrorArgs(args));
 };
 
 if (typeof globalThis.addEventListener === "function") {

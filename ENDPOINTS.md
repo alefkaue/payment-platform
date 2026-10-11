@@ -23,7 +23,7 @@
 | `POST` | `/auth/senha` | login + DPoP |  | Senha atual + rosto; política de senha; encerra as outras sessões |
 | `POST` | `/auth/recuperacao` | pública |  | E-mail/CPF + nascimento; resposta igual exista a conta ou não; limite por IP e por conta |
 | `POST` | `/auth/recuperacao/concluir` | pública |  | Rosto com prova de vida completa, mesmo aparelho e chave; uso único; derruba todas as sessões |
-| `POST` | `/auth/logout` | pública |  | Revoga a sessão inteira (família de refresh) |
+| `POST` | `/auth/logout` | pública |  | DPoP da chave da sessão; revoga a sessão inteira (família de refresh) |
 | `GET` | `/auth/eu` | login + DPoP |  |  |
 | `GET` | `/auth/sessoes` | login + DPoP |  |  |
 | `DELETE` | `/auth/sessoes/{sessao_id}` | login + DPoP |  |  |

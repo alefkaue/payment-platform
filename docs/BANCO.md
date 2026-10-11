@@ -68,7 +68,7 @@ precisam de outra versão/migração.
    reservados na interpolação Compose; URLs manuais aceitam senhas percent-encoded.
 4. Rodar `docker compose --env-file .env.docker up --build`.
 
-O serviço `db` não publica 5432. Seu bootstrap cria `astro_migrator` e
+O serviço `db` não publica 5432 e fica numa rede interna exclusiva. Seu bootstrap cria `astro_migrator` e
 `astro_app`, ambos sem privilégios administrativos. O serviço `migrate` aplica
 Alembic e `scripts/restringir_runtime.py`; só então a API inicia com `astro_app`.
 A API roda sem capabilities e com filesystem somente leitura.
@@ -192,3 +192,96 @@ estado dos titulares dentro da operação financeira. Login/consulta do andament
 continuam disponíveis. Chaves Pix e-mail/celular são recusadas em produção até
 haver verificação de posse por canal externo; aceitar apenas texto declarado
 permitiria reivindicar o identificador de terceiros.
+
+## Política restrita da API (revisão de 10/10)
+
+`app/db/permissoes.py` contém a lista explícita de tabelas e operações. O processo da
+API não tem acesso ao `alembic_version` nem ganha acesso automático a tabelas ou
+rotinas novas. Cada tabela acrescentada ao modelo exige atualizar a política e seus
+testes. `scripts/restringir_runtime.py` deve rodar depois de cada migração; remove
+permissões anteriores, inclusive em colunas e concedidas a `PUBLIC`, antes de
+reaplicar o contrato. Não altera nenhum registro.
+
+A exclusão física é permitida somente em `chaves_pix` e `dpop_jtis` (remoção da chave
+pelo titular e descarte de provas expiradas). Usuários, carteiras, sessões, documentos,
+movimentos e trilhas não podem ser apagados pela identidade runtime. Histórico,
+auditoria, provas MFA, documentos recebidos, pontos, créditos tributários e
+rendimentos aceitam apenas consulta/inserção. `transacoes` só aceita UPDATE em
+`status` e `bloqueio_ate`. Carteiras só permitem alteração de saldo/bloqueado; o
+runtime não troca seus titulares ou números. Usuários só permitem mudança de
+senha, template cifrado, estado KYC/ativo e pontos; CPF e papel administrativo
+não podem ser trocados por UPDATE. Revogação de sessões, bloqueio de aparelhos, KYC e outros
+fluxos que usam mudança de estado continuam disponíveis.
+
+`app/db/seguranca_runtime.py` audita os privilégios **efetivos**: direitos de PUBLIC,
+associações a outros papéis, proprietário de objetos, privilégios em colunas, grant
+options, criação de schemas/tabelas temporárias, alteração de sequências e execução
+de rotinas fora do catálogo PostgreSQL. A produção recusa iniciar quando a política
+não é atendida. As consultas de catálogo são agrupadas, sem varrer dados de clientes.
+A verificação também pode ser executada manualmente em desenvolvimento:
+
+```sh
+cd backend
+# DATABASE_URL deve ser a credencial runtime, fornecida pelo ambiente/cofre.
+python scripts/auditar_runtime.py
+python scripts/verificar_banco.py
+```
+
+A auditoria de permissões é uma checagem de configuração; não atesta ausência de
+vulnerabilidades nem substitui autorização por objeto. A API precisa consultar e
+atualizar certas tabelas: comprometer a API e suas chaves ainda oferece acesso às
+operações autorizadas a esse papel. O administrador/migrador continua capaz de
+alterar objetos; suas credenciais não podem estar no processo da API.
+
+### Adotar em banco existente
+
+Fazer backup antes. Usar somente um banco **dedicado ao Astro**. O comando abaixo
+remove concessões a PUBLIC no banco/schema e usa privilégio administrativo para
+configurar o papel existente; não recria papéis, não troca senhas, não apaga registros.
+Um papel runtime já administrativo ou associado a outro papel exige correção manual;
+a transação falha sem aplicar parcialmente as mudanças.
+
+```sh
+cd backend
+# DATABASE_ADMIN_URL: identidade administrativa, apenas neste processo operacional.
+python scripts/proteger_acesso_banco.py
+# DATABASE_MIGRATION_URL: dono das tabelas, apenas no job operacional.
+python scripts/restringir_runtime.py
+# Trocar para DATABASE_URL runtime e executar as auditorias acima.
+```
+
+A identidade usada no segundo comando deve ser dona dos objetos para revogar suas
+ACLs. No Azure, provisionar os papéis e suas propriedades com o administrador na rede
+privada antes do deploy; a identidade de migração precisa dos direitos de propriedade
+e de configurar seus próprios default privileges. A API nunca recebe acesso ao
+segredo administrativo/migrador. O bootstrap de volumes novos já usa a mesma política.
+
+O papel runtime tem `NOINHERIT` e teto de 30 conexões. NOINHERIT sozinho não impede
+`SET ROLE`: a checagem recusa qualquer associação do runtime a outros papéis.
+A engine de produção força `search_path=pg_catalog,public`; desenvolvimento usa
+`public` para DDL local (o catálogo continua sendo buscado implicitamente primeiro).
+Em ambos, consulta de até 15 s, espera de lock
+de até 5 s e transação ociosa de até 30 s em cada conexão. O pool é limitado por
+processo: 5 conexões fixas + 5 extras, espera de 5 s e reciclagem de 30 min. Dimensionar
+`DATABASE_POOL_SIZE`, `DATABASE_MAX_OVERFLOW`, workers e réplicas juntos, respeitando
+as 30 conexões do papel e a capacidade do servidor.
+
+### Rede, registros e recuperação
+
+No Compose, `db` participa somente da rede interna `banco`, sem porta publicada.
+Migração usa essa rede; a API usa `banco` e sua rede de saída para integrações externas.
+O PostgreSQL local de auditoria é separado do Compose e expõe apenas `127.0.0.1:55432`
+para ferramentas locais. O Bicep existente mantém PostgreSQL sem endereço público,
+com VNet/DNS privado; TLS verify-full permanece obrigatório na API de produção.
+
+Na execução local desta revisão, o modo temporário de logs com dados brutos foi
+encerrado. Novas linhas mantêm request-id, rota, status, molde SQL e tempo, com
+parâmetros ocultos. Logs antigos ficam em arquivo local restrito, fora do Git; aplicar
+uma política de retenção antes de usar clientes reais. `.env`, backups, logs e senhas
+não fazem parte do repositório.
+
+Ao restaurar, usar um banco isolado, reaplicar a política de acesso e as ACLs e rodar
+ambas as auditorias antes de liberar tráfego. Um dump com ACLs antigas não deve
+reintroduzir permissões antigas em produção. Disco e backups precisam de criptografia
+e chaves controladas separadamente na infraestrutura; esta revisão não declara
+criptografia física do disco local nem provisiona recursos Azure.

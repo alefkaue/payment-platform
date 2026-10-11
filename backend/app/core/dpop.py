@@ -28,6 +28,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 from datetime import timedelta
 from urllib.parse import urlsplit
 
@@ -63,7 +64,23 @@ def _recusar(motivo: str) -> HTTPException:
                          headers={"WWW-Authenticate": 'DPoP algs="ES256"'})
 
 
-def verificar(prova: str | None, *, metodo: str, caminho: str, repo, access_token: str | None = None) -> str:
+def _uri(url: str) -> tuple[str, str, int, str]:
+    if len(url) > 2048 or any(c.isspace() or ord(c) < 32 for c in url):
+        raise ValueError("URI inválida")
+    u = urlsplit(url)
+    if u.scheme not in {"http", "https"} or not u.hostname or u.username is not None or u.password is not None:
+        raise ValueError("URI inválida")
+    return u.scheme.lower(), u.hostname.lower(), u.port or (443 if u.scheme == "https" else 80), u.path.rstrip("/")
+
+
+def url_da_requisicao(request) -> str:
+    # Origem explícita evita confiar em Host/X-Forwarded-Host atrás do proxy.
+    origem = get_settings().dpop_origem_publica
+    return origem.rstrip("/") + request.url.path if origem else str(request.url)
+
+
+def verificar(prova: str | None, *, metodo: str, caminho: str, repo, access_token: str | None = None,
+              url_esperada: str | None = None) -> str:
     """Valida a prova e devolve o `jkt` da chave. Levanta 401 se algo não bater."""
     if not prova:
         raise _recusar("envie o header DPoP assinado pela chave deste aparelho.")
@@ -82,22 +99,33 @@ def verificar(prova: str | None, *, metodo: str, caminho: str, repo, access_toke
     try:
         chave = ECAlgorithm.from_jwk(json.dumps(jwk))
         corpo = jwt.decode(prova, chave, algorithms=list(ALGORITMOS),
-                           options={"require": ["jti", "htm", "htu", "iat"], "verify_aud": False})
-    except (jwt.PyJWTError, ValueError, KeyError):
+                           options={"require": ["jti", "htm", "htu", "iat"], "verify_aud": False, "verify_iat": False})
+    except (jwt.PyJWTError, ValueError, KeyError, TypeError, OverflowError):
         raise _recusar("assinatura.")
 
     s = get_settings()
-    if str(corpo["htm"]).upper() != metodo.upper():
+    if not isinstance(corpo["htm"], str) or corpo["htm"] != metodo.upper():
         raise _recusar("método diferente do assinado.")
-    if urlsplit(str(corpo["htu"])).path.rstrip("/") != caminho.rstrip("/"):
-        raise _recusar("endereço diferente do assinado.")
+    if not isinstance(corpo["htu"], str):
+        raise _recusar("endereço inválido.")
+    try:
+        destino = _uri(corpo["htu"])
+        if url_esperada is not None:
+            if destino != _uri(url_esperada):
+                raise _recusar("endereço diferente do assinado.")
+        elif destino[3] != caminho.rstrip("/"):
+            raise _recusar("endereço diferente do assinado.")
+    except ValueError:
+        raise _recusar("endereço inválido.") from None
     agora = tempo.agora().timestamp()
-    if not isinstance(corpo["iat"], (int, float)) or abs(agora - corpo["iat"]) > s.dpop_janela_seg:
+    iat = corpo["iat"]
+    if (type(iat) not in (int, float) or (type(iat) is float and not math.isfinite(iat))
+            or not agora - s.dpop_janela_seg <= iat <= agora + s.dpop_janela_seg):
         raise _recusar("horário fora da janela (confira o relógio do aparelho).")
     if access_token is not None and corpo.get("ath") != hash_access_token(access_token):
         raise _recusar("não corresponde ao token de acesso.")
-    jti = str(corpo["jti"])
-    if not 8 <= len(jti) <= 64:
+    jti = corpo["jti"]
+    if not isinstance(jti, str) or not 8 <= len(jti) <= 64:
         raise _recusar("identificador (jti) inválido.")
     # Uso único: guardamos o jti pelo dobro da janela (cobre relógio adiantado/atrasado).
     if not repo.registrar_jti_dpop(jti, expira_em=tempo.agora() + timedelta(seconds=2 * s.dpop_janela_seg)):

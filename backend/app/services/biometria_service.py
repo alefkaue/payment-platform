@@ -34,7 +34,7 @@ from datetime import timedelta
 
 from fastapi import HTTPException
 
-from app.core import tempo
+from app.core import tempo, imagens as imagens_seguras
 from app.core.config import get_settings
 from app.services import face_engine, landmarks_service, liveness_logic
 
@@ -114,16 +114,19 @@ def decodificar_imagem(imagem_base64: str, *, limite_bytes: int | None = None):
     if not imagem_base64 or not imagem_base64.strip():
         raise HTTPException(status_code=400, detail="Imagem vazia.")
     conteudo = _DATA_URI_RE.sub("", imagem_base64.strip())
+    limite = limite_bytes or get_settings().foto_max_bytes
+    if len(conteudo) > limite * 4 // 3 + 16:
+        raise HTTPException(status_code=413, detail="Imagem muito grande.")
     try:
         bruto = base64.b64decode(conteudo, validate=True)
     except (binascii.Error, ValueError):
         raise HTTPException(status_code=400, detail="Imagem inválida: base64 corrompido.")
-    limite = limite_bytes or get_settings().foto_max_bytes
     if len(bruto) > limite:
         raise HTTPException(status_code=413, detail=f"Imagem muito grande (máximo {limite // (1024 * 1024)}MB).")
     import cv2
     import numpy as np
 
+    imagens_seguras.conferir_dimensoes(bruto, minimo=120)
     imagem = cv2.imdecode(np.frombuffer(bruto, dtype=np.uint8), cv2.IMREAD_COLOR)
     if imagem is None:
         raise HTTPException(status_code=400, detail="Imagem inválida: não foi possível decodificar.")
@@ -148,7 +151,15 @@ def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...], *, checar_o
 
     from app.services import qualidade_rosto
 
-    imagens = [decodificar_imagem(q) for q in quadros]
+    imagens = []
+    for q in quadros:
+        img = decodificar_imagem(q)
+        h, w = img.shape[:2]
+        if max(h, w) > 1280:
+            escala = 1280 / max(h, w)
+            img = cv2.resize(img, (max(1, round(w * escala)), max(1, round(h * escala))),
+                             interpolation=cv2.INTER_AREA)
+        imagens.append(img)
     sinais = [landmarks_service.extrair(cv2.cvtColor(img, cv2.COLOR_BGR2RGB)) for img in imagens]
 
     ok, motivo = liveness_logic.verificar_sequencia(sinais, passos)

@@ -30,7 +30,7 @@ from datetime import date
 
 from fastapi import HTTPException
 
-from app.core import arquivos, tempo
+from app.core import arquivos, tempo, imagens as imagens_seguras
 from app.core.config import get_settings
 from app.core.documentos import mascarar_cpf, mascarar_nome, somente_digitos
 from app.services import biometria_service, ocr_service
@@ -48,6 +48,7 @@ def _decodificar(bruto: bytes):
     import cv2
     import numpy as np
 
+    imagens_seguras.conferir_dimensoes(bruto)
     img = cv2.imdecode(np.frombuffer(bruto, dtype=np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         raise HTTPException(status_code=400, detail="Não foi possível abrir a imagem do documento.")
@@ -148,17 +149,27 @@ def analisar_documento_pessoa(*, tipo: str, frente_b64: str, verso_b64: str | No
                 motivos.append("Semelhança do rosto na faixa de dúvida: análise humana.")
 
     # ---------------------------------------------------------- decisão
-    # Rosto do documento x selfie é só informativo (decisão do grupo: foto de documento
-    # antiga/ruim não pode travar o cadastro no pentest). Fica em `verificacoes` e no caso.
+    # Desenvolvimento mantém o modo informativo para capturas de demonstração.
+    # Produção vincula a identidade ao rosto da pessoa que fez a prova de vida.
     contradicoes = [v.get("cpf") is False, v.get("nascimento") is False, v.get("validade") is False,
                     v.get("mrz") is False]
     conferidos = [v.get("cpf"), v.get("nome"), v.get("nascimento") if data_nascimento else True]
+    if s.em_producao:
+        # Sem correspondência não há aprovação automática; dúvida vai para análise.
+        contradicoes.append(rosto_ok is False)
+        conferidos.append(rosto_ok)
     if any(contradicoes):
         status, risco = "reprovado", "alto"
     elif all(x is True for x in conferidos):
         status, risco = "aprovado", "baixo"
     else:
         status, risco = "em_analise", "medio"
+    if s.em_producao:
+        # OCR, QR e semelhança facial não autenticam o documento perante o emissor.
+        v["autenticidade"] = None
+        if status == "aprovado":
+            status, risco = "em_analise", "medio"
+            motivos.append("Dados conferem, mas a autenticidade do documento precisa de análise.")
     return {"tipo": tipo, "status": status, "provedor": prov, "sha256": sha, "campos": campos,
             "verificacoes": v, "motivos": motivos, "nivel_risco": risco}
 
@@ -178,9 +189,12 @@ def analisar_documento_empresa(*, tipo: str, arquivo_b64: str, cnpj: str) -> dic
     elif ocr_service.provedor() == "stub":
         texto, leitura = cnpj, "stub"
     achou = somente_digitos(cnpj) in somente_digitos(texto) if texto else None
-    # CNPJ conferido no texto -> aprovado; sem texto ou CNPJ ausente -> análise humana.
-    status = "aprovado" if achou else "em_analise"
+    # Qualquer documento fabricado pode conter o CNPJ: produção exige análise
+    # de autenticidade além da leitura local do identificador.
+    status = "aprovado" if achou and not s.em_producao else "em_analise"
     verificacoes = {"leitura": leitura, "cnpj_encontrado": achou, "paginas_texto": bool(texto.strip()) if texto else False}
+    if s.em_producao:
+        verificacoes["autenticidade"] = None
     return {"tipo": tipo, "mime": mime, "tamanho": len(bruto), "sha256": sha, "status": status, "verificacoes": verificacoes}
 
 

@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.core import logs
 from app.core.config import get_settings
 from app.core.security import hash_senha
+from app.core.perimetro import PerimetroHTTP
 from app.db.base import usando_postgres, conferir_runtime_producao, banco_disponivel
 from app.repositories import get_repository
 from app.repositories.exceptions import IdempotenciaConflitanteError
@@ -93,43 +94,6 @@ app.add_middleware(
 _LIMITE_CORPO = 48 * 1024 * 1024
 
 
-class LimiteDeCorpo:
-    """Teto do corpo também SEM Content-Length (Transfer-Encoding: chunked). Nesse caso
-    lê o corpo antes, parando no teto (413 sem ler o resto), e entrega à app o que leu.
-    Com Content-Length o servidor HTTP já garante o tamanho, e o middleware de baixo
-    recusa acima do teto sem ler nada."""
-
-    def __init__(self, app, limite: int):
-        self.app, self.limite = app, limite
-
-    async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or any(k == b"content-length" for k, _ in scope.get("headers", ())):
-            return await self.app(scope, receive, send)
-        mensagens, total = [], 0
-        while True:
-            msg = await receive()
-            mensagens.append(msg)
-            if msg["type"] != "http.request":
-                break
-            total += len(msg.get("body", b""))
-            if total > self.limite:
-                corpo = (b'{"type":"about:blank","title":"Content Too Large","status":413,'
-                         rb'"detail":"Requisi\u00e7\u00e3o muito grande."}')
-                await send({"type": "http.response.start", "status": 413,
-                            "headers": [(b"content-type", b"application/problem+json"),
-                                        (b"content-length", str(len(corpo)).encode())]})
-                await send({"type": "http.response.body", "body": corpo})
-                return
-            if not msg.get("more_body"):
-                break
-        fila = iter(mensagens)
-
-        async def reproduzir():
-            return next(fila, None) or await receive()
-
-        await self.app(scope, reproduzir, send)
-
-
 _REQ_ID_RE = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
 
 
@@ -195,7 +159,9 @@ async def _erro_validacao(request: Request, exc: RequestValidationError):
 
 @app.exception_handler(Exception)
 async def _erro_inesperado(request: Request, exc: Exception):
-    logger.exception("Erro inesperado (request_id=%s)", getattr(request.state, "request_id", None))
+    # Mensagens de exceção podem carregar URLs com senha ou entradas do cliente.
+    logger.error("Erro inesperado", extra={"request_id": getattr(request.state, "request_id", None),
+                                          "tipo_erro": type(exc).__name__})
     return _problema(request, 500, "Erro interno. Tente de novo; se continuar, informe o código da requisição.")
 
 
@@ -222,4 +188,6 @@ def pronto():
 
 
 # Registrado por último = camada mais externa: corta o corpo antes de qualquer outra.
-app.add_middleware(LimiteDeCorpo, limite=_LIMITE_CORPO)
+app.add_middleware(PerimetroHTTP, limite=_LIMITE_CORPO,
+                   requisicoes_minuto=settings.http_requisicoes_minuto,
+                   hosts=settings.http_hosts_lista, producao=settings.em_producao)

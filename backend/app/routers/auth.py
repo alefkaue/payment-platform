@@ -26,7 +26,8 @@ def _jkt(request: Request, prova: str | None, repo: Repositorio) -> str | None:
     """Impressão da chave do aparelho, se veio prova DPoP (validada aqui)."""
     if not prova:
         return None
-    return dpop_prova.verificar(prova, metodo=request.method, caminho=request.url.path, repo=repo)
+    return dpop_prova.verificar(prova, metodo=request.method, caminho=request.url.path, repo=repo,
+                                url_esperada=dpop_prova.url_da_requisicao(request))
 
 
 @router.post("/login", response_model=LoginResponse)
@@ -145,8 +146,9 @@ def concluir_recuperacao(
 
 
 @router.post("/logout", status_code=204)
-def logout(dados: RefreshRequest, repo: Repositorio = Depends(get_repo)):
-    auth_service.logout(repo, refresh_token=dados.refresh_token)
+def logout(dados: RefreshRequest, request: Request, repo: Repositorio = Depends(get_repo),
+           dpop: str | None = Header(default=None, alias="DPoP")):
+    auth_service.logout(repo, refresh_token=dados.refresh_token, jkt=_jkt(request, dpop, repo))
     return Response(status_code=204)
 
 

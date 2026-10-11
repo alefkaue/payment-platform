@@ -33,7 +33,7 @@ class FormatoJson(logging.Formatter):
         }
         linha.update({k: v for k, v in vars(record).items() if k not in _PADRAO and not k.startswith("_")})
         if record.exc_info:
-            linha["erro"] = self.formatException(record.exc_info)
+            linha["erro"] = record.exc_info[0].__name__
         return json.dumps(linha, ensure_ascii=False, default=str)
 
 
@@ -43,9 +43,20 @@ class _ComRequestId(logging.Filter):
         return True
 
 
+class _SemDetalhesExcecao(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        # Inclui erros emitidos pelo servidor ASGI depois da resposta 500.
+        if record.exc_info:
+            record.tipo_erro = record.exc_info[0].__name__
+            record.exc_info = None
+            record.exc_text = None
+        return True
+
+
 def configurar(em_producao: bool) -> None:
     json_ligado = em_producao or os.environ.get("LOG_JSON") == "1"
     h = logging.StreamHandler()
+    h.addFilter(_SemDetalhesExcecao())
     if json_ligado:
         h.setFormatter(FormatoJson())
     else:
@@ -54,6 +65,10 @@ def configurar(em_producao: bool) -> None:
     raiz = logging.getLogger()
     raiz.handlers[:] = [h]
     raiz.setLevel(logging.INFO)
+    # Clientes HTTP registram URLs completas em INFO/DEBUG, incluindo queries.
+    # Não propagar possíveis tokens ou dados pessoais ao log da aplicação.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
 auditoria = logging.getLogger("astro.auditoria")

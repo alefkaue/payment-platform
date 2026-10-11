@@ -80,11 +80,15 @@ jobs:
           DATABASE_APP_PASSWORD: runtime-somente-ci
           DATABASE_MIGRATION_PASSWORD: migracao-somente-ci
           DATABASE_MIGRATION_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
+          DATABASE_ADMIN_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
+          TEST_ADMIN_DATABASE_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
           TEST_RUNTIME_DATABASE_URL: postgresql+psycopg2://astro_app:runtime-somente-ci@localhost:5432/astro_teste
         run: |
           sh ../infra/postgres/init-roles.sh
+          python scripts/proteger_acesso_banco.py
           python scripts/restringir_runtime.py
-          python -m pytest tests/test_migracoes_privilegios.py -q
+          python -m pytest tests/test_migracoes_privilegios.py tests/test_acesso_runtime_postgres.py -q
+          DATABASE_URL="$TEST_RUNTIME_DATABASE_URL" python scripts/auditar_runtime.py
           DATABASE_URL="$TEST_RUNTIME_DATABASE_URL" python scripts/verificar_banco.py
 
       - name: Vulnerabilidades conhecidas (pip-audit)
