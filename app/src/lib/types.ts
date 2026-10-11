@@ -286,6 +286,7 @@ export interface ComprarPassagemPayload {
 }
 export interface DepositarPayload {
   valor: number;
+  idempotency_key?: string;
 }
 
 /** Resumo de vendas de um lojista PJ. */

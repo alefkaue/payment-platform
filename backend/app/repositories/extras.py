@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError
 
 from app.core import tempo
@@ -48,6 +48,13 @@ def _utc(d: Optional[datetime]) -> Optional[datetime]:
 class RepositorioExtras:
     _sf = None  # definido pelo Repositorio
 
+    @staticmethod
+    def _auditar_alteracao(s, *, acao: str, usuario_id=None, empresa_id=None, detalhe=None):
+        from app.core.logs import request_id_atual
+        s.add(LogAuditoria(ator="sistema", acao=acao + "_atomico", usuario_id=usuario_id,
+                           empresa_id=empresa_id, criado_em=tempo.agora(),
+                           detalhe={"request_id": request_id_atual.get(), **(detalhe or {})}))
+
     # =========================================================================
     # Pessoas
     # =========================================================================
@@ -62,6 +69,7 @@ class RepositorioExtras:
             u = s.get(Usuario, usuario_id)
             if u:
                 u.senha_hash = senha_hash
+                self._auditar_alteracao(s, acao="senha_alterada", usuario_id=usuario_id)
                 s.commit()
 
     def atualizar_kyc_status(self, usuario_id: int, status: str) -> None:
@@ -122,6 +130,8 @@ class RepositorioExtras:
                 RefreshToken.usuario_id == usuario_id, RefreshToken.sessao_id == sessao_id,
                 RefreshToken.revogado.is_(False),
             ).update({"revogado": True})
+            if n:
+                self._auditar_alteracao(s, acao="sessao_revogada", usuario_id=usuario_id, detalhe={"sessao_id": sessao_id})
             s.commit()
             return n > 0
 
@@ -132,6 +142,8 @@ class RepositorioExtras:
             if manter:
                 q = q.filter((RefreshToken.sessao_id != manter) | RefreshToken.sessao_id.is_(None))
             n = q.update({"revogado": True}, synchronize_session=False)
+            if n:
+                self._auditar_alteracao(s, acao="outras_sessoes_revogadas", usuario_id=usuario_id, detalhe={"quantidade": n})
             s.commit()
             return n
 
@@ -142,6 +154,8 @@ class RepositorioExtras:
                 RefreshToken.usuario_id == usuario_id, RefreshToken.dispositivo_id == dispositivo_id,
                 RefreshToken.revogado.is_(False),
             ).update({"revogado": True})
+            if n:
+                self._auditar_alteracao(s, acao="sessoes_dispositivo_revogadas", usuario_id=usuario_id, detalhe={"dispositivo_id": dispositivo_id, "quantidade": n})
             s.commit()
             return n
 
@@ -151,6 +165,7 @@ class RepositorioExtras:
             if not d or d.usuario_id != usuario_id or d.removido:
                 return None
             d.bloqueado, d.bloqueado_em, d.confiavel = True, tempo.agora(), False
+            self._auditar_alteracao(s, acao="dispositivo_bloqueado", usuario_id=usuario_id, detalhe={"dispositivo_id": d.id})
             s.commit()
             s.refresh(d)
             return self._dispositivo_dict(d)
@@ -161,6 +176,7 @@ class RepositorioExtras:
             if not d or d.usuario_id != usuario_id or d.removido:
                 return None
             d.bloqueado, d.bloqueado_em = False, None
+            self._auditar_alteracao(s, acao="dispositivo_desbloqueado", usuario_id=usuario_id, detalhe={"dispositivo_id": d.id})
             s.commit()
             s.refresh(d)
             return self._dispositivo_dict(d)
@@ -190,6 +206,8 @@ class RepositorioExtras:
                         concluido_em=tempo.agora() if status in ("aprovado", "reprovado") else None)
             s.add(c)
             s.commit()
+            from app.db.isolamento import permitir_caso
+            permitir_caso(c.id)
             return self._caso_dict(s, c)
 
     def vincular_caso_kyc(self, caso_id: int, *, usuario_id: Optional[int] = None, empresa_id: Optional[int] = None) -> None:
@@ -241,7 +259,7 @@ class RepositorioExtras:
     def decidir_caso_kyc(self, caso_id: int, status: str) -> Optional[dict]:
         """Análise humana: em_analise -> aprovado | reprovado. Atualiza a pessoa."""
         with self._sf() as s:
-            c = s.get(CasoKyc, caso_id)
+            c = s.scalar(select(CasoKyc).where(CasoKyc.id == caso_id).with_for_update())
             if c is None or c.status != "em_analise":
                 return None
             c.status, c.concluido_em = status, tempo.agora()
@@ -249,6 +267,8 @@ class RepositorioExtras:
                 u = s.get(Usuario, c.usuario_id)
                 if u:
                     u.kyc_status = status
+            self._auditar_alteracao(s, acao="kyc_decidido", usuario_id=c.usuario_id, empresa_id=c.empresa_id,
+                                   detalhe={"caso_id": c.id, "status": status})
             s.commit()
             return self._caso_dict(s, c)
 
@@ -278,6 +298,7 @@ class RepositorioExtras:
             e = s.get(Empresa, empresa_id)
             if e:
                 e.kyb_status = status
+                self._auditar_alteracao(s, acao="kyb_status_alterado", empresa_id=empresa_id)
                 s.commit()
 
     # =========================================================================
@@ -318,6 +339,8 @@ class RepositorioExtras:
             if "status" in campos:
                 v.ativo = campos["status"] == "ativo"
                 v.status_em = tempo.agora()
+            self._auditar_alteracao(s, acao="vinculo_alterado", usuario_id=v.usuario_id, empresa_id=v.empresa_id,
+                                   detalhe={"vinculo_id": v.id, "campos": sorted(campos)})
             s.commit()
             s.refresh(v)
             return self._vinculo_dict(v)
@@ -400,6 +423,8 @@ class RepositorioExtras:
         if not sha256:
             return False
         with self._sf() as s:
+            if s.bind.dialect.name == 'postgresql' and s.scalar(text("SELECT to_regprocedure('public.astro_documento_usado(text)') IS NOT NULL")):
+                return bool(s.scalar(text('SELECT public.astro_documento_usado(:resumo)'), {'resumo': sha256}))
             return s.scalar(select(func.count(DocumentoIdentidade.id)).join(
                 CasoKyc, CasoKyc.id == DocumentoIdentidade.caso_id).where(
                 DocumentoIdentidade.sha256 == sha256, CasoKyc.usuario_id.is_not(None))) > 0
@@ -462,7 +487,8 @@ class RepositorioExtras:
             stmt = select(Funcionario).where(Funcionario.empresa_id == empresa_id)
             if somente_ativos:
                 stmt = stmt.where(Funcionario.ativo.is_(True))
-            return [self._funcionario_dict(s, f) for f in s.scalars(stmt.order_by(Funcionario.nome)).all()]
+            funcionarios = list(s.scalars(stmt).all())
+            return [self._funcionario_dict(s, f) for f in sorted(funcionarios, key=lambda f: (f.nome, f.id))]
 
     def obter_funcionario(self, funcionario_id: int) -> Optional[dict]:
         with self._sf() as s:
@@ -475,6 +501,7 @@ class RepositorioExtras:
             if not f or f.empresa_id != empresa_id or not f.ativo:
                 return False
             f.ativo, f.desligado_em = False, tempo.agora()
+            self._auditar_alteracao(s, acao="funcionario_desligado", empresa_id=empresa_id, detalhe={"funcionario_id": funcionario_id})
             s.commit()
             return True
 
@@ -487,12 +514,12 @@ class RepositorioExtras:
         from app.db.models import Carteira  # evita ciclo de import no topo
 
         u = s.scalar(select(Usuario).where(Usuario.cpf == f.cpf))
-        pf = s.scalar(select(Carteira).where(Carteira.usuario_id == u.id)) if u else None
+        pf = self._destinatario(s, usuario_id=u.id) if u else None
         return {"id": f.id, "empresa_id": f.empresa_id, "nome": f.nome, "cpf": f.cpf, "cargo": f.cargo,
                 "salario": f.salario, "ativo": f.ativo, "criado_em": _utc(f.criado_em),
                 "desligado_em": _utc(f.desligado_em),
                 # O destino do salário é SEMPRE a conta PF deste CPF -- informado aqui só para exibir.
-                "conta_salario": {"carteira_id": pf.id, "agencia": pf.agencia, "numero": pf.numero} if pf else None}
+                "conta_salario": {"carteira_id": pf["carteira_id"], "agencia": pf["agencia"], "numero": pf["numero"]} if pf else None}
 
     # =========================================================================
     # Auditoria

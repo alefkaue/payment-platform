@@ -141,7 +141,7 @@ def executar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict
              auth_metodo: AuthMetodo | None = None) -> list[dict]:
     resultados = []
     for it in itens:
-        destino = repo.obter_conta(it["destino_carteira_id"])
+        destino = repo.buscar_destinatario(it["destino_carteira_id"])
         try:
             r = pagamento_service.transferir(
                 repo, usuario=usuario, conta=conta, dispositivo=dispositivo, destino=destino,

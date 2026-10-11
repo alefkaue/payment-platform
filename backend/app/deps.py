@@ -109,6 +109,8 @@ def usuario_atual(
     dev = payload.get("dev")
     if dev and (not x_dispositivo_id or hash_dispositivo(x_dispositivo_id) != dev):
         raise HTTPException(status_code=401, detail="Sessão emitida para outro aparelho.", headers=nao_autorizado)
+    from app.db.isolamento import autorizar_usuario
+    autorizar_usuario(int(payload["sub"]))
     sid = payload.get("sid")
     if sid and not repo.sessao_ativa(sid):
         raise HTTPException(status_code=401, detail="Sessão encerrada. Entre de novo.", headers=nao_autorizado)
@@ -164,13 +166,13 @@ def conta_atual(
         if not conta:
             raise HTTPException(status_code=404, detail="Você ainda não tem conta pessoal. Use o header X-Conta para operar uma empresa.")
         return {**conta, "vinculo": None}
-    conta = repo.obter_conta_por_numero(x_conta)
+    conta = repo.buscar_destinatario(numero=x_conta)
     if not conta:
         raise HTTPException(status_code=404, detail="Conta não encontrada.")
     if conta["titular_tipo"] == "PF":
         if conta["usuario_id"] != usuario["id"]:
             raise HTTPException(status_code=403, detail="Você não tem acesso a esta conta.")
-        return {**conta, "vinculo": None}
+        return {**repo.obter_conta(conta["carteira_id"]), "vinculo": None}
     if conta["titular_tipo"] == "PJ":
         vinculo = repo.obter_vinculo(usuario["id"], conta["empresa_id"])
         if not vinculo:
@@ -178,7 +180,7 @@ def conta_atual(
         ultimo = vinculo.get("ultimo_acesso_em")
         if ultimo is None or tempo.agora() - ultimo > timedelta(minutes=10):
             repo.marcar_acesso_vinculo(vinculo["id"])
-        return {**conta, "vinculo": vinculo}
+        return {**repo.obter_conta(conta["carteira_id"]), "vinculo": vinculo}
     raise HTTPException(status_code=403, detail="Conta de sistema não pode ser operada.")
 
 

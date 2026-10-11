@@ -1,7 +1,9 @@
 import { BotaoFinanceiro } from "@/lib/mobile";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useAuth } from "@/lib/auth";
+import { criarIntencaoPagamento } from "@/lib/intencao-pagamento";
 import { Check } from "lucide-react";
 import { depositar } from "@/lib/api";
 import { fmtBRL, parseValor } from "@/lib/format";
@@ -22,7 +24,8 @@ const ATALHOS = [50, 100, 250, 500];
  * mensagem explica que o dinheiro entra por Pix para uma chave da conta.
  */
 function Depositar() {
-  return <DepositoDemo />;
+  const { conta } = useAuth();
+  return <DepositoDemo key={conta?.carteira_id} />;
 }
 
 function DepositoDemo() {
@@ -32,24 +35,41 @@ function DepositoDemo() {
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [ok, setOk] = useState(false);
+  const enviando = useRef(false);
+  const ativo = useRef(true);
+  const redirecionamento = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    ativo.current = true;
+    return () => {
+      ativo.current = false;
+      if (redirecionamento.current !== null) clearTimeout(redirecionamento.current);
+    };
+  }, []);
+  const [intencao] = useState(criarIntencaoPagamento);
 
   const valor = parseValor(valorStr);
 
   async function confirmar(e: React.FormEvent) {
     e.preventDefault();
+    if (enviando.current) return;
     setErro(null);
     if (!(valor > 0)) return setErro("Informe um valor válido.");
     if (valor > LIMITE_DEPOSITO)
       return setErro("O limite do banco é de R$ 10.000,00 por depósito.");
+    enviando.current = true;
     setLoading(true);
     try {
-      await depositar({ valor });
+      await depositar({ valor, idempotency_key: intencao.preparar(valorStr) });
+      intencao.concluir();
+      if (!ativo.current) return;
       qc.invalidateQueries();
       setOk(true);
-      setTimeout(() => nav({ to: "/inicio" }), 1100);
+      redirecionamento.current = setTimeout(() => nav({ to: "/inicio" }), 1100);
     } catch (e2) {
+      if (!ativo.current) return;
       setErro((e2 as Error).message);
       setLoading(false);
+      enviando.current = false;
     }
   }
 
@@ -82,6 +102,7 @@ function DepositoDemo() {
             autoFocus
             className="field tabular text-lg"
             value={valorStr}
+            disabled={loading}
             onChange={(e) => {
               const formatado = mascararDeposito(e.target.value);
               if (formatado === null) {
@@ -100,6 +121,7 @@ function DepositoDemo() {
             <button
               key={v}
               type="button"
+              disabled={loading}
               onClick={() => {
                 setValorStr(mascararDeposito(`${v}00`) ?? "");
                 setErro(null);

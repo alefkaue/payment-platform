@@ -12,6 +12,7 @@ DENTRO do lock, via o callback `checar`, para duas operações simultâneas não
 passarem as duas pelo mesmo limite.
 """
 
+import hashlib
 import json
 import threading
 from contextlib import nullcontext
@@ -19,9 +20,9 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Callable, Optional
 
-from sqlalchemy import func, or_, select, text
+from sqlalchemy import cast, func, or_, select, String, text
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, sessionmaker, aliased
 
 from app.core import tempo
 from app.core.config import get_settings
@@ -73,6 +74,7 @@ from app.repositories.extras import RepositorioExtras
 from app.services.split_service import ResultadoSplit
 
 _LOCK_CADASTRO_FACIAL = threading.Lock()
+_LOCK_ORCAMENTO_SQLITE = threading.Lock()
 
 ZERO = Decimal("0.00")
 SISTEMAS = ("CAIXA", "TRIBUTOS", "FISCO")
@@ -142,6 +144,8 @@ class Repositorio(RepositorioExtras):
                 if limites_padrao:
                     s.add(Limite(carteira_id=carteira.id, **limites_padrao))
             s.commit()
+            from app.db.isolamento import autorizar_usuario
+            autorizar_usuario(u.id)
             if carteira is None:
                 return self._usuario_auth_dict(u)
             return self._conta_dict(s, carteira)
@@ -254,13 +258,15 @@ class Repositorio(RepositorioExtras):
                 s.rollback()
                 raise CnpjDuplicadoError("Esse CNPJ já tem conta na Astro.") from None
             carteira = self._nova_carteira(s, TipoPessoa.PJ, empresa_id=e.id)
-            if limites_padrao:
-                s.add(Limite(carteira_id=carteira.id, **limites_padrao))
             rep = s.get(Usuario, usuario_id)
             agora = tempo.agora()
             s.add(Vinculo(usuario_id=usuario_id, empresa_id=e.id, papel=PapelVinculo.ADMIN, alcada=None,
                           cpf=rep.cpf, nome=rep.nome, email=rep.email, cargo="Representante legal",
                           status="ativo", ativo=True, aceito_em=agora, status_em=agora))
+            # O vínculo precisa existir antes de a política de limites PJ autorizá-lo.
+            s.flush()
+            if limites_padrao:
+                s.add(Limite(carteira_id=carteira.id, **limites_padrao))
             s.commit()
             return self._conta_dict(s, carteira)
 
@@ -302,6 +308,10 @@ class Repositorio(RepositorioExtras):
             if not v or v.empresa_id != empresa_id:
                 return False
             v.ativo = False
+            v.status = "revogado"
+            v.status_em = tempo.agora()
+            self._auditar_alteracao(s, acao="vinculo_alterado", usuario_id=v.usuario_id,
+                                   empresa_id=v.empresa_id, detalhe={"vinculo_id": v.id, "campos": ["status"]})
             s.commit()
             return True
 
@@ -339,7 +349,62 @@ class Repositorio(RepositorioExtras):
 
     def carteira_sistema(self, nome: str) -> dict:
         with self._sf() as s:
-            return self._conta_dict(s, self._sistema(s, nome))
+            c = s.scalar(select(Carteira).where(Carteira.sistema == nome))
+            return self._conta_dict(s, c) if c is not None else self._destinatario(s, sistema=nome)
+
+    def _destinatario(self, s: Session, carteira_id=None, numero=None, agencia="0001", sistema=None, usuario_id=None):
+        """Projeção restrita: resolver Pix nunca exige ler o saldo de outra pessoa."""
+        from types import SimpleNamespace
+        if s.bind.dialect.name == "postgresql" and s.scalar(text(
+                "SELECT to_regprocedure('public.astro_destinatario(integer,text,text,text,integer)') IS NOT NULL")):
+            row = s.execute(text("SELECT * FROM public.astro_destinatario(:id,:numero,:agencia,:sistema,:usuario)"),
+                            {"id": carteira_id, "numero": numero, "agencia": agencia, "sistema": sistema, "usuario": usuario_id}).mappings().first()
+            if row is None:
+                return None
+            c = SimpleNamespace(**row)
+            c.titular_tipo = TipoPessoa(c.titular_tipo)
+        else:
+            stmt = select(Carteira)
+            if carteira_id is not None:
+                stmt = stmt.where(Carteira.id == carteira_id)
+            elif numero is not None:
+                stmt = stmt.where(Carteira.numero == numero, Carteira.agencia == agencia)
+            elif usuario_id is not None:
+                stmt = stmt.where(Carteira.usuario_id == usuario_id, Carteira.titular_tipo == TipoPessoa.PF)
+            else:
+                stmt = stmt.where(Carteira.sistema == sistema)
+            c = s.scalar(stmt)
+            if c is None:
+                return None
+        return self._conta_dict(s, c, incluir_saldo=False)
+
+    def buscar_destinatario(self, carteira_id=None, *, numero=None, agencia="0001"):
+        with self._sf() as s:
+            return self._destinatario(s, carteira_id, numero, agencia)
+
+    def _autorizar_movimentacao(self, s: Session, origem_id, destino_id, *, debitante_id=None, tributos=False):
+        """Escopo preso à sessão SQL, após conferir a carteira que autoriza o débito."""
+        from app.db.isolamento import aplicar_contexto, _contexto
+        if s.bind.dialect.name != "postgresql" or not s.scalar(text(
+                "SELECT to_regprocedure('public.astro_destinatario(integer,text,text,text,integer)') IS NOT NULL")):
+            return
+        contexto = _contexto.get()
+        if contexto is None or contexto.get("modo") == "sistema":
+            return
+        # SELECT RLS confere posse/vínculo antes de liberar as contrapartes.
+        autorizado = s.get(Carteira, debitante_id or origem_id)
+        if autorizado is None:
+            caixa = self._destinatario(s, sistema="CAIXA")
+            if debitante_id is not None or not caixa or origem_id != caixa["carteira_id"] or s.get(Carteira, destino_id) is None:
+                raise ValueError("Conta sem autorização para movimentação.")
+        ids = {origem_id, destino_id}
+        if tributos:
+            conta = self._destinatario(s, sistema="TRIBUTOS")
+            if conta is None:
+                raise ContaSistemaAusenteError("TRIBUTOS")
+            ids.add(conta["carteira_id"])
+        s.info["carteiras_operacao"] = ids
+        aplicar_contexto(s.connection(), carteiras_operacao=ids)
 
     def _sistema(self, s: Session, nome: str) -> Carteira:
         c = s.scalar(select(Carteira).where(Carteira.sistema == nome))
@@ -468,6 +533,7 @@ class Repositorio(RepositorioExtras):
             raise ValueError("Movimento financeiro inválido.")
 
         with self._sf() as s:
+            self._autorizar_movimentacao(s, origem_id, destino_id, tributos=split.aplicou_split)
             if idempotency_key:
                 ja = s.scalar(select(Transacao).where(Transacao.idempotency_key.in_(_chaves_equivalentes(idempotency_key))))
                 if ja:
@@ -479,7 +545,7 @@ class Repositorio(RepositorioExtras):
                 tributos = self._sistema(s, "TRIBUTOS")
                 ids.add(tributos.id)
             stmt = select(Carteira).where(Carteira.id.in_(sorted(ids))).order_by(Carteira.id)
-            if usando_postgres():
+            if s.bind.dialect.name == "postgresql":
                 stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             origem, destino = cs[origem_id], cs[destino_id]
@@ -605,7 +671,7 @@ class Repositorio(RepositorioExtras):
             if t is None or t.status != StatusTransacao.RETIDA:
                 return None
             stmt = select(Carteira).where(Carteira.id == t.destino_carteira_id)
-            if usando_postgres():
+            if s.bind.dialect.name == "postgresql":
                 stmt = stmt.with_for_update().execution_options(populate_existing=True)
             destino = s.scalar(stmt)
             self._mover(s, destino, t.liquido, bloqueado=-t.liquido, motivo="liberacao_bloqueio")
@@ -645,7 +711,7 @@ class Repositorio(RepositorioExtras):
                 return {"valor_devolvido": ZERO, "transacao": None}
             ids = sorted({t.origem_carteira_id, t.destino_carteira_id})
             stmt = select(Carteira).where(Carteira.id.in_(ids)).order_by(Carteira.id)
-            if usando_postgres():
+            if s.bind.dialect.name == "postgresql":
                 stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             origem, destino = cs[t.origem_carteira_id], cs[t.destino_carteira_id]
@@ -711,9 +777,10 @@ class Repositorio(RepositorioExtras):
                 raise ValueError("Este Pix já foi devolvido por inteiro.")
             if not valor.is_finite() or valor <= 0 or valor != valor.quantize(Decimal("0.01")) or valor > restante:
                 raise ValueError(f"Valor de devolução inválido (pode devolver até {restante}).")
+            self._autorizar_movimentacao(s, t.origem_carteira_id, t.destino_carteira_id, debitante_id=recebedor_carteira_id)
             ids = sorted({t.origem_carteira_id, t.destino_carteira_id})
             stmt = select(Carteira).where(Carteira.id.in_(ids)).order_by(Carteira.id)
-            if usando_postgres():
+            if s.bind.dialect.name == "postgresql":
                 stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             pagador, recebedor = cs[t.origem_carteira_id], cs[t.destino_carteira_id]
@@ -751,10 +818,12 @@ class Repositorio(RepositorioExtras):
             t = s.scalar(select(Transacao).where(Transacao.id == cob.transacao_id).with_for_update())
             if t.status in (StatusTransacao.DEVOLVIDA, StatusTransacao.DEVOLVIDA_PARCIAL):
                 raise ValueError("Pagamento já devolvido; estorno recusado.")
+            self._autorizar_movimentacao(s, t.origem_carteira_id, t.destino_carteira_id,
+                                        debitante_id=t.destino_carteira_id, tributos=True)
             tributos = self._sistema(s, "TRIBUTOS")
             ids = sorted({t.origem_carteira_id, t.destino_carteira_id, tributos.id})
             stmt = select(Carteira).where(Carteira.id.in_(ids)).order_by(Carteira.id)
-            if usando_postgres():
+            if s.bind.dialect.name == "postgresql":
                 stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             pagador, recebedor, trib = cs[t.origem_carteira_id], cs[t.destino_carteira_id], cs[tributos.id]
@@ -964,6 +1033,9 @@ class Repositorio(RepositorioExtras):
             elif not any(getattr(lim, f"pendente_{c}") for c in ("por_transacao", "diurno", "noturno")):
                 lim.pendente_vigente_em = None
             lim.atualizado_em = tempo.agora()
+            c = s.get(Carteira, carteira_id)
+            self._auditar_alteracao(s, acao="limite_alterado", usuario_id=c.usuario_id, empresa_id=c.empresa_id,
+                                   detalhe={"carteira_id": carteira_id})
             s.commit()
             s.refresh(lim)
             return self._limite_dict(lim)
@@ -994,6 +1066,7 @@ class Repositorio(RepositorioExtras):
             if d.usuario_id != usuario_id:
                 raise ValueError("Dispositivo de outra pessoa.")
             d.confiavel, d.confiavel_em = True, tempo.agora()
+            self._auditar_alteracao(s, acao="dispositivo_confiavel", usuario_id=usuario_id, detalhe={"dispositivo_id": d.id})
             s.commit()
             return self._dispositivo_dict(d)
 
@@ -1341,7 +1414,7 @@ class Repositorio(RepositorioExtras):
         with self._sf() as s:
             trib, fisco = self._sistema(s, "TRIBUTOS"), self._sistema(s, "FISCO")
             stmt = select(Carteira).where(Carteira.id.in_(sorted([trib.id, fisco.id]))).order_by(Carteira.id)
-            if usando_postgres():
+            if s.bind.dialect.name == "postgresql":
                 stmt = stmt.with_for_update().execution_options(populate_existing=True)
             s.scalars(stmt).all()
             pernas = s.scalars(
@@ -1435,7 +1508,7 @@ class Repositorio(RepositorioExtras):
                 return None
             caixa = self._sistema(s, "CAIXA")
             stmt = select(Carteira).where(Carteira.id.in_(sorted([carteira_id, caixa.id]))).order_by(Carteira.id)
-            if usando_postgres():
+            if s.bind.dialect.name == "postgresql":
                 stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             c = cs[carteira_id]
@@ -1525,7 +1598,7 @@ class Repositorio(RepositorioExtras):
         débito deixaria o saldo negativo. Devolve o novo saldo."""
         with self._sf() as s:
             stmt = select(Usuario).where(Usuario.id == usuario_id)
-            if usando_postgres():
+            if s.bind.dialect.name == "postgresql":
                 stmt = stmt.with_for_update().execution_options(populate_existing=True)
             u = s.scalar(stmt)
             if u.pontos + delta < 0:
@@ -1546,12 +1619,12 @@ class Repositorio(RepositorioExtras):
                  "transacao_id": m.transacao_id, "data_hora": _utc(m.criado_em)} for m in ms]}
 
     def _produto_dict(self, s: Session, p: Produto) -> dict:
-        loja = self._conta_dict(s, s.get(Carteira, p.lojista_carteira_id))
+        loja = self._destinatario(s, p.lojista_carteira_id)
         return {"id": p.id, "nome": p.nome, "descricao": p.descricao, "preco": p.preco, "categoria": p.categoria,
                 "emoji": p.emoji, "merchant_carteira_id": p.lojista_carteira_id, "merchant_nome": loja["nome"]}
 
     def _voo_dict(self, s: Session, v: Voo) -> dict:
-        parceiro = self._conta_dict(s, s.get(Carteira, v.parceiro_carteira_id))
+        parceiro = self._destinatario(s, v.parceiro_carteira_id)
         return {"id": v.id, "origem": v.origem, "origemCidade": v.origem_cidade, "destino": v.destino,
                 "destinoCidade": v.destino_cidade, "companhia": v.companhia, "saida": v.saida,
                 "chegada": v.chegada, "duracao": v.duracao, "direto": v.direto, "preco": v.preco,
@@ -1564,7 +1637,8 @@ class Repositorio(RepositorioExtras):
 
     def criar_webhook(self, *, empresa_id: int, url: str, segredo: str, eventos: list[str]) -> dict:
         with self._sf() as s:
-            w = Webhook(empresa_id=empresa_id, url=url, segredo=segredo, eventos=eventos)
+            from app.core.segredos_webhook import cifrar
+            w = Webhook(empresa_id=empresa_id, url=url, segredo=cifrar(segredo, empresa_id), eventos=eventos)
             s.add(w)
             s.commit()
             return self._webhook_dict(w)
@@ -1588,7 +1662,11 @@ class Repositorio(RepositorioExtras):
     def obter_webhook_com_segredo(self, webhook_id: int) -> Optional[dict]:
         with self._sf() as s:
             w = s.get(Webhook, webhook_id)
-            return {**self._webhook_dict(w), "segredo": w.segredo} if w else None
+            if not w:
+                return None
+            from app.core.segredos_webhook import decifrar
+            segredo = decifrar(w.segredo, w.empresa_id, permitir_legado=not get_settings().em_producao)
+            return {**self._webhook_dict(w), "segredo": segredo}
 
     def entregas_pendentes(self, max_tentativas: int) -> list[dict]:
         with self._sf() as s:
@@ -1695,6 +1773,112 @@ class Repositorio(RepositorioExtras):
                 raise
             return True
 
+    def consumir_orcamento(
+        self, *, tipo: str, maximo: int, janela_min: int, ip: Optional[str] = None,
+        usuario_id: Optional[int] = None, referencia: Optional[str] = None,
+    ) -> bool:
+        """Conta e reserva numa transação antes do trabalho caro.
+
+        PostgreSQL serializa por sujeito entre processos, mesmo sem evento prévio.
+        SQLite é somente desenvolvimento: lock compartilhado entre repositórios.
+        O IP do evento é metadado quando o orçamento é por usuário/referência.
+        """
+        if maximo < 1 or janela_min < 1:
+            return False
+        if usuario_id is not None:
+            campo, sujeito = "usuario_id", usuario_id
+        elif referencia is not None:
+            campo, sujeito = "referencia", referencia
+        elif ip is not None:
+            campo, sujeito = "ip", ip
+        else:
+            raise ValueError("Orçamento exige um sujeito.")
+        chave = json.dumps(["astro-orcamento-v1", tipo, campo, sujeito], ensure_ascii=True)
+        lock_id = int.from_bytes(hashlib.sha256(chave.encode()).digest()[:8], "big", signed=True)
+        pg = self._sf.kw["bind"].dialect.name == "postgresql"
+        with (nullcontext() if pg else _LOCK_ORCAMENTO_SQLITE), self._sf() as s:
+            if pg:
+                s.execute(text("SELECT pg_advisory_xact_lock(:chave)"), {"chave": lock_id})
+            agora = tempo.agora()
+            quantidade = s.scalar(select(func.count(SessaoMfa.id)).where(
+                SessaoMfa.tipo == tipo, SessaoMfa.criado_em >= agora - timedelta(minutes=janela_min),
+                getattr(SessaoMfa, campo) == sujeito,
+            )) or 0
+            if quantidade >= maximo:
+                return False
+            s.add(SessaoMfa(tipo=tipo, sucesso=True, usuario_id=usuario_id,
+                            referencia=referencia, ip=ip, criado_em=agora))
+            s.commit()
+            return True
+
+    def reservar_verificacao(self, *, tipo: str, janela_min: int, limites: list[tuple[int, dict]],
+                             referencia: str | None = None, ip: str | None = None,
+                             usuario_id: int | None = None) -> int | None:
+        """Falhas concluídas + verificações em andamento, sem alterar a trilha.
+
+        Reserva e resultado são eventos somente de inserção. Uma queda deixa a
+        reserva ocupada até o fim da janela. Não mantém conexão durante visão/hash.
+        Todos os orçamentos são conferidos/reservados juntos, com locks ordenados.
+        """
+        if tipo not in {"login", "biometria"} or not limites or janela_min < 1:
+            raise ValueError("Verificação sem orçamento válido.")
+        chaves = []
+        for maximo, filtros in limites:
+            if maximo < 1 or not filtros or any(k not in {"referencia", "ip", "usuario_id"} for k in filtros):
+                raise ValueError("Orçamento inválido.")
+            chave = json.dumps(["astro-verificacao-v1", tipo, sorted(filtros.items())])
+            chaves.append(int.from_bytes(hashlib.sha256(chave.encode()).digest()[:8], "big", signed=True))
+        pg = self._sf.kw["bind"].dialect.name == "postgresql"
+        with (nullcontext() if pg else _LOCK_ORCAMENTO_SQLITE), self._sf() as s:
+            if pg:
+                for chave in sorted(set(chaves)):
+                    s.execute(text("SELECT pg_advisory_xact_lock(:chave)"), {"chave": chave})
+            agora = tempo.agora()
+            fim = aliased(SessaoMfa)
+            concluida = select(fim.id).where(
+                fim.tipo == tipo + "_concluido", fim.reserva_id == SessaoMfa.id,
+            ).exists()
+            for maximo, filtros in limites:
+                stmt = select(func.count(SessaoMfa.id)).where(
+                    SessaoMfa.criado_em >= agora - timedelta(minutes=janela_min),
+                    or_((SessaoMfa.tipo == tipo) & SessaoMfa.sucesso.is_(False),
+                        (SessaoMfa.tipo == tipo + "_reserva") & ~concluida),
+                    *(getattr(SessaoMfa, campo) == valor for campo, valor in filtros.items()),
+                )
+                if (s.scalar(stmt) or 0) >= maximo:
+                    return None
+            reserva = SessaoMfa(tipo=tipo + "_reserva", sucesso=True, referencia=referencia,
+                               ip=ip, usuario_id=usuario_id, criado_em=agora)
+            s.add(reserva)
+            s.flush()
+            reserva_id = reserva.id
+            s.commit()
+            return reserva_id
+
+    def concluir_verificacao(self, reserva_id: int, *, sucesso: bool, detalhe: dict | None = None,
+                             gravar_resultado: bool = True) -> None:
+        """Resultado + liberação na mesma transação; repetição não duplica falha."""
+        pg = self._sf.kw["bind"].dialect.name == "postgresql"
+        chave = int.from_bytes(hashlib.sha256(f"astro-fim-v1:{reserva_id}".encode()).digest()[:8], "big", signed=True)
+        with (nullcontext() if pg else _LOCK_ORCAMENTO_SQLITE), self._sf() as s:
+            if pg:
+                s.execute(text("SELECT pg_advisory_xact_lock(:chave)"), {"chave": chave})
+            reserva = s.get(SessaoMfa, reserva_id)
+            if reserva is None or reserva.tipo not in {"login_reserva", "biometria_reserva"}:
+                raise ValueError("Reserva inválida.")
+            tipo = reserva.tipo.removesuffix("_reserva")
+            if s.scalar(select(SessaoMfa.id).where(
+                SessaoMfa.tipo == tipo + "_concluido", SessaoMfa.reserva_id == reserva_id,
+            )) is not None:
+                return
+            agora = tempo.agora()
+            if gravar_resultado:
+                s.add(SessaoMfa(tipo=tipo, sucesso=sucesso, usuario_id=reserva.usuario_id,
+                               referencia=reserva.referencia, ip=reserva.ip, detalhe=detalhe, criado_em=agora))
+            s.add(SessaoMfa(tipo=tipo + "_concluido", sucesso=True, reserva_id=reserva_id,
+                           referencia=str(reserva_id), criado_em=agora))
+            s.commit()
+
     def contar_eventos(
         self, *, tipo: str, desde: datetime, sucesso: Optional[bool] = False, usuario_id: Optional[int] = None,
         referencia: Optional[str] = None, ip: Optional[str] = None,
@@ -1732,7 +1916,7 @@ class Repositorio(RepositorioExtras):
     # =========================================================================
 
     @staticmethod
-    def _conta_dict(s: Session, c: Carteira) -> dict:
+    def _conta_dict(s: Session, c: Carteira, *, incluir_saldo=True) -> dict:
         nome = documento = None
         regime = None
         if c.titular_tipo == TipoPessoa.PF and c.usuario_id:
@@ -1743,7 +1927,7 @@ class Repositorio(RepositorioExtras):
             nome, documento, regime = (e.nome_fantasia or e.razao_social), e.cnpj, e.regime_apuracao.value
         else:
             nome = f"Astro {c.sistema}"
-        return {
+        resultado = {
             "carteira_id": c.id,
             "agencia": c.agencia,
             "numero": c.numero,
@@ -1754,9 +1938,10 @@ class Repositorio(RepositorioExtras):
             "nome": nome,
             "documento": documento,
             "regime_apuracao": regime,
-            "saldo": c.saldo,
-            "saldo_bloqueado": c.saldo_bloqueado,
         }
+        if incluir_saldo:
+            resultado.update(saldo=c.saldo, saldo_bloqueado=c.saldo_bloqueado)
+        return resultado
 
     @staticmethod
     def _usuario_auth_dict(u: Usuario) -> dict:
@@ -1807,9 +1992,8 @@ class Repositorio(RepositorioExtras):
                 "atestacao": d.atestacao, "atestacao_em": _utc(d.atestacao_em)}
 
     def _transacao_dict(self, s: Session, t: Transacao) -> dict:
-        origem = s.get(Carteira, t.origem_carteira_id)
-        destino = s.get(Carteira, t.destino_carteira_id)
-        o, d = self._conta_dict(s, origem), self._conta_dict(s, destino)
+        o = self._destinatario(s, t.origem_carteira_id)
+        d = self._destinatario(s, t.destino_carteira_id)
         return {
             "id": t.id,
             "tipo": t.tipo,
@@ -1832,21 +2016,20 @@ class Repositorio(RepositorioExtras):
         }
 
     def _cobranca_dict(self, s: Session, c: Cobranca) -> dict:
-        rec = s.get(Carteira, c.recebedor_carteira_id)
-        conta = self._conta_dict(s, rec)
+        conta = self._destinatario(s, c.recebedor_carteira_id)
         return {
             "id": c.id, "txid": c.txid, "valor": c.valor, "descricao": c.descricao, "vencimento": c.vencimento,
             "pagador_documento": c.pagador_documento, "nfe_chave": c.nfe_chave, "cbs": c.cbs, "ibs": c.ibs,
             "linha_digitavel": c.linha_digitavel, "status": c.status, "grupo_parcelamento": c.grupo_parcelamento,
             "parcela_numero": c.parcela_numero, "parcelas_total": c.parcelas_total, "autorizacao_id": c.autorizacao_id,
             "transacao_id": c.transacao_id, "paga_em": _utc(c.paga_em),
-            "recebedor": {"carteira_id": rec.id, "nome": conta["nome"], "documento": conta["documento"],
-                          "empresa_id": rec.empresa_id, "regime_apuracao": conta["regime_apuracao"]},
+            "recebedor": {"carteira_id": conta["carteira_id"], "nome": conta["nome"], "documento": conta["documento"],
+                          "empresa_id": conta["empresa_id"], "regime_apuracao": conta["regime_apuracao"]},
         }
 
     def _autorizacao_dict(self, s: Session, a: AutorizacaoRecorrente) -> dict:
-        rec = self._conta_dict(s, s.get(Carteira, a.recebedor_carteira_id))
-        pag = self._conta_dict(s, s.get(Carteira, a.pagador_carteira_id))
+        rec = self._destinatario(s, a.recebedor_carteira_id)
+        pag = self._destinatario(s, a.pagador_carteira_id)
         return {
             "id": a.id, "descricao": a.descricao, "valor_maximo": a.valor_maximo, "periodicidade": a.periodicidade,
             "status": a.status, "aceita_em": _utc(a.aceita_em), "cancelada_em": _utc(a.cancelada_em),

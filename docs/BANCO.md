@@ -171,10 +171,10 @@ ids; não achou, vira `falhou` (nada saiu). Nunca reexecuta. Mudança de acesso 
 tem transação: vira `falhou` pedindo conferência em Equipe. Folhas/lotes
 continuam retornando resultados por item, sem promessa de all-or-nothing.
 
-O backend usa uma identidade compartilhada para operar várias contas; autorização
-por objeto é na API. RLS multi-tenant não foi inserido de forma superficial, pois
-pagamentos legítimos atravessam titulares. Uma futura defesa com RLS/funções
-restritas precisa preservar esses fluxos e evitar privilégios BYPASSRLS.
+O backend usa uma credencial compartilhada com contexto de titular assinado.
+A API valida a autorização por objeto e o PostgreSQL filtra saldos e extratos por
+RLS. Transferências recebem um escopo limitado às carteiras da operação após
+conferir a conta que autoriza o débito; a API não recebe BYPASSRLS.
 
 Segurança não tem garantia absoluta. Esta revisão acrescenta evidências e controles;
 pentest independente, validação de modelos biométricos, observabilidade e recuperação
@@ -285,3 +285,118 @@ ambas as auditorias antes de liberar tráfego. Um dump com ACLs antigas não dev
 reintroduzir permissões antigas em produção. Disco e backups precisam de criptografia
 e chaves controladas separadamente na infraestrutura; esta revisão não declara
 criptografia física do disco local nem provisiona recursos Azure.
+
+
+## Cifragem dos dados e contexto do titular
+
+Os dados cadastrais e conteúdos sensíveis definidos em
+`backend/app/db/dados_cifrados.py` usam envelopes Fernet autenticados: nome,
+CPF/CNPJ, e-mail, celular, nascimento, chaves Pix e conteúdos de documentos,
+pendências, descrições, registros de autenticação/auditoria e entregas de webhooks.
+A API decifra somente ao carregar o campo; o banco armazena `pii:v1:...`.
+Biometria e segredos de webhook mantêm suas chaves independentes.
+[Fernet/MultiFernet](https://cryptography.io/en/latest/fernet/) fornece cifragem
+com autenticação e leitura de chaves anteriores; o envelope vincula o conteúdo ao
+nome da coluna. Ele não vincula o ciphertext ao id da linha.
+
+CPF, e-mail, CNPJ, chave Pix e referências/IPs de controles de uso único têm
+índices HMAC com chave separada. Buscas por igualdade, unicidade e prevenção de
+replay usam essas colunas geradas/indexadas, preservando a cifragem aleatória.
+Hashes revelam igualdade entre valores do mesmo domínio; não são anonimização.
+Não usar busca textual, comparação de intervalo ou ordenação SQL dos campos
+cifrados. Ordenações autorizadas por nome são feitas após decifrar no servidor.
+
+As chaves `PII_KEYS`, `PII_INDEX_KEY` e `DATABASE_CONTEXT_KEY` são obrigatórias
+para operar o banco migrado. Gere cada uma separadamente com
+`Fernet.generate_key()`; não copie as chaves sintéticas dos testes. Guarde-as fora
+do Git, com acesso restrito. A chave de índice é estável e diferente das chaves de
+cifragem. Perder as chaves impede recuperar os dados, inclusive backups antigos.
+
+O PostgreSQL aplica RLS com `FORCE` em dispositivos, refresh tokens, desafios,
+documentos PF/PJ, funcionários, cartões e limites. Uma prova HMAC por transação,
+vinculada à conexão, id da transação e prazo curto, autoriza o titular validado
+pela API; trocar `SET astro.contexto` não cria uma prova válida. A chave privada
+fica em `astro_privado`, inacessível ao papel runtime. Reutilizar a prova em outra
+transação falha; `SET LOCAL` evita herdar a identidade pelo pool.
+[Políticas PostgreSQL](https://www.postgresql.org/docs/16/ddl-rowsecurity.html).
+
+Usuários e vínculos têm políticas adicionais de escrita para impedir que uma
+credencial SQL sem contexto crie administradores ou forje acesso empresarial.
+A consulta aos envelopes nessas duas tabelas continua permitida para autenticação,
+convites e busca de destinatários. Administradores internos e tarefas operacionais
+assinadas têm acesso amplo. Revogar um vínculo ativo impede ler os objetos internos
+PJ. A migração `f41b26ce0133` acrescenta `FORCE RLS` em carteiras, transações
+e histórico de saldo. Saldo só pode ser alterado com escopo financeiro assinado;
+o ledger admite a contraparte apenas na sessão que registra a operação.
+`astro_destinatario(integer,text,text,text,integer)` retorna somente identificação
+da conta, sem saldo, para Pix, comprovantes e folha. O escopo fica na sessão SQL,
+sem mudar o contexto da requisição ou passar para outra conexão do pool.
+Comprometer o processo da API e suas chaves ainda permite forjar contextos;
+RLS não elimina esse risco.
+Cadastros sem titular usam o id do caso criado pelo servidor no contexto assinado;
+eles não recebem leitura dos demais casos anônimos. A função restrita
+`astro_documento_usado(text)` preserva a detecção global de repetição das imagens,
+mas devolve só existência, sem campos do documento. Sem prova de contexto ela
+retorna falso. Isto não autentica a identidade perante um emissor.
+
+### Atualizar banco existente
+
+1. Pare a API e os workers que escrevem no banco. Crie um backup cifrado, preserve
+   as chaves e teste sua restauração em banco isolado.
+2. Com `DATABASE_ADMIN_URL`, execute `python scripts/proteger_acesso_banco.py`.
+   Ele provisiona o esquema privado para o migrador sem conceder criação de
+   esquemas à API. Em volume novo, `infra/postgres/init-roles.sh` faz o bootstrap.
+3. Carregue as chaves no ambiente privado do job. Com `DATABASE_URL` e
+   `DATABASE_MIGRATION_URL` apontando para o dono das tabelas, execute:
+
+```sh
+cd backend
+alembic upgrade head
+python scripts/cifrar_webhooks.py
+python scripts/cifrar_dados_pessoais.py
+python scripts/configurar_isolamento.py
+python scripts/restringir_runtime.py
+alembic check
+```
+
+4. Usando a credencial runtime e as mesmas chaves, execute
+   `python scripts/auditar_runtime.py` e `python scripts/verificar_banco.py`.
+   Confira contagens, valores decifrados, saldos e trilha em relação ao backup.
+5. Reinicie a API e teste cadastro, login, Pix fictício e acesso negado entre contas.
+
+A conversão de dados roda numa transação, em lotes de 500. A suspensão do gatilho
+imutável dos logs só é feita pelo dono durante a troca de representação; ele é
+reativado antes do commit. Falha de cifragem/autenticação reverte os dados e o DDL.
+A migração de cifragem recusa downgrade automático. Recuperação exige restauração
+explícita do backup, incluindo chaves e configuração compatíveis.
+
+### Rotação
+
+Com API/workers parados, defina `PII_KEYS=nova,antiga`, mantenha `PII_INDEX_KEY`,
+rode `cifrar_dados_pessoais.py`, confira valores e unicidade, e só então remova a
+chave antiga da API. Preserve-a enquanto houver backups que dependam dela.
+Trocar `PII_INDEX_KEY` exige reconstrução controlada dos índices; o script recusa
+ciphertext cujo índice não autentica. Para trocar `DATABASE_CONTEXT_KEY`, pare os
+processos, atualize o segredo na API e rode `configurar_isolamento.py` com o migrador
+antes de reiniciar. Nenhuma chave fica disponível em endpoints ou logs.
+
+Pix e documentos continuam uma simulação, sem consultar identidade real ou
+liquidar perante bancos. Use dados fictícios. Esta etapa não cria recursos Azure,
+não declara ausência de vulnerabilidades e não configura criptografia física do
+volume/disco, rotação automática ou retenção externa de backups.
+
+No Docker local, a API publica `127.0.0.1:8000`. O app deve usar
+`VITE_API_URL=http://127.0.0.1:8000`; `DOCKER_API_ORIGEM` configura a mesma origem
+para DPoP, e `DOCKER_HTTP_HOSTS` limita os hosts aceitos. Não reutilize a origem
+da API nativa local (`8765`) ao alternar para o Compose.
+
+
+### Depósito fictício e reenvios
+
+`POST /pagamentos/depositar-demo` aceita `Idempotency-Key` ou
+`idempotency_key` no corpo. Se ambos existirem, devem coincidir. A chave é
+separada por conta de destino e tipo de operação. Repetir chave e valor devolve
+a mesma transação; mudar o valor devolve 409. Clientes antigos sem chave não
+recebem garantia de reenvio idempotente. A interface mantém a intenção após
+falha de rede, bloqueia envios simultâneos e limpa o formulário ao trocar de
+conta. Esta intenção dura enquanto a tela permanece montada.

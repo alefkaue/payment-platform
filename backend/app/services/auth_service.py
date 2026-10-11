@@ -31,6 +31,7 @@ from fastapi import HTTPException
 
 from app.core import dpop, security, tempo
 from app.core.config import get_settings
+from app.db.isolamento import autorizar_usuario, permitir_desafio
 from app.repositories.repository import Repositorio
 
 logger = logging.getLogger("payflow.auth")
@@ -43,21 +44,20 @@ def _hash_falso() -> str:
     return security.hash_senha(secrets.token_urlsafe(16))
 
 
-def _checar_rate_limit(repo: Repositorio, ref: str, ip: str | None) -> None:
+def _reservar_login(repo: Repositorio, ref: str, ip: str | None, usuario_id: int | None) -> int:
     s = get_settings()
-    desde = tempo.agora() - timedelta(minutes=s.login_janela_min)
-    # Por conta + IP: quem erra a senha de alguém trava a si mesmo, não a vítima.
-    # Por conta (todos os IPs, teto maior): senha distribuída por muitos IPs também para.
-    # As duas ficam na trilha da própria pessoa.
-    por_ip = ip is not None and repo.contar_eventos(tipo="login", desde=desde, referencia=ref, ip=ip) >= s.login_max_tentativas
-    if por_ip or repo.contar_eventos(tipo="login", desde=desde, referencia=ref) >= s.login_max_tentativas_conta:
-        alvo = repo.obter_usuario_por_login(ref)
-        if alvo:
-            repo.registrar_log(ator=ref, acao="login_bloqueado_tentativas", ip=ip, usuario_id=alvo["id"])
+    limites = [(s.login_max_tentativas_conta, {"referencia": ref})]
+    if ip is not None:
+        limites += [(s.login_max_tentativas, {"referencia": ref, "ip": ip}),
+                    (s.login_max_tentativas_ip, {"ip": ip})]
+    reserva = repo.reservar_verificacao(tipo="login", janela_min=s.login_janela_min,
+                                      limites=limites, referencia=ref, ip=ip, usuario_id=usuario_id)
+    if reserva is None:
+        if usuario_id is not None:
+            repo.registrar_log(ator=ref, acao="login_bloqueado_tentativas", ip=ip, usuario_id=usuario_id)
         raise HTTPException(status_code=429, detail="Muitas tentativas de login. Tente novamente em alguns minutos.",
                             headers={"Retry-After": str(s.login_janela_min * 60)})
-    if ip and repo.contar_eventos(tipo="login", desde=desde, ip=ip) >= s.login_max_tentativas_ip:
-        raise HTTPException(status_code=429, detail="Muitas tentativas de login a partir desta rede. Tente mais tarde.")
+    return reserva
 
 
 def _checar_admin(ip: str | None) -> None:
@@ -76,16 +76,16 @@ def autenticar(repo: Repositorio, *, email: str, senha: str, ip: str | None = No
     # E-mail e CPF (pontuado ou não) são aliases da mesma identidade. Não
     # permitem contornar o rate limit alternando a forma de login.
     ref = usuario["email"] if usuario else identificador
-    _checar_rate_limit(repo, ref, ip)
+    reserva = _reservar_login(repo, ref, ip, usuario["id"] if usuario else None)
     ok = False
     if usuario and usuario["ativo"]:
         ok = security.verificar_senha(senha, usuario["senha_hash"])
     else:
         security.verificar_senha(senha, _hash_falso())  # tempo parecido
+    repo.concluir_verificacao(reserva, sucesso=ok)
     if not ok:
-        repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=ref, ip=ip,
-                                  usuario_id=usuario["id"] if usuario else None)
         raise HTTPException(status_code=401, detail="E-mail/CPF ou senha inválidos.")
+    autorizar_usuario(usuario["id"])
     if security.precisa_rehash(usuario["senha_hash"]):
         # Migração transparente bcrypt -> Argon2id (ou parâmetros novos).
         repo.atualizar_senha_hash(usuario["id"], security.hash_senha(senha))
@@ -150,6 +150,7 @@ def _usuario_do_mfa(repo: Repositorio, mfa_token: str, dispositivo_hash: str | N
     if repo.contar_eventos(tipo="mfa_usado", desde=tempo.agora() - timedelta(hours=1), sucesso=True,
                            referencia=payload["jti"]):
         raise HTTPException(status_code=401, detail="Esta etapa de verificação já foi usada. Entre de novo.")
+    autorizar_usuario(int(payload["sub"]))
     usuario = repo.obter_usuario_por_id(int(payload["sub"]))
     if not usuario or not usuario["ativo"]:
         raise HTTPException(status_code=401, detail="Conta inativa.")
@@ -235,14 +236,14 @@ def concluir_login_totp(repo: Repositorio, *, mfa_token: str, codigo: str, ip: s
         raise HTTPException(status_code=401, detail="Etapa de verificação inválida. Entre de novo.")
     _checar_admin(ip)
     ref = usuario["email"]
-    _checar_rate_limit(repo, ref, ip)  # código errado conta como erro de login
+    reserva = _reservar_login(repo, ref, ip, usuario["id"])
     passo = totp.passo_do_codigo(segredo, codigo, _relogio())
     usado = f"totp:{usuario['id']}:{passo}"
     if passo is None or not repo.registrar_sessao_mfa(tipo="mfa_usado", sucesso=True, referencia=usado,
                                                       usuario_id=usuario["id"], ip=ip):
-        repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=ref, ip=ip, usuario_id=usuario["id"],
-                                  detalhe={"etapa": "totp"})
+        repo.concluir_verificacao(reserva, sucesso=False, detalhe={"etapa": "totp"})
         raise HTTPException(status_code=401, detail="Código inválido ou já usado. Use o próximo código do app.")
+    repo.concluir_verificacao(reserva, sucesso=True, detalhe={"etapa": "totp"})
     if not repo.registrar_sessao_mfa(tipo="mfa_usado", sucesso=True, referencia=payload["jti"],
                                      usuario_id=usuario["id"], ip=ip):
         raise HTTPException(status_code=401, detail="Esta etapa de verificação já foi usada. Entre de novo.")
@@ -315,6 +316,7 @@ def renovar(repo: Repositorio, *, refresh_token: str, ip: str | None = None, dis
     if jkt_sessao != jkt or (jkt_sessao is None and get_settings().dpop_obrigatorio):
         raise HTTPException(status_code=401, detail="Esta sessão pertence a outro aparelho. Entre de novo.")
     _checar_limites_da_sessao(payload)
+    autorizar_usuario(int(payload["sub"]))
     registro = repo.obter_refresh(security.hash_refresh(refresh_token))
     if not registro:
         raise HTTPException(status_code=401, detail="Sessão não reconhecida.")
@@ -352,10 +354,10 @@ def trocar_senha(repo: Repositorio, *, usuario: dict, senha_atual: str, nova_sen
     if not u or not u["ativo"]:
         raise HTTPException(status_code=401, detail="Conta inativa.")
     # Errar a senha atual conta como erro de login: este caminho não dribla o limite.
-    _checar_rate_limit(repo, u["email"], ip)
-    if not security.verificar_senha(senha_atual, u["senha_hash"]):
-        repo.registrar_sessao_mfa(tipo="login", sucesso=False, referencia=u["email"], ip=ip, usuario_id=u["id"],
-                                  detalhe={"etapa": "troca_senha"})
+    reserva = _reservar_login(repo, u["email"], ip, u["id"])
+    senha_correta = security.verificar_senha(senha_atual, u["senha_hash"])
+    repo.concluir_verificacao(reserva, sucesso=senha_correta, detalhe={"etapa": "troca_senha"})
+    if not senha_correta:
         raise HTTPException(status_code=401, detail="Senha atual incorreta.")
     if nova_senha == senha_atual:
         raise HTTPException(status_code=400, detail="A nova senha precisa ser diferente da atual.")
@@ -370,9 +372,15 @@ def trocar_senha(repo: Repositorio, *, usuario: dict, senha_atual: str, nova_sen
 
 def _checar_limite_recuperacao(repo: Repositorio, ref: str, ip: str | None) -> None:
     s = get_settings()
-    desde = tempo.agora() - timedelta(hours=1)
-    if (ip and repo.contar_eventos(tipo="recuperacao", desde=desde, sucesso=None, ip=ip) >= s.recuperacao_max_ip_hora) \
-            or repo.contar_eventos(tipo="recuperacao", desde=desde, sucesso=None, referencia=ref) >= s.recuperacao_max_conta_hora:
+    # Reservas independentes contam também pedidos em andamento, antes de gerar
+    # token/desafio. Uma recusa por conta pode consumir a reserva do IP: a chamada
+    # aconteceu e não devolvemos orçamento a quem insiste numa conta limitada.
+    por_ip = ip and not repo.consumir_orcamento(tipo="recuperacao_reserva_ip", ip=ip,
+                                               maximo=s.recuperacao_max_ip_hora, janela_min=60)
+    por_conta = False if por_ip else not repo.consumir_orcamento(
+        tipo="recuperacao_reserva_conta", referencia=ref, ip=ip,
+        maximo=s.recuperacao_max_conta_hora, janela_min=60)
+    if por_ip or por_conta:
         raise HTTPException(status_code=429, detail="Muitos pedidos de recuperação. Tente novamente mais tarde.",
                             headers={"Retry-After": "3600"})
 
@@ -398,6 +406,7 @@ def iniciar_recuperacao(repo: Repositorio, *, login: str, data_nascimento, ip: s
         repo.registrar_log(ator=ref, acao="recuperacao_senha_pedida", ip=ip, usuario_id=usuario["id"])
     token, _, exp = security.criar_recuperacao_token(alvo, dispositivo_hash=dispositivo_hash, jkt=jkt)
     # Desafio de CADASTRO (todas as ações, embaralhadas): mais forte que o do login.
+    permitir_desafio(alvo)
     desafio = biometria_service.criar_desafio(repo, usuario_id=alvo, modo="cadastro")
     return {"recuperacao_token": token, "expira_em": exp, "desafio": desafio}
 
@@ -418,6 +427,8 @@ def concluir_recuperacao(repo: Repositorio, *, recuperacao_token: str, prova, no
     if payload.get("dev") != dispositivo_hash or dpop.jkt_do_token(payload) != jkt:
         raise HTTPException(status_code=401, detail="Conclua a recuperação no mesmo aparelho em que ela começou.")
     usuario_id = security.usuario_da_recuperacao(payload)
+    if usuario_id:
+        autorizar_usuario(usuario_id)
     usuario = repo.obter_usuario_por_id(usuario_id) if usuario_id else None
     if not usuario or not usuario["ativo"]:
         raise HTTPException(status_code=401, detail=_RECUPERACAO_RECUSADA)
@@ -446,6 +457,7 @@ def logout(repo: Repositorio, *, refresh_token: str, jkt: str | None = None) -> 
     jkt_sessao = dpop.jkt_do_token(payload)
     if jkt_sessao != jkt or (jkt_sessao is None and get_settings().dpop_obrigatorio):
         raise HTTPException(status_code=401, detail="Esta sessão pertence a outro aparelho.")
+    autorizar_usuario(int(payload["sub"]))
     if payload.get("sid"):
         repo.revogar_sessao(int(payload["sub"]), payload["sid"])
     else:

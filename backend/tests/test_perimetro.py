@@ -39,7 +39,7 @@ def test_isca_nao_trava_cliente_e_log_tem_teto(caplog):
 
 def test_limite_requisicoes_nao_confia_xff_e_recupera():
     agora = [0.0]
-    with TestClient(criar(requisicoes_minuto=2, relogio=lambda: agora[0])) as c:
+    with TestClient(criar(requisicoes_minuto=2, relogio=lambda: agora[0]), client=('127.0.0.1', 123)) as c:
         assert c.get('/eco').status_code == 200
         assert c.get('/eco').status_code == 200
         resp = c.get('/eco', headers={'X-Forwarded-For': '8.8.8.8'})
@@ -136,3 +136,27 @@ def test_envio_lento_ou_memoria_liberam_reserva(modo, esperado):
         assert respostas == []
     else:
         assert respostas[0]['status'] == esperado
+
+
+@pytest.mark.parametrize('caminho', ['/admin/database', '/api/internal/users',
+                                      '/backup/astro.dump', '/actuator/env'])
+def test_novas_iscas_nao_chamam_aplicacao_nem_leem_corpo(caminho):
+    async def proibido(*args):
+        raise AssertionError('A isca não deve acessar aplicação ou corpo.')
+    respostas = []
+    async def send(msg):
+        respostas.append(msg)
+    scope = {'type': 'http', 'method': 'POST', 'path': caminho.upper() + '/',
+             'query_string': b'token=segredo', 'headers': [],
+             'client': ('127.0.0.1', 123), 'server': ('testserver', 80), 'scheme': 'http'}
+    asyncio.run(PerimetroHTTP(proibido, limite=20)(scope, proibido, send))
+    assert respostas[0]['status'] == 404
+    assert b'segredo' not in respostas[1]['body']
+
+
+
+def test_prontidao_publica_nao_contorna_limite():
+    with TestClient(criar(requisicoes_minuto=2), client=('203.0.113.7', 123)) as c:
+        assert c.get('/pronto').status_code == 200
+        assert c.get('/pronto').status_code == 200
+        assert c.get('/pronto').status_code == 429

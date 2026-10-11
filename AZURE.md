@@ -8,7 +8,7 @@ Infra em `infra/azure/main.bicep`, deploy contínuo em `.github/workflows/azure.
 Regras do teste para os outros grupos: `PENTEST.md`. Contexto: `SEGURANCA.md` item 9.
 
 ```
-Internet ──► Front Door Standard + WAF (rate limit) ──► Container Apps (API, dentro da VNet)
+Internet ──► Front Door Premium + WAF + Private Link ──► Container Apps (API privada, dentro da VNet)
                                                            │ identidade gerenciada (sem senha)
 Static Web Apps (app web de testes + /baixar)              ├─► Key Vault (JWT, Fernet, admin, banco)
 APK Android (CI) ──► Front Door                            ├─► Container Registry (imagem)
@@ -68,8 +68,8 @@ cd backend
 No shell (não salve em arquivo do repositório):
 
 ```sh
-export JWT_SECRET=... EMBEDDING_KEY=... ADMIN_SENHA=... PG_SENHA=... PG_APP_SENHA=...
-SEGREDOS="jwtSecret=$JWT_SECRET embeddingKey=$EMBEDDING_KEY adminSenha=$ADMIN_SENHA pgSenha=$PG_SENHA pgAppSenha=$PG_APP_SENHA"
+export JWT_SECRET=... EMBEDDING_KEY=... WEBHOOK_KEYS=... ADMIN_SENHA=... PG_SENHA=... PG_APP_SENHA=...
+SEGREDOS="jwtSecret=$JWT_SECRET embeddingKey=$EMBEDDING_KEY webhookKeys=$WEBHOOK_KEYS adminSenha=$ADMIN_SENHA pgSenha=$PG_SENHA pgAppSenha=$PG_APP_SENHA"
 ```
 
 ## 3. Deploy da infra (dois passos)
@@ -161,4 +161,45 @@ a recusar a atestação de um APK assinado por outra chave (reempacotado).
 - `curl -s <apiUrl>/docs` → 404 (Swagger desligado em produção).
 - 40 `POST <apiUrl>/auth/login` seguidos → o WAF passa a responder 429/403 depois do 30º no minuto.
 - No portal, Postgres → Rede: "Acesso público: Desabilitado".
-- Key Vault → Segredos: 4 itens; a identidade `id-astro-api` só tem "Key Vault Secrets User".
+- Key Vault → Segredos: conferir também as chaves de dados e contexto; a identidade `id-astro-api` só tem "Key Vault Secrets User".
+
+
+A chave `WEBHOOK_KEYS` deve ser Fernet, exclusiva de webhooks e guardada no cofre.
+O job migrador precisa recebê-la e executar `scripts/cifrar_webhooks.py` após
+`alembic upgrade head`, antes de liberar a API. A API de produção recusa registros
+legados em texto puro. Para rotação, forneça `nova,antiga`, execute o script com
+a API parada, valide as entregas e só depois remova a chave antiga. Preserve as
+chaves necessárias aos backups. A revisão Bicep ainda precisa ser compilada e
+validada no ambiente Azure antes do deploy.
+
+
+## Preparação para demonstração pública
+
+A implantação ainda não foi feita. `demonstracaoPublica=true` é o padrão do
+Bicep: habilita depósitos fictícios e documentos opcionais, mantendo
+`AMBIENTE=producao`, DPoP, TLS, chaves separadas, privilégios mínimos e recusa
+de biometria stub. O app mostra que valores/documentos são simulados. Use dados
+fictícios; isto não autentica documentos nem liquida Pix perante bancos reais.
+
+A origem foi preparada com acesso público desabilitado e conexão Private Link
+pelo Front Door Premium. No deploy futuro, a conexão deve ser aprovada no
+ambiente Container Apps e o acesso direto deve falhar. O SKU Premium e Private
+Link têm custos adicionais; nenhuma contratação ou criação de recurso ocorreu.
+Ver [fluxo oficial da Microsoft](https://learn.microsoft.com/en-us/azure/container-apps/front-door-custom-virtual-network-private-link).
+O Bicep ainda precisa de compilação, what-if e testes no ambiente definitivo;
+a presença desses campos no arquivo não comprova o bloqueio da origem real.
+
+
+## Chaves e migração antes de uma implantação futura
+
+O template também recebe os parâmetros seguros `piiKeys`, `piiIndexKey` e
+`databaseContextKey`, com referências a segredos do Key Vault. Gere cada chave
+separadamente. Não copie valores de testes nem deixe parâmetros reais em arquivos
+versionados ou no histórico do shell. O job isolado deve receber essas chaves e
+executar a sequência de migração/cifragem/contexto/ACLs de [BANCO.md](docs/BANCO.md),
+com a API parada, antes de liberar tráfego. O administrador provisiona o esquema
+`astro_privado` para `astro_migrator`; a API não recebe esse papel.
+
+A configuração foi preparada em código; não houve criação de recursos nem deploy.
+O Bicep continua exigindo compilação, what-if e conferência de segredos/rede no
+ambiente definitivo. O Docker usa as mesmas três chaves via `.env.docker`.

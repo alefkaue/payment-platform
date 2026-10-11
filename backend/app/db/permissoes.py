@@ -29,3 +29,5 @@ def privilegios_tabela(nome: str) -> tuple[str, ...]:
     if nome in TABELAS_DELETE:
         permitidos.append('DELETE')
     return tuple(permitidos)
+
+FUNCOES_RUNTIME = frozenset({'astro_contexto()', 'astro_documento_usado(text)', 'astro_destinatario(integer,text,text,text,integer)'})

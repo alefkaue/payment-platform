@@ -199,19 +199,8 @@ def analisar_documento_empresa(*, tipo: str, arquivo_b64: str, cnpj: str) -> dic
 
 
 def _texto_pdf(bruto: bytes) -> str:
-    import io
-
-    from pypdf import PdfReader
-
-    try:
-        leitor = PdfReader(io.BytesIO(bruto))
-        if len(leitor.pages) > 50:
-            raise HTTPException(status_code=413, detail="PDF com páginas demais (máximo 50).")
-        return "\n".join((p.extract_text() or "") for p in leitor.pages[:50])
-    except HTTPException:
-        raise
-    except Exception:  # noqa: BLE001 - PDF malformado
-        raise HTTPException(status_code=400, detail="PDF inválido ou corrompido.")
+    from app.core.arquivos import extrair_texto_pdf
+    return extrair_texto_pdf(bruto)
 
 
 # =============================================================================

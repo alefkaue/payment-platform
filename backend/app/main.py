@@ -171,7 +171,8 @@ for r in (auth, contas, identidade, biometria, pagamentos, cobrancas, beneficios
 
 @app.get("/")
 def raiz():
-    return {"status": "ok", "servico": "astro", "versao": "9.0"}
+    return {"status": "ok", "servico": "astro", "versao": "9.0",
+            "modo": "simulacao", "dinheiro_real": False, "autenticidade_documental": False}
 
 
 @app.get("/saude")
@@ -191,3 +192,6 @@ def pronto():
 app.add_middleware(PerimetroHTTP, limite=_LIMITE_CORPO,
                    requisicoes_minuto=settings.http_requisicoes_minuto,
                    hosts=settings.http_hosts_lista, producao=settings.em_producao)
+
+from app.db.isolamento import ContextoBanco
+app.add_middleware(ContextoBanco)

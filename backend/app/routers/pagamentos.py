@@ -146,14 +146,17 @@ def tabela_transicao():
 
 
 class DepositoDemoRequest(BaseModel):
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=80)
     valor: Decimal = Field(..., gt=0, le=Decimal("10000"), decimal_places=2)
 
 
 @router.post("/depositar-demo", response_model=TransacaoResponse)
 def depositar_demo(dados: DepositoDemoRequest, usuario: dict = Depends(usuario_atual),
                    conta: dict = Depends(conta_atual), repo: Repositorio = Depends(get_repo),
-                   ip: str | None = Depends(ip_cliente)):
+                   ip: str | None = Depends(ip_cliente),
+                   chave_header: str | None = Depends(chave_idempotencia)):
     """Só em demonstração (DEPOSITO_DEMO=1): coloca dinheiro de teste na conta em uso."""
     if not get_settings().deposito_demo:
         raise HTTPException(status_code=403, detail="Depósito de demonstração desligado neste servidor.")
-    return pagamento_service.depositar(repo, admin=usuario, destino=conta, valor=dados.valor, ip=ip)
+    return pagamento_service.depositar(repo, admin=usuario, destino=conta, valor=dados.valor, ip=ip,
+        idempotency_key=escolher_chave(chave_header, dados.idempotency_key))

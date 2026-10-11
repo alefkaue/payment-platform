@@ -126,5 +126,5 @@ def test_banco_recusa_documento_ou_celular_fora_do_formato(cliente, campo, valor
     from sqlalchemy.exc import IntegrityError, DataError
     a = Pessoa(cliente, 'canonico@ex.com')
     with SessionLocal() as s, pytest.raises((IntegrityError, DataError)):
-        s.execute(text(f'UPDATE usuarios SET {campo} = :valor WHERE email = :email'), {'valor':valor, 'email':a.email})
+        s.execute(text(f'UPDATE usuarios SET {campo} = :valor WHERE id = :id'), {'valor':valor, 'id':s.scalar(select(Usuario.id).where(Usuario.email == a.email))})
         s.commit()

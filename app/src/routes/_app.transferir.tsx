@@ -1,7 +1,7 @@
 import { useFecharAoVoltar, BotaoFinanceiro } from "@/lib/mobile";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Clock, ScanFace } from "lucide-react";
 import { consultarCobranca, consultarDestino, pagarCobranca, transferir } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -53,6 +53,14 @@ function TransferirConta() {
   const [pendente, setPendente] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const enviando = useRef(false);
+  const ativo = useRef(true);
+  useEffect(() => {
+    ativo.current = true;
+    return () => {
+      ativo.current = false;
+    };
+  }, []);
   const [intencao] = useState(criarIntencaoPagamento);
   const [chave, setChave] = useState("");
   const [modoCobranca, setModoCobranca] = useState(false);
@@ -96,7 +104,8 @@ function TransferirConta() {
   }
 
   async function enviar(prova: ProvaBiometrica | null) {
-    if (!info || (!info.destino && !cobranca)) return;
+    if (enviando.current || !info || (!info.destino && !cobranca)) return;
+    enviando.current = true;
     setErro(null);
     setLoading(true);
     try {
@@ -109,15 +118,18 @@ function TransferirConta() {
             idempotency_key: chave,
           });
       intencao.concluir();
+      if (!ativo.current) return;
       setLiveness(false);
       setInfo(null);
       qc.invalidateQueries();
       if (r.tipo === "pendente") setPendente(r.mensagem);
       else nav({ to: "/comprovante/$id", params: { id: String(r.transacao.id) } });
     } catch (err) {
+      if (!ativo.current) return;
       setErro((err as Error).message);
       if (prova) throw err;
     } finally {
+      enviando.current = false;
       setLoading(false);
     }
   }
@@ -167,6 +179,7 @@ function TransferirConta() {
             <input
               type="checkbox"
               checked={modoCobranca}
+              disabled={loading}
               onChange={(e) => setModoCobranca(e.target.checked)}
             />
             Pagar cobrança pelo identificador (txid)

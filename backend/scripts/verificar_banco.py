@@ -27,6 +27,14 @@ CONSULTAS = {
 
 
 def verificar(connection):
+    if connection.dialect.name == "postgresql" and connection.scalar(text(
+            "SELECT to_regprocedure('public.astro_contexto()') IS NOT NULL")):
+        # Uma leitura filtrada ou vazia não prova a integridade global.
+        autorizado = connection.scalar(text("""SELECT public.astro_contexto()->>'modo'='sistema'
+            OR EXISTS(SELECT 1 FROM usuarios u WHERE u.id=(public.astro_contexto()->>'usuario_id')::integer
+                AND u.ativo AND u.papel::text='ADMIN')"""))
+        if not autorizado:
+            raise RuntimeError("Conciliação global exige contexto de sistema ou administrador.")
     resultado = {nome: connection.scalar(text(sql)) for nome, sql in CONSULTAS.items()}
     resultado["integro"] = all(v == 0 for v in resultado.values())
     return resultado
@@ -39,6 +47,10 @@ if __name__ == "__main__":
     with engine.connect() as connection, connection.begin():
         if engine.dialect.name == "postgresql":
             connection.execute(text("SET TRANSACTION READ ONLY"))
+        from pathlib import Path
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        from app.db.isolamento import aplicar_contexto
+        aplicar_contexto(connection)
         resultado = verificar(connection)
     print(json.dumps(resultado, default=str, ensure_ascii=False))
     sys.exit(0 if resultado["integro"] else 1)

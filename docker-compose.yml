@@ -23,12 +23,16 @@ services:
   migrate:
     build: ./backend
     environment:
+      WEBHOOK_KEYS: ${WEBHOOK_KEYS:?defina WEBHOOK_KEYS}
+      PII_KEYS: ${PII_KEYS:?defina PII_KEYS}
+      PII_INDEX_KEY: ${PII_INDEX_KEY:?defina PII_INDEX_KEY}
+      DATABASE_CONTEXT_KEY: ${DATABASE_CONTEXT_KEY:?defina DATABASE_CONTEXT_KEY}
       AMBIENTE: desenvolvimento
       DATABASE_URL: postgresql+psycopg2://astro_migrator:${DATABASE_MIGRATION_PASSWORD:?defina DATABASE_MIGRATION_PASSWORD}@db:5432/${POSTGRES_DB:-payflow}
       DATABASE_MIGRATION_URL: postgresql+psycopg2://astro_migrator:${DATABASE_MIGRATION_PASSWORD:?defina DATABASE_MIGRATION_PASSWORD}@db:5432/${POSTGRES_DB:-payflow}
     networks: [banco]
     entrypoint: [/bin/sh, -ec]
-    command: ['alembic upgrade head && python scripts/restringir_runtime.py']
+    command: ['alembic upgrade head && python scripts/cifrar_webhooks.py && python scripts/cifrar_dados_pessoais.py && python scripts/configurar_isolamento.py && python scripts/restringir_runtime.py']
     depends_on:
       db:
         condition: service_healthy
@@ -41,6 +45,12 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+psycopg2://astro_app:${DATABASE_APP_PASSWORD:?defina DATABASE_APP_PASSWORD}@db:5432/${POSTGRES_DB:-payflow}
+      WEBHOOK_KEYS: ${WEBHOOK_KEYS:?defina WEBHOOK_KEYS}
+      PII_KEYS: ${PII_KEYS:?defina PII_KEYS}
+      PII_INDEX_KEY: ${PII_INDEX_KEY:?defina PII_INDEX_KEY}
+      DATABASE_CONTEXT_KEY: ${DATABASE_CONTEXT_KEY:?defina DATABASE_CONTEXT_KEY}
+      DPOP_ORIGEM_PUBLICA: ${DOCKER_API_ORIGEM:-http://127.0.0.1:8000}
+      HTTP_HOSTS: ${DOCKER_HTTP_HOSTS:-localhost,127.0.0.1}
       RUN_MIGRATIONS: '0'
     depends_on:
       migrate:

@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from sqlalchemy import create_engine, inspect, text
-from app.db.permissoes import TABELAS_RUNTIME, COLUNAS_UPDATE, privilegios_tabela
+from app.db.permissoes import TABELAS_RUNTIME, COLUNAS_UPDATE, privilegios_tabela, FUNCOES_RUNTIME
 
 
 def restringir(connection):
@@ -45,6 +45,9 @@ def restringir(connection):
     for schema, sequencia, tabela in sequencias:
         if tabela in TABELAS_RUNTIME:
             connection.execute(text(f'GRANT USAGE, SELECT ON SEQUENCE {preparador.quote(schema)}.{preparador.quote(sequencia)} TO astro_app'))
+    for assinatura in sorted(FUNCOES_RUNTIME):
+        if connection.scalar(text("SELECT to_regprocedure(:assinatura) IS NOT NULL"), {'assinatura': 'public.'+assinatura}):
+            connection.execute(text(f"GRANT EXECUTE ON FUNCTION public.{assinatura} TO astro_app"))
     # Novos objetos não ficam acessíveis até este script aprová-los.
     connection.execute(text('ALTER DEFAULT PRIVILEGES REVOKE ALL ON TABLES FROM astro_app, PUBLIC'))
     connection.execute(text('ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM astro_app, PUBLIC'))

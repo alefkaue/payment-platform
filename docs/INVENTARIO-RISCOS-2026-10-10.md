@@ -11,7 +11,39 @@ estrangeiras. Essa contagem não representa cobertura integral de segurança.
 O [OWASP ASVS](https://owasp.org/projects/asvs) é uma referência para ampliar a
 verificação de controles, não uma certificação obtida pelo projeto.
 
-## Novas falhas reproduzidas nesta etapa
+## Atualização em 11/10/2026
+
+O objetivo atual é uma simulação: não há dinheiro real nem autenticação documental
+perante emissor. API e interface informam essa condição. Azure não foi criada ou
+implantada. O relatório atual está em [TRATAMENTO-RISCOS-2026-10-11.md](TRATAMENTO-RISCOS-2026-10-11.md).
+O complemento desta rodada está em [PENDENCIAS-RISCOS-2026-10-11.md](PENDENCIAS-RISCOS-2026-10-11.md).
+Cifragem, isolamento e preservação dos dados: [CIFRAGEM-ISOLAMENTO-2026-10-11.md](CIFRAGEM-ISOLAMENTO-2026-10-11.md).
+As seções de execução e resultado de 10/10 abaixo são históricas.
+
+| Risco | Tratamento atual | Limitação restante |
+|---|---|---|
+| R01/R15/R18 | Simulação declarada na API/interface; produção não aprova automaticamente autenticidade documental | Não autentica documentos nem liquida Pix real; histórico não foi reclassificado |
+| R02 | Segredos de webhook e dados pessoais cifrados; migração, rotação e restauração verificadas | Dados cadastrais e conteúdos sensíveis agora cifrados; valores financeiros/metadados continuam visíveis onde necessários; comprometimento do host com chaves permite leitura |
+| R03 | RLS em 8 grupos de objetos internos; escrita de usuários/vínculos exige contexto assinado; privilégios e conciliação conferidos | Carteiras/ledger não têm RLS integral; tarefas de sistema e comprometimento da API/chaves conservam alcance amplo |
+| R04/R11 | Controles existentes preservados; stub facial continua proibido em produção | Resistência a ataques físicos e artefato nativo em aparelhos exigem validação |
+| R05 | Template preparado com origem privada, Front Door Premium e regras WAF gerenciadas | Sem compilação Bicep ou implantação; aprovação da conexão privada e validação operacional pendentes |
+| R06/R13 | Backups e logs brutos antigos conhecidos cifrados; arquivos/chaves com permissões restritas | Chaves no mesmo host; retenção, disco e cofre definitivo ainda exigem operação |
+| R07 | Doze alterações sensíveis têm registro mínimo de auditoria na mesma transação | Outras ações e identificação completa do ator ainda dependem da trilha complementar |
+| R08 | Corrigida isenção indevida de limite em prontidão acessada externamente | Limite geral continua por processo; defesa distribuída não foi validada |
+| R09 | Excesso concorrente confirmado; orçamento atômico em cadastro, refresh, recuperação, desafio facial e consulta Pix; reservas de verificações em andamento para senha, troca de senha, TOTP e rosto | Etapas complementares e limite HTTP distribuído ainda exigem avaliação; reservas abandonadas ocupam a janela |
+| R10 | Validação e extração de PDF em processo separado com timeout, quotas Linux e limite de concorrência | OCR e demais bibliotecas nativas não estão completamente isolados |
+| R12 | Controles CSP/DPoP preservados e dependências verificadas | Script malicioso executando na origem pode agir como a sessão |
+| R14 | Backup novo cifrado e leitura verificada; conciliação sem desvios | Restauração em banco descartável verificada nesta etapa; RPO/RTO e desastre definitivo pendentes |
+| R16 | Auditoria semanal e SBOM frontend preparados; audit local sem avisos, SBOM com 588 componentes | Workflow ainda não publicado; imagem, OS e APK não auditados integralmente |
+| R17 | Exposição em produção bloqueada no boot, inclusive na demonstração pública | Funcionalidade exige revisão própria antes de qualquer futura habilitação |
+
+Validação da primeira etapa de 11/10: SQLite 616 passaram/45 pulados; PostgreSQL 632 passaram/29
+pulados em bancos descartáveis; privilégios/migrações 28 passaram; app 258
+passaram/2 pulados. TypeScript, lint dos arquivos alterados, build HTTPS,
+auditoria de privilégios e conciliação passaram. Migração ea27104b9910 aplicada
+no banco local; demais tabelas preservadas. Esses conjuntos têm sobreposição.
+
+## Novas falhas reproduzidas em 10/10
 
 | Falha | Evidência | Correção |
 |---|---|---|
@@ -57,7 +89,7 @@ REVISAO-COMPLEMENTAR-2026-10-10.md e REVISAO-SEGURANCA-BANCO-2026-10-10.md
 detalham os cenários. A coluna de evidências não indica teste de todos os ataques
 possíveis daquele grupo.
 
-## Riscos conhecidos e verificações ainda abertas
+## Registro histórico dos riscos em 10/10 (estado atual na atualização acima)
 
 Prioridade é de preparação para produção, sem atribuição de CVSS e sem alegar
 que todas as situações abaixo permitem exploração externa neste momento.
@@ -84,8 +116,8 @@ que todas as situações abaixo permitem exploração externa neste momento.
 | R18 | Alta | Histórico de aprovações anteriores não foi reclassificado pela nova política de documentos | Promover um banco de demonstração/legado pode carregar aprovações obtidas sem autenticação documental | Separar bancos de teste/produção e revisar a proveniência das aprovações antes de liberar usuários reais |
 
 R02/R03 são limitações arquiteturais confirmadas, não provas de que um visitante
-sem credenciais consegue acessar o banco. R09 é uma hipótese identificada por
-leitura de código, sem exploração confirmada. R04/R05/R06/R11/R14 são lacunas de
+sem credenciais consegue acessar o banco. R09 era uma hipótese em 10/10; foi reproduzido e parcialmente tratado em
+11/10, conforme a atualização acima. R04/R05/R06/R11/R14 são lacunas de
 validação. Não é correto marcar essas situações como corrigidas por testes locais.
 
 O [PostgreSQL distingue privilégios de tabela e políticas por linha](https://www.postgresql.org/docs/16/ddl-rowsecurity.html).
@@ -112,7 +144,7 @@ O catálogo deve ser atualizado a cada alteração de fluxo, dependência e depl
 A conclusão adequada é que existem controles testados e riscos documentados;
 não que o aplicativo ou o banco estejam invulneráveis.
 
-## Resultados da execução ampliada
+## Resultados históricos da execução ampliada em 10/10
 
 - Backend completo em SQLite: 555 passaram, 44 pulados.
 - Backend completo em PostgreSQL: 570 passaram, 29 pulados. Os 599 casos
@@ -138,7 +170,7 @@ As contagens de SQLite/PostgreSQL/permissões contêm cenários em comum e não
 devem ser somadas como número de ataques distintos testados. As auditorias de
 dependências são instantâneos das versões consultadas, não garantias futuras.
 
-## Resultado
+## Resultado histórico de 10/10
 
 Cartão: ampliar o conhecimento de falhas do aplicativo e do banco solicitado
 pelo usuário.

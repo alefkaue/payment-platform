@@ -8,13 +8,19 @@ on:
   push:
     paths:
       - "backend/**"
+      - "app/package.json"
+      - "app/package-lock.json"
       - "infra/postgres/**"
       - ".github/workflows/backend.yml"
   pull_request:
     paths:
       - "backend/**"
+      - "app/package.json"
+      - "app/package-lock.json"
       - "infra/postgres/**"
   workflow_dispatch: {}
+  schedule:
+    - cron: "23 6 * * 1"
 
 permissions:
   contents: read
@@ -58,7 +64,7 @@ jobs:
           TEST_DATABASE_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
         run: python -m pytest -q -rs
 
-      - name: Migrações sobem e descem no Postgres
+      - name: Migrações preservam dados e recusam downgrade inseguro
         env:
           DATABASE_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
           JWT_SECRET: somente-ci-somente-ci-somente-ci-32
@@ -66,7 +72,10 @@ jobs:
         run: |
           psql "postgresql://astro:somente-ci@localhost:5432/astro_teste" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"
           alembic upgrade head
-          alembic downgrade -1
+          if alembic downgrade -1; then
+            echo "Downgrade de segurança deveria ser recusado."
+            exit 1
+          fi
           alembic upgrade head
           alembic check   # schema das migrações == modelos
 
@@ -79,6 +88,9 @@ jobs:
           POSTGRES_DB: astro_teste
           DATABASE_APP_PASSWORD: runtime-somente-ci
           DATABASE_MIGRATION_PASSWORD: migracao-somente-ci
+          PII_KEYS: Hx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8fHx8=
+          PII_INDEX_KEY: ICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICA=
+          DATABASE_CONTEXT_KEY: ISEhISEhISEhISEhISEhISEhISEhISEhISEhISEhISE=
           DATABASE_MIGRATION_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
           DATABASE_ADMIN_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
           TEST_ADMIN_DATABASE_URL: postgresql+psycopg2://astro:somente-ci@localhost:5432/astro_teste
@@ -86,10 +98,35 @@ jobs:
         run: |
           sh ../infra/postgres/init-roles.sh
           python scripts/proteger_acesso_banco.py
+          python scripts/cifrar_dados_pessoais.py
+          python scripts/configurar_isolamento.py
           python scripts/restringir_runtime.py
-          python -m pytest tests/test_migracoes_privilegios.py tests/test_acesso_runtime_postgres.py -q
+          python -m pytest tests/test_migracoes_privilegios.py tests/test_acesso_runtime_postgres.py tests/test_isolamento_titulares.py -q
           DATABASE_URL="$TEST_RUNTIME_DATABASE_URL" python scripts/auditar_runtime.py
           DATABASE_URL="$TEST_RUNTIME_DATABASE_URL" python scripts/verificar_banco.py
 
       - name: Vulnerabilidades conhecidas (pip-audit)
         run: pip-audit -r requirements.txt
+
+
+  dependencias_front:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: Vulnerabilidades conhecidas do frontend
+        run: npm audit --audit-level=low
+      - name: Inventário de dependências (CycloneDX)
+        run: npm sbom --sbom-format cyclonedx > sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-frontend
+          path: app/sbom.cdx.json

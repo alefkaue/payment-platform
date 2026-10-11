@@ -85,7 +85,7 @@ def _exigir_pf(conta: dict) -> None:
 
 def _nota_da_venda(repo: Repositorio, parceiro_carteira_id: int, valor: Decimal) -> tuple[str, Decimal, Decimal]:
     """O parceiro emite a nota da venda: CBS/IBS do ano corrente (regime padrão)."""
-    parceiro = repo.obter_conta(parceiro_carteira_id)
+    parceiro = repo.buscar_destinatario(parceiro_carteira_id)
     e = estimar(valor)
     return gerar_chave_nfe(parceiro["documento"]), e["cbs"], e["ibs"]
 

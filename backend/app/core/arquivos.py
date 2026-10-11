@@ -13,6 +13,10 @@ import binascii
 import hashlib
 import io
 import re
+import subprocess
+import sys
+import threading
+from pathlib import Path
 import time
 
 from fastapi import HTTPException
@@ -32,7 +36,7 @@ DOCUMENTOS = IMAGENS | {"application/pdf"}
 _PDF_ATIVO = (b"/JavaScript", b"/JS", b"/OpenAction", b"/Launch", b"/EmbeddedFile", b"/RichMedia", b"/XFA")
 
 
-def _validar_pdf(bruto: bytes) -> None:
+def _validar_pdf_local(bruto: bytes) -> None:
     """Nomes PDF aceitam escapes e objetos comprimidos: não basta buscar bytes."""
     from pypdf import PdfReader
     from pypdf.generic import ArrayObject, DictionaryObject, IndirectObject, NameObject
@@ -70,6 +74,63 @@ def _validar_pdf(bruto: bytes) -> None:
         raise
     except Exception:
         raise HTTPException(status_code=400, detail="PDF inválido ou corrompido.") from None
+
+
+_COMANDO_PDF = (sys.executable, "-m", "app.core.pdf_worker")
+_TEMPO_PDF = 5
+_VAGAS_PDF = threading.BoundedSemaphore(2)
+
+
+def _executar_pdf(bruto: bytes, *, texto: bool = False) -> bytes:
+    """Parser em processo descartável: prazo real, sem segredos no ambiente."""
+    if not _VAGAS_PDF.acquire(blocking=False):
+        raise HTTPException(status_code=503, detail="Análise de PDF ocupada. Tente novamente.")
+    try:
+        try:
+            comando = (*_COMANDO_PDF, "--texto") if texto else _COMANDO_PDF
+            resultado = subprocess.run(comando, input=bruto, stdout=subprocess.PIPE,
+                                       stderr=subprocess.DEVNULL, timeout=_TEMPO_PDF,
+                                       cwd=Path(__file__).resolve().parents[2],
+                                       env={"PYTHONNOUSERSITE": "1", "OMP_NUM_THREADS": "1"},
+                                       close_fds=True)
+        except subprocess.TimeoutExpired:
+            raise HTTPException(status_code=413, detail="PDF excedeu o tempo de análise.") from None
+        except OSError:
+            raise HTTPException(status_code=503, detail="Análise de PDF indisponível.") from None
+    finally:
+        _VAGAS_PDF.release()
+    if resultado.returncode != 0:
+        raise HTTPException(status_code=413, detail="PDF excedeu os recursos de análise.")
+    if len(resultado.stdout) > 262150:
+        raise HTTPException(status_code=413, detail="Texto do PDF excedeu o limite de análise.")
+    return resultado.stdout
+
+
+def _validar_pdf(bruto: bytes) -> None:
+    _conferir_resultado_pdf(_executar_pdf(bruto))
+
+
+def _conferir_resultado_pdf(saida: bytes) -> None:
+    estados = {b"ok": None, b"400": (400, "PDF inválido ou corrompido."),
+               b"413": (413, "PDF complexo demais para análise."),
+               b"415": (415, "PDF protegido ou com conteúdo ativo não é aceito.")}
+    estado = saida.strip()
+    if estado not in estados:
+        raise HTTPException(status_code=503, detail="Análise de PDF indisponível.")
+    if estados[estado] is not None:
+        status, detalhe = estados[estado]
+        raise HTTPException(status_code=status, detail=detalhe)
+
+
+def extrair_texto_pdf(bruto: bytes) -> str:
+    saida = _executar_pdf(bruto, texto=True)
+    if saida.startswith(b"texto:"):
+        try:
+            return saida[6:].decode("utf-8")
+        except UnicodeError:
+            raise HTTPException(status_code=400, detail="Texto do PDF inválido.") from None
+    _conferir_resultado_pdf(saida)
+    raise HTTPException(status_code=503, detail="Extração de PDF indisponível.")
 
 
 def detectar_mime(bruto: bytes) -> str | None:

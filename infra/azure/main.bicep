@@ -1,6 +1,6 @@
 // Astro — ambiente no Azure para o pentest (SEGURANCA.md item 9). Passo a passo em AZURE.md.
 //
-//   Internet ──► Front Door Standard + WAF (rate limit) ──► Container Apps (API, VNet)
+//   Internet ──► Front Door Premium + WAF + Private Link ──► Container Apps (API, VNet)
 //                                                                │  identidade gerenciada
 //            Static Web Apps (app, CSP)                          ├─► Key Vault (segredos, RBAC)
 //                                                                ├─► ACR (imagem)
@@ -29,6 +29,9 @@ param replicasMin int = 1
 
 param replicasMax int = 3
 
+@description('Demonstração pública com depósitos fictícios e documentos opcionais; controles de produção mantidos.')
+param demonstracaoPublica bool = true
+
 param adminEmail string = 'admin@astro.app'
 
 @description('Origens além do app web liberadas no CORS. https://localhost é o APK (Capacitor no Android).')
@@ -46,6 +49,20 @@ param jwtSecret string
 @description('Chave Fernet (44 caracteres base64).')
 @minLength(44)
 param embeddingKey string
+
+@secure()
+@description('Chaves Fernet exclusivas de webhook; atual primeiro, antigas separadas por vírgula.')
+@minLength(44)
+param webhookKeys string
+
+@secure()
+param piiKeys string
+
+@secure()
+param piiIndexKey string
+
+@secure()
+param databaseContextKey string
 
 @secure()
 @minLength(16)
@@ -194,7 +211,7 @@ resource kvLeitura 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 }
 
 // Os valores ficam só no cofre; a API recebe referências (secretRef) e lê pela identidade.
-var segredos = ['jwt-secret', 'embedding-key', 'admin-senha', 'database-url']
+var segredos = ['jwt-secret', 'embedding-key', 'webhook-keys', 'pii-keys', 'pii-index-key', 'database-context-key', 'admin-senha', 'database-url']
 
 resource kvJwt 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: kv
@@ -206,6 +223,30 @@ resource kvEmbedding 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: kv
   name: 'embedding-key'
   properties: { value: embeddingKey }
+}
+
+resource kvPii 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'pii-keys'
+  properties: { value: piiKeys }
+}
+
+resource kvPiiIndex 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'pii-index-key'
+  properties: { value: piiIndexKey }
+}
+
+resource kvDatabaseContext 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'database-context-key'
+  properties: { value: databaseContextKey }
+}
+
+resource kvWebhook 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
+  parent: kv
+  name: 'webhook-keys'
+  properties: { value: webhookKeys }
 }
 
 resource kvAdmin 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
@@ -231,7 +272,7 @@ resource front 'Microsoft.Web/staticSites@2023-12-01' = {
 }
 
 // ---------- API ----------
-resource ambiente 'Microsoft.App/managedEnvironments@2024-03-01' = {
+resource ambiente 'Microsoft.App/managedEnvironments@2025-07-01' = {
   name: 'cae-${nome}'
   location: local
   properties: {
@@ -244,8 +285,9 @@ resource ambiente 'Microsoft.App/managedEnvironments@2024-03-01' = {
     }
     vnetConfiguration: {
       infrastructureSubnetId: '${vnet.id}/subnets/api'
-      internal: false
+      internal: true
     }
+    publicNetworkAccess: 'Disabled'
     workloadProfiles: [{ name: 'Consumption', workloadProfileType: 'Consumption' }]
   }
 }
@@ -253,7 +295,7 @@ resource ambiente 'Microsoft.App/managedEnvironments@2024-03-01' = {
 resource fd 'Microsoft.Cdn/profiles@2024-02-01' = if (comApi) {
   name: 'afd-${nome}-${sufixo}'
   location: 'global'
-  sku: { name: 'Standard_AzureFrontDoor' }
+  sku: { name: 'Premium_AzureFrontDoor' }
 }
 
 resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
@@ -289,6 +331,9 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
           resources: { cpu: json('1.0'), memory: '2Gi' }
           env: [
             { name: 'AMBIENTE', value: 'producao' }
+            { name: 'DEMONSTRACAO_PUBLICA', value: demonstracaoPublica ? '1' : '0' }
+            { name: 'DEPOSITO_DEMO', value: demonstracaoPublica ? '1' : '0' }
+            { name: 'KYC_DOCUMENTO_OBRIGATORIO', value: demonstracaoPublica ? '0' : '1' }
             { name: 'DPOP_ORIGEM_PUBLICA', value: 'https://${fdEndpoint!.properties.hostName}' }
             { name: 'CNPJ_PROVEDOR', value: 'brasilapi' }
             { name: 'DOCUMENTO_PROVEDOR', value: 'tesseract' }
@@ -303,6 +348,10 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
             { name: 'RUN_MIGRATIONS', value: '0' }
             { name: 'JWT_SECRET', secretRef: 'jwt-secret' }
             { name: 'EMBEDDING_KEY', secretRef: 'embedding-key' }
+            { name: 'WEBHOOK_KEYS', secretRef: 'webhook-keys' }
+            { name: 'PII_KEYS', secretRef: 'pii-keys' }
+            { name: 'PII_INDEX_KEY', secretRef: 'pii-index-key' }
+            { name: 'DATABASE_CONTEXT_KEY', secretRef: 'database-context-key' }
             { name: 'ADMIN_SENHA', secretRef: 'admin-senha' }
           ]
           probes: [
@@ -329,22 +378,27 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
       scale: { minReplicas: replicasMin, maxReplicas: replicasMax }
     }
   }
-  dependsOn: [acrPull, kvLeitura, kvJwt, kvEmbedding, kvAdmin, kvBanco, pgDb]
+  dependsOn: [acrPull, kvLeitura, kvJwt, kvEmbedding, kvWebhook, kvPii, kvPiiIndex, kvDatabaseContext, kvAdmin, kvBanco, pgDb]
 }
 
 // ---------- Front Door + WAF na frente da API ----------
 resource waf 'Microsoft.Network/FrontDoorWebApplicationFirewallPolicies@2024-02-01' = if (comApi) {
   name: 'waf${nome}${sufixo}'
   location: 'Global'
-  sku: { name: 'Standard_AzureFrontDoor' }
+  sku: { name: 'Premium_AzureFrontDoor' }
   properties: {
     policySettings: {
       enabledState: 'Enabled'
       mode: 'Prevention'
       requestBodyCheck: 'Enabled'
     }
-    // O tier Standard não tem as regras gerenciadas (OWASP/bots, só no Premium);
-    // ficam os limites por IP. A API tem os próprios limites no banco (SEGURANCA.md item 4).
+    // A origem é privada; os limites não podem ser contornados pelo domínio ACA.
+    managedRules: {
+      managedRuleSets: [
+        { ruleSetType: 'Microsoft_DefaultRuleSet', ruleSetVersion: '2.1' }
+        { ruleSetType: 'Microsoft_BotManagerRuleSet', ruleSetVersion: '1.0' }
+      ]
+    }
     customRules: {
       rules: [
         {
@@ -416,6 +470,12 @@ resource fdOrigem 'Microsoft.Cdn/profiles/originGroups/origins@2024-02-01' = if 
     priority: 1
     weight: 1000
     enforceCertificateNameCheck: true
+    sharedPrivateLinkResource: {
+      privateLink: { id: ambiente.id }
+      privateLinkLocation: local
+      groupId: 'managedEnvironments'
+      requestMessage: 'Astro: origem privada autorizada para Front Door'
+    }
   }
 }
 

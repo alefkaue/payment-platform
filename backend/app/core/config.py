@@ -73,6 +73,12 @@ class Settings(BaseSettings):
     # Chave Fernet (urlsafe base64, 32 bytes). Ver core/security.py.
     embedding_key: str | None = Field(default=None, alias="EMBEDDING_KEY")
 
+    # Chaves Fernet de webhook: atual primeiro; anteriores apenas para leitura/rotação.
+    webhook_keys: str | None = Field(default=None, alias="WEBHOOK_KEYS")
+    pii_keys: str | None = Field(default=None, alias="PII_KEYS")
+    pii_index_key: str | None = Field(default=None, alias="PII_INDEX_KEY")
+    database_context_key: str | None = Field(default=None, alias="DATABASE_CONTEXT_KEY")
+
     # ---------- Segurança / limites ----------
     # Tamanho máximo da foto em bytes (base64 decodificado). Fecha o bug #4
     # (foto gigante trava o servidor). 5MB é folgado pra uma selfie de câmera.
@@ -264,6 +270,7 @@ class Settings(BaseSettings):
 
     # ---------- Ambiente ----------
     ambiente: str = Field(default="desenvolvimento", alias="AMBIENTE")
+    demonstracao_publica: bool = Field(default=False, alias="DEMONSTRACAO_PUBLICA")
 
     # ---------- Modo de teste da biometria ----------
     # Quando True, o DeepFace NÃO é chamado: o cadastro usa um embedding fixo e a
@@ -308,15 +315,15 @@ def get_settings() -> Settings:
             "BIOMETRIA_STUB não pode ser usado em produção -- é um modo de teste "
             "que aprova qualquer rosto. Desligue-o (BIOMETRIA_STUB=0)."
         )
-    if s.deposito_demo and s.em_producao:
+    if s.deposito_demo and s.em_producao and not s.demonstracao_publica:
         raise RuntimeError("DEPOSITO_DEMO não pode ser usado em produção (cria dinheiro do nada).")
     if s.split_demonstracao and s.em_producao:
         raise RuntimeError("SPLIT_DEMONSTRACAO não pode ser usado em produção (reteria imposto que não é devido).")
     if s.cnpj_provedor == "stub" and s.em_producao:
         raise RuntimeError("CNPJ_PROVEDOR=stub não pode ser usado em produção (aceita qualquer CNPJ).")
-    if s.documento_provedor == "stub" and s.em_producao:
+    if s.documento_provedor == "stub" and s.em_producao and not s.demonstracao_publica:
         raise RuntimeError("DOCUMENTO_PROVEDOR=stub não pode ser usado em produção (aceita o que foi declarado).")
-    if not s.kyc_documento_obrigatorio and s.em_producao:
+    if not s.kyc_documento_obrigatorio and s.em_producao and not s.demonstracao_publica:
         raise RuntimeError("KYC_DOCUMENTO_OBRIGATORIO=0 não pode ser usado em produção.")
     if not s.dpop_obrigatorio and s.em_producao:
         raise RuntimeError("DPOP_OBRIGATORIO=0 não pode ser usado em produção (token roubado voltaria a servir).")
@@ -336,6 +343,8 @@ def get_settings() -> Settings:
             raise RuntimeError("DPOP_ORIGEM_PUBLICA deve ser uma origem HTTP(S), sem caminho ou credenciais; produção exige HTTPS.")
     if s.em_producao and not s.dpop_origem_publica:
         raise RuntimeError("DPOP_ORIGEM_PUBLICA é obrigatória em produção (origem HTTPS externa da API).")
+    if s.beneficios_habilitados and s.em_producao:
+        raise RuntimeError("BENEFICIOS_HABILITADOS deve ser 0 em produção até a revisão de atomicidade e idempotência.")
     if s.em_producao:
         _conferir_producao(s)
     return s
@@ -363,6 +372,14 @@ def _conferir_producao(s: Settings) -> None:
         Fernet((s.embedding_key or "").encode())
     except (ValueError, TypeError):
         raise RuntimeError("EMBEDDING_KEY ausente ou não é uma chave Fernet válida -- use o Key Vault.") from None
+    from app.core.segredos_webhook import validar_chaves
+    validar_chaves(s.webhook_keys, proibidas=[s.embedding_key, s.jwt_secret])
+    from app.core.dados_pessoais import validar_configuracao
+    validar_configuracao(s)
+    if not s.database_context_key:
+        raise RuntimeError("DATABASE_CONTEXT_KEY é obrigatória em produção.")
+    if len(validar_chaves(s.database_context_key, proibidas=[s.jwt_secret, s.embedding_key, *(s.webhook_keys or "").split(","), *(s.pii_keys or "").split(","), s.pii_index_key])) != 1:
+        raise RuntimeError("DATABASE_CONTEXT_KEY exige uma chave exclusiva.")
     if not s.admin_senha or len(s.admin_senha) < 16:
         raise RuntimeError("ADMIN_SENHA ausente ou curta (mínimo 16 caracteres) -- use o Key Vault.")
     from app.core import totp

@@ -138,8 +138,46 @@ def test_api_cadastro_login_pix_devolucao_e_empresa_com_papel_restrito(runtime, 
             paga = cli.post(f"/cobrancas/{c['txid']}/pagar", headers=a.h(), json={})
             assert paga.status_code == 200, paga.text
             assert (paga.json()['liquido'], paga.json()['imposto_total']) == ('19.80', '0.20')
+            estorno = cli.post(f"/cobrancas/{c['txid']}/estornar", headers=b.h(n))
+            assert estorno.status_code == 200, estorno.text
+            assert a.saldo() == '90.00'
+            funcionario = cli.post('/empresas/atual/funcionarios', headers=b.h(n),
+                json={'nome':'Pessoa fictícia A', 'cpf':a.cpf, 'salario':'1.00'})
+            assert funcionario.status_code == 201, funcionario.text
+            assert funcionario.json()['conta_salario']['numero'] == a.numero
+            depositar(cli, n, 10)
+            folha = cli.post('/empresas/atual/folha/pagar', headers=b.h(n),
+                json={'itens':[{'funcionario_id':funcionario.json()['id']}], 'idempotency_key':'runtime-folha'})
+            assert folha.status_code == 200, folha.text
+            assert a.saldo() == '91.00'
+            from tests.helpers import login_completo,SENHA,QUADROS
+            tk=login_completo(cli,a.email,SENHA,a.dispositivo)
+            h={'X-Dispositivo-Id':a.dispositivo}
+            renovado=cli.post('/auth/refresh',json={'refresh_token':tk['refresh_token']},headers=h)
+            assert renovado.status_code==200,renovado.text
+            assert cli.post('/auth/refresh',json={'refresh_token':tk['refresh_token']},headers=h).status_code==401
+            assert cli.post('/auth/refresh',json={'refresh_token':renovado.json()['refresh_token']},headers=h).status_code==401
+            from app.core.dados_pessoais import cifrar
+            from datetime import date
+            admin=create_engine(os.environ['TEST_ADMIN_DATABASE_URL'],hide_parameters=True)
+            try:
+                with admin.begin() as conn:
+                    conn.execute(text('UPDATE usuarios SET data_nascimento=:d WHERE id=:id'),
+                        {'d':cifrar(date(1990,5,17),'usuarios.data_nascimento',formato='data'),'id':repo.obter_usuario_por_email(b.email)['id']})
+            finally:admin.dispose()
+            h={'X-Dispositivo-Id':'aparelho-recuperacao-runtime'}
+            recuperacao=cli.post('/auth/recuperacao',json={'login':b.cpf,'data_nascimento':'1990-05-17'},headers=h)
+            assert recuperacao.status_code==201,recuperacao.text
+            etapa=recuperacao.json()
+            payload={'recuperacao_token':etapa['recuperacao_token'],'nova_senha':'NovaSenhaFicticia-2026!',
+                     'biometria':{'desafio_id':etapa['desafio']['desafio_id'],'quadros':QUADROS}}
+            assert cli.post('/auth/recuperacao/concluir',json=payload,headers=h).status_code==204
+            assert cli.post('/auth/recuperacao/concluir',json=payload,headers=h).status_code==401
+            assert cli.get('/auth/eu',headers=b.h()).status_code==401
             assert cli.post('/auth/logout', json={'refresh_token': 'invalido'}).status_code == 204
         with runtime.connect() as conn:
+            from app.db.isolamento import aplicar_contexto
+            aplicar_contexto(conn)
             assert verificar(conn)['integro']
             conferir_permissoes(conn)
     finally:
@@ -164,3 +202,36 @@ def test_engine_aplica_timeouts_e_limite_de_pool(runtime, monkeypatch):
                 engine.connect()
     finally:
         engine.dispose()
+
+
+def test_reserva_e_resultado_sem_alterar_trilha_runtime(runtime):
+    from sqlalchemy.orm import sessionmaker
+    from app.repositories.repository import Repositorio
+    import secrets
+    repo = Repositorio(sessionmaker(bind=runtime))
+    referencia = 'teste-runtime-' + secrets.token_hex(12)
+    kwargs = dict(tipo='login', janela_min=15, limites=[(1, {'referencia': referencia})], referencia=referencia)
+    reserva = repo.reservar_verificacao(**kwargs)
+    assert reserva is not None
+    assert repo.reservar_verificacao(**kwargs) is None
+    repo.concluir_verificacao(reserva, sucesso=True)
+    segunda = repo.reservar_verificacao(**kwargs)
+    assert segunda is not None
+    repo.concluir_verificacao(segunda, sucesso=False)
+    repo.concluir_verificacao(segunda, sucesso=False)
+    assert repo.reservar_verificacao(**kwargs) is None
+
+
+
+def test_boot_recusa_runtime_dono_da_funcao_de_contexto(runtime,administrador):
+    with administrador.connect() as conn:
+        dono=conn.scalar(text("SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid='public.astro_contexto()'::regprocedure"))
+    try:
+        with administrador.begin() as conn:
+            conn.execute(text('ALTER FUNCTION public.astro_contexto() OWNER TO astro_app'))
+        with runtime.connect() as conn,pytest.raises(RuntimeError,match='rotinas'):
+            conferir_permissoes(conn)
+    finally:
+        q=administrador.dialect.identifier_preparer.quote
+        with administrador.begin() as conn:
+            conn.execute(text('ALTER FUNCTION public.astro_contexto() OWNER TO '+q(dono)))

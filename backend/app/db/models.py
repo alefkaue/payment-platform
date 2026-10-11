@@ -549,6 +549,7 @@ class SessaoMfa(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     usuario_id: Mapped[int | None] = mapped_column(ForeignKey("usuarios.id"), nullable=True)
     referencia: Mapped[str | None] = mapped_column(String(180), nullable=True, index=True)
+    reserva_id: Mapped[int | None] = mapped_column(ForeignKey("sessoes_mfa.id"), nullable=True, index=True)
     tipo: Mapped[str] = mapped_column(String(40), nullable=False)
     sucesso: Mapped[bool] = mapped_column(Boolean, nullable=False)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
@@ -668,7 +669,7 @@ class Webhook(Base):
     empresa_id: Mapped[int] = mapped_column(ForeignKey("empresas.id"), nullable=False, index=True)
     url: Mapped[str] = mapped_column(String(300), nullable=False)
     # Segredo para assinar o corpo (HMAC-SHA256). Mostrado só na criação.
-    segredo: Mapped[str] = mapped_column(String(80), nullable=False)
+    segredo: Mapped[str] = mapped_column(String(512), nullable=False)
     eventos: Mapped[list] = mapped_column(JSONTipo, nullable=False)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -805,3 +806,6 @@ from app.db.identidade_v1 import CHECKS_IDENTIDADE
 for _tabela, _regras in CHECKS_IDENTIDADE.items():
     for _nome, _sql in _regras:
         Base.metadata.tables[_tabela].append_constraint(CheckConstraint(_sql, name=_nome))
+
+from app.db.dados_cifrados import configurar_modelos
+configurar_modelos(Base.metadata)

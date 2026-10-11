@@ -14,6 +14,9 @@ def proteger(connection):
     connection.execute(text('REVOKE ALL ON SCHEMA public FROM PUBLIC, astro_app'))
     connection.execute(text('GRANT USAGE ON SCHEMA public TO astro_app'))
     connection.execute(text('GRANT USAGE, CREATE ON SCHEMA public TO astro_migrator'))
+    connection.execute(text('CREATE SCHEMA IF NOT EXISTS astro_privado AUTHORIZATION astro_migrator'))
+    connection.execute(text('ALTER SCHEMA astro_privado OWNER TO astro_migrator'))
+    connection.execute(text('REVOKE ALL ON SCHEMA astro_privado FROM PUBLIC, astro_app'))
     elevados = connection.scalar(text("SELECT rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls FROM pg_roles WHERE rolname = 'astro_app'"))
     if elevados is None or elevados:
         raise RuntimeError('astro_app ausente ou com atributos administrativos. Corrija com o administrador antes de prosseguir.')

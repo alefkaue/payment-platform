@@ -50,7 +50,9 @@ backend, crie `app/.env` com `VITE_API_URL=http://localhost:8000`.
 **Docker (backend + Postgres)**: copie `.env.example` para `.env` e
 `.env.docker.example` para `.env.docker`, preencha os segredos e rode
 `docker compose --env-file .env.docker up --build`. Banco, migração e API têm
-credenciais separadas. Veja [estrutura e operação do banco](docs/BANCO.md).
+credenciais separadas. Preencha também `WEBHOOK_KEYS`, `PII_KEYS`, `PII_INDEX_KEY` e
+`DATABASE_CONTEXT_KEY` em `.env.docker` (cada uma gerada separadamente). A migração
+cifra os dados antes de iniciar a API. Veja [estrutura e operação do banco](docs/BANCO.md).
 
 Sem permissão de administrador para instalar o Node? Veja a seção "Node sem
 administrador" no [HANDOFF.md](HANDOFF.md#node-sem-administrador).

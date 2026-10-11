@@ -29,8 +29,10 @@ def test_runtime_tem_dml_e_nao_tem_ddl_nem_alteracao_de_trilhas():
                                split=sem_split(Decimal("10")), tipo="deposito", auth_metodo=AuthMetodo.SISTEMA,
                                permitir_saldo_negativo=True)
     repo.registrar_log(ator="teste", acao="teste_privilegios")
+    with repo._sf() as s:
+        assert s.scalar(text("SELECT count(*) FROM historico_saldo WHERE transacao_id = :id"), {"id": t["id"]}) == 2
     with engine.connect() as conn:
-        assert conn.scalar(text("SELECT count(*) FROM historico_saldo WHERE transacao_id = :id"), {"id": t["id"]}) == 2
+        assert conn.scalar(text("SELECT count(*) FROM historico_saldo")) == 0
     for sql in (
         "CREATE TABLE public.teste_ddl_proibido(id int)",
         "UPDATE public.historico_saldo SET motivo = 'adulterado'",

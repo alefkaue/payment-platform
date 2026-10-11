@@ -117,11 +117,14 @@ def confiar_dispositivo(repo: Repositorio, *, usuario: dict, dispositivo: dict |
     return d
 
 
-def checar_rate_limit_biometria(repo: Repositorio, usuario_id: int) -> None:
+def checar_rate_limit_biometria(repo: Repositorio, usuario_id: int, ip: str | None = None) -> int:
     s = get_settings()
-    desde = tempo.agora() - timedelta(minutes=s.biometria_janela_min)
-    if repo.contar_eventos(tipo="biometria", desde=desde, usuario_id=usuario_id) >= s.biometria_max_tentativas:
-        raise HTTPException(status_code=429, detail="Muitas tentativas de verificação facial. Tente novamente em alguns minutos.")
+    reserva = repo.reservar_verificacao(tipo="biometria", janela_min=s.biometria_janela_min,
+        limites=[(s.biometria_max_tentativas, {"usuario_id": usuario_id})], usuario_id=usuario_id, ip=ip)
+    if reserva is None:
+        raise HTTPException(status_code=429, detail="Muitas tentativas de verificação facial. Tente novamente em alguns minutos.",
+                            headers={"Retry-After": str(s.biometria_janela_min * 60)})
+    return reserva
 
 
 def verificar_rosto(repo: Repositorio, *, usuario: dict, prova, ip: str | None, tipo: str) -> dict:
@@ -129,19 +132,18 @@ def verificar_rosto(repo: Repositorio, *, usuario: dict, prova, ip: str | None, 
     aprovação, pagamento de cobrança e confirmação de aparelho."""
     if prova is None:
         raise HTTPException(status_code=400, detail="Esta operação exige verificação facial (envie `biometria`).")
-    checar_rate_limit_biometria(repo, usuario["id"])
     blob = repo.obter_embedding_cifrado(usuario["id"])
     template = security.decifrar_embedding(blob) if blob else None
     if template is None:
         raise HTTPException(status_code=400, detail="Sua conta não tem biometria cadastrada. Operação bloqueada.")
+    reserva = checar_rate_limit_biometria(repo, usuario["id"], ip)
     try:
         v = biometria_service.verificar(repo, prova, usuario_id=usuario["id"], template=template)
     except HTTPException as e:
-        if e.status_code == 401:
-            repo.registrar_sessao_mfa(tipo="biometria", sucesso=False, usuario_id=usuario["id"], ip=ip,
-                                      detalhe={"operacao": tipo, "motivo": e.detail})
+        repo.concluir_verificacao(reserva, sucesso=False, gravar_resultado=e.status_code == 401,
+                                  detalhe={"operacao": tipo, "status": e.status_code})
         raise
-    repo.registrar_sessao_mfa(tipo="biometria", sucesso=True, usuario_id=usuario["id"], ip=ip,
+    repo.concluir_verificacao(reserva, sucesso=True,
                               detalhe={"operacao": tipo, "similaridade": v.get("similaridade")})
     return v
 

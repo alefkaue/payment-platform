@@ -88,7 +88,22 @@ def conferir_runtime_producao() -> None:
     """Produção recusa permissões fora da política explícita de runtime."""
     from app.db.seguranca_runtime import conferir_permissoes
     with engine.connect() as connection:
+        from app.db.isolamento import aplicar_contexto
+        aplicar_contexto(connection)
         conferir_permissoes(connection)
+        if connection.scalar(text("SELECT public.astro_contexto() IS NOT NULL")) is not True:
+            raise RuntimeError("Contexto de isolamento do banco não autenticado.")
+        from app.db.dados_cifrados import CAMPOS, JSON_CAMPOS
+        from app.core.dados_pessoais import decifrar
+        for tabela, campos in CAMPOS.items():
+            nomes = ",".join(campos)
+            for row in connection.execute(text(f"SELECT {nomes} FROM {tabela}")).mappings():
+                for coluna, dominio in campos.items():
+                    formato = "data" if coluna == "data_nascimento" else ("json" if coluna in JSON_CAMPOS else "texto")
+                    decifrar(row[coluna], tabela+"."+coluna, dominio, formato)
+        from app.core.segredos_webhook import decifrar
+        for empresa_id, segredo in connection.execute(text("SELECT empresa_id, segredo FROM public.webhooks")):
+            decifrar(segredo, empresa_id)
 
 
 def banco_disponivel() -> bool:
@@ -97,3 +112,6 @@ def banco_disponivel() -> bool:
             return connection.scalar(text("SELECT 1")) == 1
     except Exception:
         return False
+
+# Instala o contexto transacional também para sessionmakers usados pelo repositório.
+from app.db import isolamento  # noqa: F401

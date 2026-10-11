@@ -964,6 +964,7 @@ export async function depositar(p: DepositarPayload): Promise<Transacao> {
       conferir();
       const t = await post<TransacaoApi>("/pagamentos/depositar-demo", {
         valor: p.valor.toFixed(2),
+        ...(p.idempotency_key ? { idempotency_key: p.idempotency_key } : {}),
       });
       conferir();
       return mapTransacao(t, c.carteira_id);

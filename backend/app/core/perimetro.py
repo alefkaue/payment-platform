@@ -19,7 +19,12 @@ from app.core import logs
 from app.deps import ip_cliente
 
 ISCAS = frozenset({"/.env", "/.git/config", "/wp-login.php", "/phpmyadmin",
-                   "/admin/backup.sql", "/api/debug", "/backup/database.sql"})
+                   "/admin/backup.sql", "/api/debug", "/backup/database.sql",
+                   "/admin/database", "/admin/export", "/admin/credentials",
+                   "/api/internal/users", "/api/internal/tokens", "/api/debug/config",
+                   "/backup/astro.dump", "/backup/latest.sql", "/database.sql",
+                   "/actuator/env", "/actuator/heapdump", "/server-status",
+                   "/.aws/credentials", "/.env.production", "/config/secrets.json"})
 METODOS = frozenset({"GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"})
 
 
@@ -103,8 +108,12 @@ class PerimetroHTTP:
                     vistos.add(nome)
             caminho = scope.get("path", "")
             # Sondas locais sem corpo não competem com clientes pelo balde do proxy.
-            sonda = caminho in {"/saude", "/pronto"} and scope["method"] in {"GET", "HEAD"}
             ip = ip_cliente(Request(scope)) or "desconhecido"
+            sem_corpo = not any(k.lower() == b"transfer-encoding" or
+                                (k.lower() == b"content-length" and v != b"0")
+                                for k, v in scope.get("headers", ()))
+            sonda = (ip in {"127.0.0.1", "::1"} and sem_corpo and
+                     caminho in {"/saude", "/pronto"} and scope["method"] in {"GET", "HEAD"})
             permitido = True if sonda else self._permitir(ip)
             if not permitido:
                 return await self._erro(send, 429, "Muitas requisições. Tente novamente.", request_id, True)

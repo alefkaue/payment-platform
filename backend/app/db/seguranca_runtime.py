@@ -97,10 +97,21 @@ def problemas_permissoes(connection) -> list[str]:
     if connection.scalar(text('''
         SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
         WHERE left(n.nspname, 3) <> 'pg_' AND n.nspname <> 'information_schema'
-          AND (has_function_privilege(current_user, p.oid, 'EXECUTE')
-               OR p.proowner = (SELECT oid FROM pg_roles WHERE rolname = current_user))
+          AND (p.proowner = (SELECT oid FROM pg_roles WHERE rolname = current_user)
+               OR (NOT (n.nspname='public' AND p.prosecdef AND ((p.proname='astro_contexto' AND p.pronargs=0 AND p.prorettype='jsonb'::regtype) OR (p.proname='astro_documento_usado' AND p.pronargs=1 AND p.proargtypes[0]='text'::regtype AND p.prorettype='boolean'::regtype) OR (p.oid=to_regprocedure('public.astro_destinatario(integer,text,text,text,integer)') AND p.prorettype='record'::regtype AND p.proretset)))
+                   AND has_function_privilege(current_user, p.oid, 'EXECUTE')))
     ''')):
         problemas.append('execução ou propriedade de rotinas da aplicação')
+    from app.db.isolamento import TABELAS_RLS
+    protegidas = connection.execute(text("SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relrowsecurity AND c.relforcerowsecurity")).scalars().all()
+    if not TABELAS_RLS <= set(protegidas):
+        problemas.append('isolamento por titular ausente')
+    if not connection.scalar(text("SELECT has_function_privilege(current_user,'public.astro_contexto()','EXECUTE')")):
+        problemas.append('verificação de contexto indisponível')
+    if not connection.scalar(text("SELECT has_function_privilege(current_user,'public.astro_documento_usado(text)','EXECUTE')")):
+        problemas.append('consulta de duplicidade indisponível')
+    if not connection.scalar(text("SELECT has_function_privilege(current_user,'public.astro_destinatario(integer,text,text,text,integer)','EXECUTE')")):
+        problemas.append('consulta restrita de destinatário indisponível')
     sequencias = connection.execute(text("""
         SELECT c.oid, n.nspname, c.relname, p.privilegio,
                has_sequence_privilege(current_user, c.oid, p.privilegio),

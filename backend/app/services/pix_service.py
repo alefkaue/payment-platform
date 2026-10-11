@@ -61,20 +61,20 @@ _NUMERO_CONTA = re.compile(r"^\d{8}-\d$")
 def resolver_chave(repo: Repositorio, chave: str) -> dict:
     """Chave Pix ou, como atalho, número de conta da agência 0001 ("12345678-9")."""
     if _NUMERO_CONTA.match(chave.strip()):
-        conta = repo.obter_conta_por_numero(chave.strip())
+        conta = repo.buscar_destinatario(numero=chave.strip())
         if conta and conta["titular_tipo"] != "SISTEMA":
             return conta
     for tipo, valor in candidatos(chave):
         carteira_id = repo.buscar_chave(tipo, valor)
         if carteira_id:
-            return repo.obter_conta(carteira_id)
+            return repo.buscar_destinatario(carteira_id)
     raise HTTPException(status_code=404, detail="Chave Pix não encontrada.")
 
 
 def resolver_destino(repo: Repositorio, destino) -> dict:
     if destino.chave:
         return resolver_chave(repo, destino.chave)
-    conta = repo.obter_conta_por_numero(destino.numero, destino.agencia or "0001")
+    conta = repo.buscar_destinatario(numero=destino.numero, agencia=destino.agencia or "0001")
     if not conta or conta["titular_tipo"] == "SISTEMA":
         raise HTTPException(status_code=404, detail="Conta de destino não encontrada.")
     return conta
@@ -82,10 +82,9 @@ def resolver_destino(repo: Repositorio, destino) -> dict:
 
 def consultar(repo: Repositorio, *, usuario: dict, chave: str, ip: str | None) -> dict:
     s = get_settings()
-    desde = tempo.agora() - timedelta(hours=1)
-    if repo.contar_eventos(tipo="consulta_chave", desde=desde, sucesso=None, usuario_id=usuario["id"]) >= s.consulta_chave_max_hora:
+    if not repo.consumir_orcamento(tipo="consulta_chave", usuario_id=usuario["id"], ip=ip,
+                                   maximo=s.consulta_chave_max_hora, janela_min=60):
         raise HTTPException(status_code=429, detail="Muitas consultas de chave. Tente de novo mais tarde.")
-    repo.registrar_sessao_mfa(tipo="consulta_chave", sucesso=True, usuario_id=usuario["id"], ip=ip)
     conta = resolver_chave(repo, chave)
     doc = conta["documento"] or ""
     return {

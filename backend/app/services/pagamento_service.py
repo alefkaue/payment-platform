@@ -386,7 +386,7 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
     payload = p["payload"]
     try:
         if p["tipo"] == "transferencia":
-            destino = repo.obter_conta(payload["destino_carteira_id"])
+            destino = repo.buscar_destinatario(payload["destino_carteira_id"])
             r = transferir(
                 repo, usuario=usuario, conta=conta, dispositivo=dispositivo, destino=destino,
                 valor=Decimal(payload["valor"]), descricao=payload.get("descricao"),
@@ -506,13 +506,17 @@ def liberar_bloqueios_vencidos(repo: Repositorio) -> dict:
 # =============================================================================
 
 
-def depositar(repo: Repositorio, *, admin: dict, destino: dict, valor: Decimal, ip: str | None) -> dict:
+def depositar(repo: Repositorio, *, admin: dict, destino: dict, valor: Decimal, ip: str | None,
+              idempotency_key: str | None = None) -> dict:
     caixa = repo.carteira_sistema("CAIXA")
-    t = repo.executar_movimento(
-        origem_id=caixa["carteira_id"], destino_id=destino["carteira_id"], split=sem_split(valor), tipo="deposito",
-        auth_metodo=AuthMetodo.SISTEMA, autor_usuario_id=admin["id"], permitir_saldo_negativo=True,
-        descricao="Depósito",
-    )
+    try:
+        t = repo.executar_movimento(
+            origem_id=caixa["carteira_id"], destino_id=destino["carteira_id"], split=sem_split(valor), tipo="deposito",
+            auth_metodo=AuthMetodo.SISTEMA, autor_usuario_id=admin["id"], permitir_saldo_negativo=True,
+            descricao="Depósito", idempotency_key=f"deposito:{destino['carteira_id']}:{idempotency_key}" if idempotency_key else None,
+        )
+    except IdempotenciaConflitanteError:
+        raise HTTPException(status_code=409, detail="Esta chave de idempotência já foi usada em outro depósito.") from None
     repo.registrar_log(ator=admin["email"], acao="deposito", ip=ip,
                        detalhe={"carteira_id": destino["carteira_id"], "valor": str(valor), "transacao_id": t["id"]})
     return t
