@@ -1,0 +1,14 @@
+# Mantém o contexto do build do front pequeno e sem lixo/segredo.
+node_modules
+dist
+android
+.output
+.vite
+**/.env
+**/.env.*
+!**/.env.example
+*.apk
+*.keystore
+*.jks
+*.p12
+.git

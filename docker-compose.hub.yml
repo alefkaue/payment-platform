@@ -1,0 +1,103 @@
+# Sobe os 3 containers PELAS IMAGENS DO DOCKER HUB (não builda nada localmente).
+# É o jeito mais fácil de outra pessoa (ou outro grupo) rodar o stack para testar/pentestar.
+#
+# Como usar:
+#   1) ./gerar-segredos.sh   (gera um .env.docker completo; modelo em .env.docker.hub.example)
+#   2) docker compose -f docker-compose.hub.yml --env-file .env.docker up -d
+#   3) App:  http://localhost:8080     API: http://localhost:8000
+#   Parar e apagar o banco:  docker compose -f docker-compose.hub.yml --env-file .env.docker down -v
+#
+# Roda em AMBIENTE=desenvolvimento (localhost, sem HTTPS). A MESMA imagem, em produção,
+# exige TLS no banco + HTTPS no CORS/DPoP (ver backend/app/core/config.py). Para produção,
+# use infra/azure (AZURE.md) ou um proxy reverso com TLS.
+name: astro-hub
+
+services:
+  # ── Banco: Postgres + papéis de privilégio mínimo (astro_app/astro_migrator) ──
+  db:
+    image: matheussousaavelino/payment-platform-db:latest
+    networks: [banco]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-payflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-payflow}
+      DATABASE_APP_PASSWORD: ${DATABASE_APP_PASSWORD:?defina DATABASE_APP_PASSWORD}
+      DATABASE_MIGRATION_PASSWORD: ${DATABASE_MIGRATION_PASSWORD:?defina DATABASE_MIGRATION_PASSWORD}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - payflow_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER:-payflow}\" -d \"$${POSTGRES_DB:-payflow}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # ── Migração: job de uma vez (Alembic + cifragem + isolamento). Credencial de DDL. ──
+  migrate:
+    image: matheussousaavelino/payment-platform-api:latest
+    networks: [banco]
+    environment:
+      AMBIENTE: desenvolvimento
+      DATABASE_URL: postgresql+psycopg2://astro_migrator:${DATABASE_MIGRATION_PASSWORD:?}@db:5432/${POSTGRES_DB:-payflow}
+      DATABASE_MIGRATION_URL: postgresql+psycopg2://astro_migrator:${DATABASE_MIGRATION_PASSWORD:?}@db:5432/${POSTGRES_DB:-payflow}
+      WEBHOOK_KEYS: ${WEBHOOK_KEYS:?}
+      PII_KEYS: ${PII_KEYS:?}
+      PII_INDEX_KEY: ${PII_INDEX_KEY:?}
+      DATABASE_CONTEXT_KEY: ${DATABASE_CONTEXT_KEY:?}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - alembic upgrade head
+        && python scripts/cifrar_webhooks.py
+        && python scripts/cifrar_dados_pessoais.py
+        && python scripts/configurar_isolamento.py
+        && python scripts/restringir_runtime.py
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── API: backend (usuário de app, sem privilégio de DDL, filesystem só leitura) ──
+  api:
+    image: matheussousaavelino/payment-platform-api:latest
+    ports:
+      - "127.0.0.1:8000:8000"
+    networks: [default, banco]
+    environment:
+      AMBIENTE: desenvolvimento
+      BIOMETRIA_STUB: "1"          # aprova qualquer rosto (demo; nunca em produção)
+      CNPJ_PROVEDOR: stub
+      DEPOSITO_DEMO: "1"           # botão Depositar coloca dinheiro de teste
+      DPOP_OBRIGATORIO: "0"        # relaxa DPoP no stack local
+      RUN_MIGRATIONS: "0"
+      DATABASE_URL: postgresql+psycopg2://astro_app:${DATABASE_APP_PASSWORD:?}@db:5432/${POSTGRES_DB:-payflow}
+      JWT_SECRET: ${JWT_SECRET:?}
+      EMBEDDING_KEY: ${EMBEDDING_KEY:?}
+      ADMIN_SENHA: ${ADMIN_SENHA:?}
+      WEBHOOK_KEYS: ${WEBHOOK_KEYS:?}
+      PII_KEYS: ${PII_KEYS:?}
+      PII_INDEX_KEY: ${PII_INDEX_KEY:?}
+      DATABASE_CONTEXT_KEY: ${DATABASE_CONTEXT_KEY:?}
+      CORS_ORIGINS: http://localhost:8080
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs: [/tmp]
+    restart: unless-stopped
+
+  # ── Front: SPA servido por nginx sem privilégio ──
+  app:
+    image: matheussousaavelino/payment-platform-app:latest
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on: [api]
+    restart: unless-stopped
+
+volumes:
+  payflow_db_data:
+
+networks:
+  banco:
+    internal: true   # banco sem saída para a internet; só a rede interna
