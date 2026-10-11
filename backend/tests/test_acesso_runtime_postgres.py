@@ -226,6 +226,7 @@ def test_reserva_e_resultado_sem_alterar_trilha_runtime(runtime):
 def test_boot_recusa_runtime_dono_da_funcao_de_contexto(runtime,administrador):
     with administrador.connect() as conn:
         dono=conn.scalar(text("SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid='public.astro_contexto()'::regprocedure"))
+        executavel=conn.scalar(text("SELECT has_function_privilege('astro_app','public.astro_contexto()','EXECUTE')"))
     try:
         with administrador.begin() as conn:
             conn.execute(text('ALTER FUNCTION public.astro_contexto() OWNER TO astro_app'))
@@ -235,3 +236,11 @@ def test_boot_recusa_runtime_dono_da_funcao_de_contexto(runtime,administrador):
         q=administrador.dialect.identifier_preparer.quote
         with administrador.begin() as conn:
             conn.execute(text('ALTER FUNCTION public.astro_contexto() OWNER TO '+q(dono)))
+            # ALTER OWNER pode remover a ACL do dono temporário. Restaurar o
+            # proprietário não repõe o GRANT explícito que a API tinha antes.
+            if executavel:
+                conn.execute(text('GRANT EXECUTE ON FUNCTION public.astro_contexto() TO astro_app'))
+    # Regressão independente da ordem da suíte: o teste não deixa a API sem acesso.
+    with runtime.connect() as conn:
+        conferir_permissoes(conn)
+        assert conn.scalar(text('SELECT public.astro_contexto()')) is None
