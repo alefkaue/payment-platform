@@ -1,84 +1,76 @@
-# ASTRO
+# ASTRO — plataforma de pagamentos PF/PJ
 
-Banco digital para pessoas e empresas, preparado para o **split de IBS/CBS** da
-Reforma Tributária (LC 214/2025): a empresa cobra com a nota fiscal e, no
-pagamento, a CBS e o IBS destacados na nota são separados e enviados ao Fisco.
+Banco digital (protótipo acadêmico) para pessoas e empresas, preparado para o **split de IBS/CBS** da
+Reforma Tributária (LC 214/2025): a empresa cobra com a nota fiscal e, no pagamento, a CBS e o IBS
+destacados na nota são separados e enviados ao Fisco.
 
-> Estado do projeto, decisões e próximos passos: **[HANDOFF.md](HANDOFF.md)**.
-> Plano de produto: [PLANO.md](PLANO.md).
+> ⚠️ **Protótipo acadêmico / ambiente de simulação** — não movimenta dinheiro real.
 
-## Pastas
+## Estrutura do repositório
+
+```
+payment-platform/
+├── app/          App (React + TypeScript + Vite/TanStack; vira Android via Capacitor)
+├── backend/      API FastAPI v9 (Python): contas PF/PJ, cobrança+split, Pix, biometria, limites
+├── site/         Site institucional + simulador de split (Next.js)
+├── infra/        Infraestrutura: Azure (bicep) e Postgres (papéis de privilégio mínimo)
+├── download/     Página de download do APK
+├── docs/         Documentação (ver índice abaixo)
+├── Dockerfile · docker-compose*.yml · render.yaml · gerar-segredos.sh
+└── README.md
+```
 
 | Pasta | O que é |
 |---|---|
-| `backend/` | API FastAPI v9 (Python): contas PF/PJ, cobrança com split, Pix, limites, biometria |
-| `app/` | **App Android** (Capacitor; interface em Vite/TanStack/React). A mesma interface sai como app web para testes |
-| `download/` | Página de download do APK (publicada em `/baixar` junto com o app web) |
+| `backend/` | API FastAPI: `routers/` → `services/` → `repositories/` → `db/` (ver [arquitetura](docs/arquitetura/HANDOFF-V9.md)) |
+| `app/` | App Android (Capacitor); a mesma interface sai como app web para testes |
 | `site/` | Site institucional com simulador de split (Next.js) |
+| `infra/` | Azure Container Apps + ACR + Key Vault (bicep) e init de papéis do Postgres |
+| `download/` | Página de download do APK |
 
-## Rodar rápido
+## Documentação — índice rápido
+- 📘 **Arquitetura & produto:** [`docs/arquitetura/`](docs/arquitetura/) — handoff, plano, endpoints, banco, cadastro, perímetro
+- 🔒 **Segurança:** [`docs/seguranca/`](docs/seguranca/) — SECURITY, SEGURANCA, SECURITY_AUDIT, THREAT_MODEL, PENTEST
+- ⚙️ **Operação / deploy:** [`docs/operacao/`](docs/operacao/) — AZURE, RODAR-NO-PC, COMO-RODAR-REMOTO
+- 🤖 **Colaboração com IAs:** [`docs/ia/`](docs/ia/)
+- 🗂️ **Histórico (relatórios/revisões datados):** [`docs/historico/`](docs/historico/)
+- 🔎 **Auditoria (conselho de personas):** [`docs/auditoria-personas/`](docs/auditoria-personas/)
 
-Para o pentest atual, abra o web em `<URL_WEB>`; o APK debug local é um alvo extra.
-O dono sobe API SQLite e web por dois túneis HTTPS conforme [COMO-RODAR-REMOTO.md](COMO-RODAR-REMOTO.md). Azure é o destino final, ainda não publicado.
+Índice detalhado em [`docs/README.md`](docs/README.md).
 
-**Backend para demo local** (SQLite, biometria em modo de teste):
+## Como rodar
 
+**Backend (demo local, SQLite, biometria em modo de teste):**
 ```bash
 cd backend
-python -m venv .venv
-.venv/Scripts/activate            # Linux/Mac: source .venv/bin/activate
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv/Scripts/activate
 pip install -r requirements.txt
-BIOMETRIA_STUB=1 uvicorn app.main:app --reload     # Swagger em http://127.0.0.1:8000/docs
-python -m pytest                                    # testes
+BIOMETRIA_STUB=1 uvicorn app.main:app --reload       # Swagger em http://127.0.0.1:8000/docs
+python -m pytest                                     # testes
 ```
+`BIOMETRIA_STUB=1` aprova qualquer rosto: só para demo, **nunca no pentest**.
 
-No PowerShell, defina a variável antes: `$env:BIOMETRIA_STUB="1"`.
-STUB aprova qualquer rosto: use apenas para demo, nunca no pentest. No ambiente do pentest,
-o admin é restrito a `127.0.0.1` por `ADMIN_IPS_PERMITIDOS` e fica fora do escopo remoto.
-
-**App**:
-
+**App:**
 ```bash
 cd app
 npm install
-npm run dev                        # http://localhost:8081
+npm run dev                                          # http://localhost:8081
 ```
+Sem `VITE_API_URL`, o app roda em **modo demonstração** (mocks). Para usar o backend, crie `app/.env`
+com `VITE_API_URL=http://localhost:8000`.
 
-Sem `VITE_API_URL` o app roda em **modo demonstração** (dados fictícios). Para usar o
-backend, crie `app/.env` com `VITE_API_URL=http://localhost:8000`.
-
-**Docker (backend + Postgres)**: copie `.env.example` para `.env` e
-`.env.docker.example` para `.env.docker`, preencha os segredos e rode
-`docker compose --env-file .env.docker up --build`. Banco, migração e API têm
-credenciais separadas. Preencha também `WEBHOOK_KEYS`, `PII_KEYS`, `PII_INDEX_KEY` e
-`DATABASE_CONTEXT_KEY` em `.env.docker` (cada uma gerada separadamente). A migração
-cifra os dados antes de iniciar a API. Veja [estrutura e operação do banco](docs/BANCO.md).
-
-Sem permissão de administrador para instalar o Node? Veja a seção "Node sem
-administrador" no [HANDOFF.md](HANDOFF.md#node-sem-administrador).
+**Docker (3 containers via imagens do Docker Hub):**
+```bash
+./gerar-segredos.sh
+docker compose -f docker-compose.hub.yml --env-file .env.docker up -d   # app :8080 · api :8000
+```
+O `docker-compose.yml` (build local, backend + Postgres + migração com credenciais separadas) também
+está disponível. Detalhes do banco em [`docs/arquitetura/BANCO.md`](docs/arquitetura/BANCO.md).
 
 ## Regras principais
-
-- **PJ tem o split.** (Loja, Viagens e pontos do PF estão arquivados: `BENEFICIOS_HABILITADOS=0`.)
-- **Transferência nunca tem imposto retido.** O split só acontece no pagamento de
-  uma **cobrança com nota fiscal**, e só para empresas do regime regular.
-- **Transição honesta do split** (LC 214/2025): 2026 é ano de teste — a cobrança mostra o
-  imposto destacado na nota, mas a empresa recebe o valor inteiro. A retenção começa em
-  `SPLIT_RETENCAO_DESDE` (padrão 2027-01-01). `SPLIT_DEMONSTRACAO=1` liga a retenção para
-  apresentação, com selo "Simulação" no app (proibido em produção).
-- Alíquotas seguem a **transição** 2026–2033 (2026: CBS 0,9% + IBS 0,1%; IBS
-  pleno só em 2033). Quando retém, o banco retém o que **a nota** diz.
-- Login é da **pessoa**; empresas são operadas por vínculo (papel + alçada), com
-  **dupla aprovação** acima da alçada.
-- Limites diurno/noturno, regra de **aparelho novo** do Banco Central, bloqueio
-  cautelar e contestação (MED) rodam no servidor.
-- Dinheiro trafega como **string decimal** (`"1500.00"`).
-- **Idempotência** nos fluxos de pagamento (Pix, cobrança, folha, lote, devolução,
-  pendências): header `Idempotency-Key` ou campo `idempotency_key`; o app gera uma chave
-  por intenção de pagamento. Reenvio devolve o resultado original. O depósito demo é uma exceção:
-  não tem idempotência nem teto cumulativo; no teste, gerar saldo próprio é permitido (até R$ 10.000 por chamada).
-- Segurança e auditoria: `SECURITY.md` (índice) e `relatorios/AUDITORIA-2-SEGURANCA.md`.
-- **Pentest**: web por `<URL_WEB>` como entrada principal; APK no emulador em `RODAR-NO-PC.md`.
-  Pinning só no APK do CI com API fixa; o APK local do túnel aceita só CAs do sistema.
-- Regras de teste: KYC pendente movimenta em desenvolvimento (em produção não); rosto × documento
-  é informativo; CNPJ/quadro societário é stub. Documento, rosto e CPF continuam únicos. Veja `PENTEST.md`.
+- **Split só no PJ**, e só no pagamento de **cobrança com nota fiscal** (transferência **nunca** retém imposto). Benefícios PF (loja/viagens/pontos) estão arquivados (`BENEFICIOS_HABILITADOS=0`).
+- **Transição honesta** (LC 214/2025): 2026 é ano-teste — a cobrança mostra o imposto destacado, mas a empresa recebe o valor inteiro; a retenção começa em `SPLIT_RETENCAO_DESDE` (padrão 2027-01-01). Alíquotas seguem a transição 2026–2033.
+- Login é da **pessoa**; empresas são operadas por **vínculo** (papel + alçada), com **dupla aprovação** acima da alçada.
+- Limites diurno/noturno, regra de **aparelho novo** (BCB), bloqueio cautelar e contestação (MED) rodam no servidor.
+- Dinheiro trafega como **string decimal** (`"1500.00"`). **Idempotência** nos fluxos de pagamento.
+- Segurança e auditoria: [`docs/seguranca/SECURITY.md`](docs/seguranca/SECURITY.md) · regras do pentest em [`docs/seguranca/PENTEST.md`](docs/seguranca/PENTEST.md).
