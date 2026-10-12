@@ -37,6 +37,10 @@ $astroParameters.imagem = @{value=$Imagem}
 $astroParameters.imagemFront = @{value=$ImagemFront}
 $astroParameters.habilitarBootstrap = @{value=[bool]$Bootstrap}
 $astroParameters.publicarApi = @{value=(-not [bool]$SomenteBootstrap)}
+$astroAddress = (Invoke-RestMethod -Uri 'https://api.ipify.org?format=json').ip
+$astroParsedAddress = $null
+if (-not [Net.IPAddress]::TryParse($astroAddress, [ref]$astroParsedAddress) -or $astroParsedAddress.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { throw 'IP publico IPv4 indisponivel; acesso aberto nao sera configurado.' }
+$astroParameters.ipsTeste = @{value=@($astroAddress + '/32')}
 $astroParameters.adminEmail = @{value=$astroAccount.user.name}
 $astroParameters.replicasMin = @{value=0}
 $astroParameters.replicasMax = @{value=1}

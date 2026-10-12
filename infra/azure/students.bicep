@@ -15,6 +15,9 @@ param pgMigradorSenha string
 
 param habilitarBootstrap bool = false
 param publicarApi bool = true
+@description('Redes autorizadas a testar; ingress nega as demais.')
+@minLength(1)
+param ipsTeste array
 
 @description('Imagem da API no ACR (ex.: acrastroxxxx.azurecr.io/astro-api:abc123). Vazio = 1º passo, sem API.')
 param imagem string = ''
@@ -304,6 +307,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi && publicarAp
         targetPort: 8000
         transport: 'auto'
         allowInsecure: false
+        ipSecurityRestrictions: [for (ip, indice) in ipsTeste: { name: 'teste-${indice}', action: 'Allow', ipAddressRange: ip }]
       }
       registries: [{ server: acr.properties.loginServer, identity: idApi.id }]
       secrets: [for s in segredos: {
@@ -392,7 +396,13 @@ resource front 'Microsoft.App/containerApps@2024-03-01' = if (!empty(imagemFront
     workloadProfileName: 'Consumption'
     configuration: {
       activeRevisionsMode: 'Single'
-      ingress: { external: true, targetPort: 8080, transport: 'http', allowInsecure: false }
+      ingress: {
+        external: true
+        targetPort: 8080
+        transport: 'http'
+        allowInsecure: false
+        ipSecurityRestrictions: [for (ip, indice) in ipsTeste: { name: 'teste-${indice}', action: 'Allow', ipAddressRange: ip }]
+      }
       registries: [{ server: acr.properties.loginServer, identity: idFront.id }]
     }
     template: {

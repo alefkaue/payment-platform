@@ -1,0 +1,64 @@
+name: Azure Students - iniciar ou pausar testes
+on:
+  workflow_dispatch:
+    inputs:
+      acao:
+        description: Retomar libera mais três dias; pausar preserva dados
+        required: true
+        default: pausar
+        type: choice
+        options: [pausar, retomar]
+  schedule:
+    - cron: '17 */6 * * *'
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: azure-students-operacao
+  cancel-in-progress: false
+jobs:
+  operacao:
+    if: vars.STUDENTS_OPS_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.STUDENTS_OPS_CLIENT_ID }}
+          tenant-id: ${{ vars.STUDENTS_TENANT_ID }}
+          subscription-id: ${{ vars.STUDENTS_SUBSCRIPTION_ID }}
+      - name: Controlar janela de testes sem apagar dados
+        env:
+          ACAO: ${{ inputs.acao }}
+          RG: rg-astro-academico
+          PG: pg-astro-aiznuxvyssyui
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$ACAO" ]; then
+            FIM=$(az group show -n "$RG" --query tags.testUntilUtc -o tsv)
+            if [ -z "$FIM" ]; then echo "Sem janela de testes: pausar por segurança."; ACAO=pausar
+            elif [ "$(date -u +%s)" -lt "$(date -u -d "$FIM" +%s)" ]; then echo "Janela de testes ainda ativa."; exit 0
+            else ACAO=pausar; fi
+          fi
+          if [ "$ACAO" = retomar ]; then
+            ESTADO=$(az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv)
+            if [ "$ESTADO" = Stopped ]; then az postgres flexible-server start -g "$RG" -n "$PG" --only-show-errors; fi
+            FIM=$(date -u -d '+3 days' +%Y-%m-%dT%H:%M:%SZ)
+            az group update -n "$RG" --set "tags.testUntilUtc=$FIM" -o none
+            for APP in astro-api astro-front; do
+              REVISAO=$(az containerapp show -g "$RG" -n "$APP" --query properties.latestRevisionName -o tsv)
+              az containerapp revision activate -g "$RG" -n "$APP" --revision "$REVISAO" -o none
+            done
+            echo "Testes retomados até $FIM. Aguarde partida a frio."
+          elif [ "$ACAO" = pausar ]; then
+            for APP in astro-api astro-front; do
+              mapfile -t REVISOES < <(az containerapp revision list -g "$RG" -n "$APP" --query '[?properties.active].name' -o tsv)
+              for REVISAO in "${REVISOES[@]}"; do
+                [ -z "$REVISAO" ] || az containerapp revision deactivate -g "$RG" -n "$APP" --revision "$REVISAO" -o none
+              done
+            done
+            ESTADO=$(az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv)
+            if [ "$ESTADO" = Ready ]; then az postgres flexible-server stop -g "$RG" -n "$PG" --only-show-errors; fi
+            echo "Computação pausada; armazenamento, ACR e rede podem continuar cobrando."
+          else echo "Ação inválida." >&2; exit 1; fi

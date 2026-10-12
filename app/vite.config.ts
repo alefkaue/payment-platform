@@ -22,6 +22,9 @@ function exigirApiEmProducao(mode: string) {
 
 const config: UserConfig = {
   server: { port: 8081 },
+  // Prerender usa preview local: endereço explícito evita divergência IPv4/IPv6
+  // entre o bind do servidor e o fetch do Node em builds Linux/Docker.
+  preview: { host: "127.0.0.1" },
   resolve: { dedupe: ["react", "react-dom", "@tanstack/react-router", "@tanstack/react-query"] },
   plugins: [
     tailwindcss(),
