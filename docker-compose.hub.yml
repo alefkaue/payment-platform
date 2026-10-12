@@ -10,12 +10,18 @@
 # Roda em AMBIENTE=desenvolvimento (localhost, sem HTTPS). A MESMA imagem, em produção,
 # exige TLS no banco + HTTPS no CORS/DPoP (ver backend/app/core/config.py). Para produção,
 # use infra/azure (AZURE.md) ou um proxy reverso com TLS.
+#
+# SEGURANÇA — imagens fixadas por DIGEST (@sha256), não por :latest: o pull é imutável e
+# verificável (garante que todo mundo roda exatamente a imagem revisada). Ao publicar uma
+# imagem nova, atualize o digest aqui:
+#   docker push .../payment-platform-<app|api|db>:latest   # anota o digest que ele imprime
+#   # ou:  docker buildx imagetools inspect .../payment-platform-app:latest
 name: astro-hub
 
 services:
   # ── Banco: Postgres + papéis de privilégio mínimo (astro_app/astro_migrator) ──
   db:
-    image: matheussousaavelino/payment-platform-db:latest
+    image: matheussousaavelino/payment-platform-db@sha256:e4aaa7db2827728a93d830c88390737da4066b57fd509d9f16707c26187bf3c4
     networks: [banco]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-payflow}
@@ -35,7 +41,7 @@ services:
 
   # ── Migração: job de uma vez (Alembic + cifragem + isolamento). Credencial de DDL. ──
   migrate:
-    image: matheussousaavelino/payment-platform-api:latest
+    image: matheussousaavelino/payment-platform-api@sha256:8964d5631a5378b6d68ef1d15657704c7c51f2b3f190f89c8ba6494f7b3b0219
     networks: [banco]
     environment:
       AMBIENTE: desenvolvimento
@@ -58,7 +64,7 @@ services:
 
   # ── API: backend (usuário de app, sem privilégio de DDL, filesystem só leitura) ──
   api:
-    image: matheussousaavelino/payment-platform-api:latest
+    image: matheussousaavelino/payment-platform-api@sha256:8964d5631a5378b6d68ef1d15657704c7c51f2b3f190f89c8ba6494f7b3b0219
     ports:
       - "127.0.0.1:8000:8000"
     networks: [default, banco]
@@ -89,7 +95,7 @@ services:
 
   # ── Front: SPA servido por nginx sem privilégio ──
   app:
-    image: matheussousaavelino/payment-platform-app:latest
+    image: matheussousaavelino/payment-platform-app@sha256:50ca72da84898d089340b8c31a37b365fd58d9454a27cc39c7e976044fc8adb5
     ports:
       - "127.0.0.1:8080:8080"
     depends_on: [api]
