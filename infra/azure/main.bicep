@@ -29,6 +29,10 @@ param replicasMin int = 1
 
 param replicasMax int = 3
 
+@description('Limite diário de ingestão de logs em GB; -1 desliga o limite. Não é teto financeiro e pode haver excedente.')
+@minValue(-1)
+param logsLimiteDiarioGb int = 1
+
 @description('Demonstração pública com depósitos fictícios e documentos opcionais; controles de produção mantidos.')
 param demonstracaoPublica bool = true
 
@@ -92,6 +96,7 @@ resource logs 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   properties: {
     sku: { name: 'PerGB2018' }
     retentionInDays: 30
+    workspaceCapping: { dailyQuotaGb: logsLimiteDiarioGb }
   }
 }
 
@@ -507,6 +512,8 @@ resource fdWaf 'Microsoft.Cdn/profiles/securityPolicies@2024-02-01' = if (comApi
 
 output acr string = acr.properties.loginServer
 output keyVault string = kv.name
+output ambienteNome string = ambiente.name
+output postgresHost string = pg.properties.fullyQualifiedDomainName
 output frontNome string = front.name
 output frontUrl string = 'https://${front.properties.defaultHostname}'
 @description('URL pública da API (vai em ASTRO_API_URL / VITE_API_URL).')

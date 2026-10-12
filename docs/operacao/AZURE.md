@@ -1,5 +1,8 @@
 # Astro no Azure (ambiente do pentest)
 
+> Sequência atual para Azure Students, mantendo o diagrama conforme Bicep:
+> [implantação acadêmica](AZURE-IMPLANTACAO-ACADEMICA.md). Inclui orçamento e job migrador; os exemplos históricos abaixo ainda precisam ser alinhados aos parâmetros atuais.
+
 **Antes do deploy:** seguir [estrutura e operação do banco](docs/BANCO.md),
 provisionar os papéis separados e configurar `AZURE_MIGRATION_JOB`. A API não
 aplica migrações no boot.
