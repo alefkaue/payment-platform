@@ -28,6 +28,9 @@ if [ ! -f .env.docker ]; then
 else
   echo "🔐  .env.docker já existe — mantido."
 fi
+# .env é exigido pelo compose do time (perfil seguro full.yml). Os segredos ficam
+# no .env.docker; este fica vazio só para o Compose encontrar o arquivo.
+[ -f .env ] || { touch .env; echo "📄  .env vazio criado (exigido pelo perfil seguro)."; }
 
 # 3. Baixar as imagens do Docker Hub
 echo "📦  Baixando as imagens (app, api, db) do Docker Hub…"

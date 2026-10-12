@@ -3,6 +3,11 @@
 services:
   backend:
     environment:
+      # Modo produção de verdade exige TLS no banco + HTTPS no CORS/DPoP (só na nuvem).
+      # No localhost rodamos em 'desenvolvimento', mas com os controles reais LIGADOS:
+      # biometria real (STUB=0) e DPoP obrigatório -> é a opção mais segura que roda local.
+      AMBIENTE: desenvolvimento
+      CNPJ_PROVEDOR: stub
       CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
       DPOP_ORIGEM_PUBLICA: ${DOCKER_APP_API_ORIGEM:-http://localhost:8000}
       DPOP_OBRIGATORIO: '1'
