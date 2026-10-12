@@ -41,3 +41,5 @@ achados, roadmap, casos de teste, regulatório, limitações). Começe por
 ## 🗂️ Histórico — [`historico/`](historico/)
 Relatórios e revisões datados (snapshots), incluindo o HANDOFF antigo. Mantidos como registro; para a
 referência atual, use as pastas por tema acima.
+
+- [Análise crítica da arquitetura Azure — 12/10/2026](historico/ANALISE-CRITICA-AZURE-2026-10-12.md): evidências do código, pontos positivos, prioridades P0/P1/P2 e validações pendentes.
