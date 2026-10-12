@@ -1,5 +1,7 @@
 # Implantação acadêmica Azure Students — arquitetura dos diagramas
 
+**Estado atual:** aplicação publicada na variante econômica autorizada. Consulte [Azure Students — ambiente de testes](AZURE-STUDENTS-TESTE.md) para acesso, recursos efetivamente implantados, custos e prioridades. As limitações e etapas abaixo registram a preparação do desenho original.
+
 Preparação em 12/10/2026. Referência: `azure-conforme-bicep.excalidraw` e `infra/azure/main.bicep`. Este documento complementa o guia antigo e registra a sequência atual. Não significa que a assinatura já foi configurada.
 
 ## Diagramas lidos

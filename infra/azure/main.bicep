@@ -264,7 +264,7 @@ resource kvBanco 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: kv
   name: 'database-url'
   properties: {
-    value: 'postgresql://astro_app:${pgAppSenha}@${pg.properties.fullyQualifiedDomainName}:5432/${pgBanco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt'
+    value: 'postgresql+psycopg2://astro_app:${pgAppSenha}@${pg.properties.fullyQualifiedDomainName}:5432/${pgBanco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt'
   }
 }
 

@@ -265,7 +265,7 @@ resource kvBanco 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: kv
   name: 'database-url'
   properties: {
-    value: 'postgresql://astro_app:${pgAppSenha}@${pg.properties.fullyQualifiedDomainName}:5432/${pgBanco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt'
+    value: 'postgresql+psycopg2://astro_app:${pgAppSenha}@${pg.properties.fullyQualifiedDomainName}:5432/${pgBanco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt'
   }
 }
 
@@ -445,7 +445,7 @@ resource bootstrap 'Microsoft.App/jobs@2024-03-01' = if (habilitarBootstrap && c
       registries: [{ server: acr.properties.loginServer, identity: idBootstrap!.id }]
       secrets: concat([
         { name: 'admin-url', value: 'postgresql://${pgUsuario}:${pgSenha}@${pg.properties.fullyQualifiedDomainName}:5432/${pgBanco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt' }
-        { name: 'migration-url', value: 'postgresql://astro_migrator:${pgMigradorSenha}@${pg.properties.fullyQualifiedDomainName}:5432/${pgBanco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt' }
+        { name: 'migration-url', value: 'postgresql+psycopg2://astro_migrator:${pgMigradorSenha}@${pg.properties.fullyQualifiedDomainName}:5432/${pgBanco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt' }
         { name: 'app-password', value: pgAppSenha }
         { name: 'migration-password', value: pgMigradorSenha }
       ], referenciasBootstrap)

@@ -9,6 +9,7 @@ import sys
 import psycopg2
 from psycopg2 import sql
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from proteger_acesso_banco import proteger
 
 
@@ -23,11 +24,9 @@ def executar():
                 if cursor.fetchone() is None:
                     cursor.execute(sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS PASSWORD {}").format(
                         sql.Identifier(role), sql.Literal(os.environ[variable])))
-            # Azure PG admin não é superuser: associação permite gerir objetos do migrador.
-            cursor.execute("SELECT current_user")
-            administrator = cursor.fetchone()[0]
-            cursor.execute(sql.SQL("GRANT astro_migrator TO {} WITH ADMIN OPTION").format(sql.Identifier(administrator)))
-    engine = create_engine(admin_url, hide_parameters=True)
+            # PostgreSQL 16 concede ao criador a associação necessária ao papel.
+            # Reatribuir ADMIN OPTION ao próprio grantor falha no Azure PG.
+    engine = create_engine(make_url(admin_url).set(drivername="postgresql+psycopg2"), hide_parameters=True)
     with engine.begin() as connection:
         proteger(connection)
     engine.dispose()

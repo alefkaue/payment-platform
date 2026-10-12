@@ -32,9 +32,11 @@ jobs:
           ACAO: ${{ inputs.acao }}
           RG: rg-astro-academico
           PG: pg-astro-aiznuxvyssyui
+          SUBSCRIPTION: ${{ vars.STUDENTS_SUBSCRIPTION_ID }}
         shell: bash
         run: |
           set -euo pipefail
+          BASE="https://management.azure.com/subscriptions/$SUBSCRIPTION/resourceGroups/$RG/providers/Microsoft.App/containerApps"
           if [ -z "$ACAO" ]; then
             FIM=$(az group show -n "$RG" --query tags.testUntilUtc -o tsv)
             if [ -z "$FIM" ]; then echo "Sem janela de testes: pausar por segurança."; ACAO=pausar
@@ -47,15 +49,16 @@ jobs:
             FIM=$(date -u -d '+3 days' +%Y-%m-%dT%H:%M:%SZ)
             az group update -n "$RG" --set "tags.testUntilUtc=$FIM" -o none
             for APP in astro-api astro-front; do
-              REVISAO=$(az containerapp show -g "$RG" -n "$APP" --query properties.latestRevisionName -o tsv)
-              az containerapp revision activate -g "$RG" -n "$APP" --revision "$REVISAO" -o none
+              REVISAO=$(az rest --method get --url "$BASE/$APP?api-version=2024-03-01" --query properties.latestRevisionName -o tsv)
+              ATIVA=$(az rest --method get --url "$BASE/$APP/revisions/$REVISAO?api-version=2024-03-01" --query properties.active -o tsv)
+              if [ "$ATIVA" != true ]; then az rest --method post --url "$BASE/$APP/revisions/$REVISAO/activate?api-version=2024-03-01" -o none; fi
             done
             echo "Testes retomados até $FIM. Aguarde partida a frio."
           elif [ "$ACAO" = pausar ]; then
             for APP in astro-api astro-front; do
-              mapfile -t REVISOES < <(az containerapp revision list -g "$RG" -n "$APP" --query '[?properties.active].name' -o tsv)
+              mapfile -t REVISOES < <(az rest --method get --url "$BASE/$APP/revisions?api-version=2024-03-01" --query 'value[?properties.active].name' -o tsv)
               for REVISAO in "${REVISOES[@]}"; do
-                [ -z "$REVISAO" ] || az containerapp revision deactivate -g "$RG" -n "$APP" --revision "$REVISAO" -o none
+                [ -z "$REVISAO" ] || az rest --method post --url "$BASE/$APP/revisions/$REVISAO/deactivate?api-version=2024-03-01" -o none
               done
             done
             ESTADO=$(az postgres flexible-server show -g "$RG" -n "$PG" --query state -o tsv)

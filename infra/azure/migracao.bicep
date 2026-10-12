@@ -63,7 +63,7 @@ resource urlMigracao 'Microsoft.KeyVault/vaults/secrets@2023-07-01' = {
   parent: cofreMigrador
   name: 'database-migration-url'
   properties: {
-    value: 'postgresql://astro_migrator:${pgMigradorSenha}@${postgresHost}:5432/${banco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt'
+    value: 'postgresql+psycopg2://astro_migrator:${pgMigradorSenha}@${postgresHost}:5432/${banco}?sslmode=verify-full&sslrootcert=/etc/ssl/certs/ca-certificates.crt'
   }
 }
 
