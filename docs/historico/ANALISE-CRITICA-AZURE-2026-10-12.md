@@ -1,4 +1,4 @@
-# Análise crítica da arquitetura Azure — ASTRO
+# Análise crítica da arquitetura Azure — ASTRO (escopo acadêmico)
 
 Data: 12/10/2026. Repositório: `alefkaue/payment-platform`. Base analisada: `80d3aa9`, após integrar 15 commits remotos por fast-forward. A revisão não modificou a aplicação nem implantou recursos.
 
@@ -6,7 +6,25 @@ Data: 12/10/2026. Repositório: `alefkaue/payment-platform`. Base analisada: `80
 
 O desenho é coerente para uma aplicação de pagamentos em evolução: monólito modular FastAPI, PostgreSQL como núcleo transacional, frontend estático, identidade gerenciada e borda protegida. Existe segurança implementada no código, não apenas caixas em um diagrama.
 
-Entretanto, **não aprovaria esse estado para movimentar dinheiro real ou receber dados bancários reais em produção**. A infraestrutura está preparada para uma demonstração pública; o próprio backend declara simulação. Faltam uma implantação Azure comprovada, isolamento explícito entre demonstração e produção, entrega condicionada à validação, recuperação exercitada e operação dos jobs financeiros. Os serviços Azure escolhidos não resolvem esses problemas automaticamente.
+**O critério desta revisão é uma aplicação acadêmica funcional e segura, com dinheiro simulado.** Depósitos fictícios, ausência de integração bancária real e RG sem autenticação externa são simplificações aceitas pelo autor do projeto. Não constituem falhas nem bloqueios da entrega. `AMBIENTE=producao` pode representar o runtime publicado e seus controles técnicos, sem significar que o produto opera dinheiro real.
+
+Transferências, autenticação facial, autorização, persistência e proteção dos dados precisam funcionar de verdade. A base tem controles relevantes implementados, mas esta revisão ainda não comprova o funcionamento ponta a ponta no Azure nem a qualidade da facial real. A entrega deve priorizar essas provas, o deploy reproduzível e a prevenção de acesso indevido; alta disponibilidade bancária e recuperação regional ficam como evolução opcional.
+
+Este parecer foi ajustado ao esclarecimento do autor em 12/10/2026. As evidências técnicas e os resultados de testes da análise original foram preservados; não houve nova execução da aplicação nesta revisão do documento.
+
+### Contrato do trabalho
+
+| Funcionalidade | Expectativa para a entrega |
+|---|---|
+| Depósito | Pode criar saldo fictício no servidor; deve ficar identificado como simulação e respeitar limites e autorização |
+| Pix/boleto/cartão/repasse fiscal externos | Podem ser simulados; não é necessário conectar bancos ou movimentar reais |
+| RG e autenticidade documental | Podem ser simplificados ou dispensados; não exigir consulta oficial ou KYC bancário |
+| Transferência entre contas | Deve debitar/creditar saldo persistido corretamente, com autorização, idempotência, histórico e proteção contra gasto concorrente |
+| Reconhecimento facial | Deve usar câmera e motor real no ambiente apresentado; verificar correspondência e comportamento de prova de vida, sem aprovação automática por stub |
+| Login e contas PF/PJ | Devem validar sessão e vínculo; alterar `X-Conta` não pode dar acesso a outro titular |
+| Azure e dados | Segredos protegidos, TLS, acesso mínimo e implantação funcional; fotos/templates reais continuam merecendo proteção mesmo com saldo fictício |
+
+Não se exige certificação biométrica bancária, escala de banco comercial, liquidação externa, HA multizona ou operação 24/7. Uma interface que apenas altera dados de mock não comprova transferência real dentro da aplicação.
 
 Esta é uma revisão real do código e da configuração versionada, com execução de testes selecionados. Não é uma auditoria de uma assinatura Azure: não havia Azure CLI/Bicep disponível no PATH nem acesso autenticado à assinatura. Não foram verificados recursos efetivos, faturamento, DNS, RBAC implantado, branch protection, logs de produção ou disponibilidade real. Ausência de configuração no repositório significa ausência de evidência versionada, não prova de que um operador nunca a configurou manualmente.
 
@@ -62,34 +80,49 @@ O Key Vault é diferente: não tem Private Endpoint nem bloqueio explícito de r
 
 ## 5. Prioridades
 
-P0 = bloqueia entrada em produção financeira; corrigir antes de dados/dinheiro reais. P1 = alta prioridade para publicar e operar com segurança. P2 = evolução após fechar P0/P1. Não foi demonstrada exploração crítica em um Azure ativo; as prioridades refletem impacto e evidência disponível.
+P0 = comprovar/corrigir antes da entrega: funcionamento dos fluxos essenciais e segurança básica. P1 = alta prioridade para uma publicação acadêmica confiável. P2 = melhoria proporcional ao volume e tempo disponíveis. Futuro = requisito de eventual produto financeiro, fora da entrega atual. Uma validação pendente não prova que a funcionalidade está quebrada. Não foi demonstrada exploração crítica em um Azure ativo.
 
 | ID | Prioridade | Problema | Condição de encerramento |
 |---|---|---|---|
-| A01 | P0 | Template liga demonstração por padrão mesmo com `AMBIENTE=producao` | Perfil real explicitamente seguro e recursos separados da demo |
-| A02 | P0 | Deploy pode ocorrer antes ou apesar de falha dos testes | Promoção exige checks do mesmo SHA aprovados |
+| A00 | P0 | Transferência e facial reais ainda sem prova ponta a ponta nesta revisão | Matriz de aceite executada com backend persistente e motor facial real |
+| A01 | P1 | Documentar o contrato da demonstração e seus controles reais | Simulações identificadas; facial e autorização não flexibilizadas |
+| A02 | P1 | Deploy pode ocorrer antes ou apesar de falha dos testes | Promoção exige checks do mesmo SHA aprovados |
 | A03 | P0 | Implantação depende de bootstrap/migrador fora do IaC | Ambiente limpo sobe com procedimento completo, auditado e repetível |
-| A04 | P0 | Recuperação de banco e chaves não comprovada | Restore integral e conciliação aprovados dentro de RPO/RTO definidos |
-| A05 | P1 | Jobs financeiros e reenvio não provisionados | Agendamento privado, identidade própria e alertas funcionando |
-| A06 | P1 | Key Vault público e sem purge protection explícita | Rede e proteção contra exclusão validadas; acessos mínimos |
+| A04 | P2 / Futuro | Recuperação não ensaiada; HA bancária fora do escopo | Backup simples recuperável; HA/região apenas se o produto evoluir |
+| A05 | P1 se apresentados; P2 se opcionais | Jobs e reenvio não provisionados | Fluxos apresentados completos; demais declarados como fora do escopo |
+| A06 | P1 RBAC / P2 rede e purge protection | Conferir proteção do Key Vault | API lê apenas segredos necessários; endurecimento adicional conforme risco |
 | A07 | P1 | Log Analytics não cobre sozinho borda, banco e operação | Diagnósticos, alertas e procedimento de resposta testados |
 | A08 | P1 | Readiness e confirmação de deploy insuficientes | Pipeline espera revisão pronta e testa fluxos pela borda |
-| A09 | P1 | Boot percorre e decifra dados de clientes | Boot limitado; verificação completa em job controlado |
-| A10 | P1 | Escala chega ao teto de conexões sem folga | Orçamento de conexões considera rollout, jobs e recuperação |
+| A09 | P2 | Boot percorre e decifra dados de clientes | Inicialização medida com base da apresentação; otimizar se necessário |
+| A10 | P2 | Escala chega ao teto de conexões sem folga | Configuração suporta turma e deploy sem esgotar conexões |
 | A11 | P1 | IP real, WAF e cargas biométricas ainda sem prova Azure | Matriz de testes integrados e carga aprovada |
-| A12 | P1 | Rotação das chaves pode parar a aplicação/perder acesso a dados | Runbooks e ensaios distintos por tipo de chave |
+| A12 | P1 preservação / P2 rotação | Troca de chaves pode perder acesso aos dados | Chaves persistentes recuperáveis; rotação avançada pode ser futura |
 | A13 | P2 | RBAC amplo no CI, referências mutáveis e fronteiras de confiança | Identidades separadas, artefatos imutáveis e dependências controladas |
 | A14 | P2 | Documentação e perfis de hospedagem divergentes | Uma referência atual coerente com IaC e operação |
 
-### A01 — Demonstração é o default do template (P0)
+### A00 — Comprovar transferências e facial reais (P0)
+
+**Evidência:** há código de movimentação persistente, locks, idempotência, motor facial e proteção de sessão. A seleção executada nesta revisão usa SQLite e stub biométrico nos fluxos; não inclui demonstração em dispositivo com câmera, inferência real ou concorrência PostgreSQL executada localmente. Isso é uma lacuna de validação, não uma conclusão de que os mecanismos falham.
+
+**Aceite mínimo para a entrega:**
+
+1. Criar duas contas no backend, gerar saldo fictício em A, transferir para B e conferir débito/crédito/histórico após recarregar e reiniciar a API. Conferir que o app usa a API, sem fallback para mock no fluxo apresentado.
+2. Reenviar a mesma intenção/chave de pagamento: não pode debitar duas vezes. Tentar valor acima do saldo e duas transferências concorrentes cujo total excede o saldo: o banco não pode aceitar gasto indevido nem deixar saldo negativo.
+3. Tentar consultar/movimentar conta de terceiro alterando identificadores e `X-Conta`; conferir vínculo PJ, papéis e aprovações que fizerem parte da apresentação.
+4. Com `BIOMETRIA_STUB=0` e sem stub de cadastro, cadastrar rosto com câmera, autenticar a pessoa correspondente e recusar rosto de outra pessoa. Exercitar prova de vida, ausência de rosto, desafio expirado/reutilizado e falhas repetidas. Registrar modelo, dispositivo e resultados; não inferir resistência geral a spoofing a partir de poucos exemplos.
+5. Repetir os fluxos web/APK escolhidos pela URL Azure, com WAF, DPoP e TLS ativos; confirmar que falha biométrica não é convertida em aprovação ou sessão autenticada.
+
+Não usar uma foto de RG autenticada externamente como condição para esses testes. Usar contas de teste e consentimento para os rostos da demonstração; preservar templates cifrados e evitar armazenar imagens sem necessidade.
+
+### A01 — Demonstração é uma escolha válida; explicitar seu contrato (P1)
 
 **Evidência:** `main.bicep:33` define `demonstracaoPublica=true`. As variáveis derivadas ligam `DEMONSTRACAO_PUBLICA` e `DEPOSITO_DEMO` e desligam `KYC_DOCUMENTO_OBRIGATORIO`; o ambiente continua marcado como produção. `core/config.py` permite essas exceções quando a demo está ativa.
 
-**Impacto:** um operador pode usar o template “de produção” e publicar criação de saldo fictício e onboarding flexibilizado. Isso é aceitável para a apresentação declarada, mas é um default inadequado para um ambiente que venha a operar pagamentos reais. Definir `false` não transforma as integrações simuladas em liquidação real.
+**Avaliação no escopo acadêmico:** esse default é compatível com a finalidade do projeto. Não é necessário desligar depósito fictício, exigir autenticação de RG ou criar um ambiente de produção financeira separado. O cuidado é não confundir regras de negócio simuladas com desativação de autenticação, autorização ou reconhecimento facial.
 
-**Recomendação:** separar parâmetros e resource groups de demo e produção; tornar o perfil financeiro seguro por padrão; adicionar uma validação de promoção que recuse demo, depósito fictício e KYC flexibilizado. Dados reais não devem ser copiados para a demo. Testar no perfil real que depósito demo é inacessível e KYC pendente não movimenta.
+**Recomendação:** documentar as flags do perfil acadêmico e identificar saldo/depósito como fictícios. Manter facial real, DPoP, acesso entre titulares e limites ativos; gerar depósito apenas na conta autorizada. Dados cadastrais podem ser fictícios. Separar ambientes e bloquear as exceções de demo só passa a ser requisito se o projeto futuramente operar dinheiro real.
 
-### A02 — Testar e publicar são fluxos independentes (P0)
+### A02 — Testar e publicar são fluxos independentes (P1)
 
 **Evidência:** `azure.yml` publica em push na `main`; `backend.yml` valida em outro workflow. Não há dependência explícita de checks aprovados para o mesmo SHA, nem `environment` protegido nos jobs de deploy. Não foi possível verificar proteção de branch no GitHub.
 
@@ -105,29 +138,29 @@ P0 = bloqueia entrada em produção financeira; corrigir antes de dados/dinheiro
 
 **Recomendação:** versionar o job com identidade e cofre/escopos próprios; documentar bootstrap administrativo dentro da rede privada; validar a sequência atual de Alembic, cifragem, contexto e permissões. Não entregar senha administrativa à API. Automatizar ou tornar verificável a aprovação Private Link. Executar build/lint Bicep, validação ARM e `what-if`; depois implantar em grupo descartável sem dados reais e comprovar o fluxo completo. Compilar Bicep sozinho não valida DNS, RBAC, quotas ou conectividade.
 
-### A04 — Backup sem recuperação demonstrada (P0)
+### A04 — Recuperação simples para a apresentação; HA como futuro (P2)
 
 **Evidência:** Postgres B1ms, backup de 7 dias, sem redundância geográfica e HA desligada. O ACA não declara redundância de zonas. Há recomendações documentadas, mas nenhuma restauração foi executada nesta revisão.
 
 **Impacto:** mais réplicas de API não resolvem falha do banco. Banco restaurado sem as chaves Fernet/HMAC/contexto correspondentes pode ser inutilizável. A estimativa de custo não pode substituir requisitos de disponibilidade.
 
-**Recomendação:** definir RPO/RTO com o produto; antes de uso real, restaurar banco separado, recuperar versões de chaves, verificar saldos/trilhas/outbox/RLS e medir tempo até retomada. Selecionar tier e HA compatíveis com esses objetivos. HA cobre falhas diferentes de backup; nenhum elimina corrupção lógica. Avaliar recuperação regional conforme risco, sem introduzir pagamentos active-active prematuramente.
+**Recomendação acadêmica:** guardar as chaves de forma segura e ter backup recuperável ou um roteiro de recriação com contas fictícias antes da apresentação. Se for preservar cadastros faciais, recuperar as chaves correspondentes é necessário. B1ms, sete dias de backup e ausência de HA não são, isoladamente, defeitos para a carga de uma turma. RPO/RTO contratual, HA multizona, redundância geográfica e recuperação regional ficam como evolução para produto comercial, sem bloquear a entrega.
 
-### A05 — Operação financeira depende de jobs ausentes (P1)
+### A05 — Jobs necessários aos fluxos apresentados (P1 ou P2)
 
 **Evidência:** `routers/admin.py` expõe liberação de bloqueios, rendimento, recorrências, conciliação de pendentes e webhooks. O Bicep não agenda esses processos e não configura IP/TOTP para habilitar administração; o default de produção fecha o admin, o que é seguro. Webhooks tentam entrega por thread daemon e dependem de reenvio posterior.
 
 **Impacto:** restart pode interromper a tentativa imediata; outbox preserva o evento, mas sem consumidor operante ele fica pendente. Bloqueios e operações `executando` podem permanecer indefinidamente. Não recomendar abrir o admin público para corrigir isso.
 
-**Recomendação:** Container Apps Jobs agendados com comandos de manutenção, identidades próprias, permissões limitadas e travas de execução. Medir idade da outbox e de pendências. A consulta `entregas_pendentes()` carrega todos os pendentes sem paginação ou claim exclusivo; limitar lote, implementar lease/claim, backoff e fila de falhas inspecionável. O registro de resultado já tem lock e preserva sucesso anterior: não classificá-lo como regressão ainda aberta. Entregas duplicadas continuam possíveis e devem ser deduplicadas pelo receptor.
+**Recomendação:** provisionar apenas os jobs usados pela apresentação, com comando privado e permissão limitada. Se recorrências, bloqueios, conciliação ou webhooks forem apresentados como funcionais, comprovar sua conclusão e reenvio; se não forem, declarar fora do escopo. Uma execução operacional manual documentada pode bastar para um fluxo secundário da banca. Paginação, claim/lease, backoff e fila de falhas são melhorias para volume maior. O registro de resultado já tem lock e preserva sucesso anterior; receptores devem deduplicar entregas.
 
-### A06 — Key Vault precisa de proteção operacional adicional (P1)
+### A06 — Preservar RBAC; isolamento adicional conforme risco (P1/P2)
 
 **Evidência:** `main.bicep:191` em diante declara RBAC e soft-delete por 7 dias, sem `enablePurgeProtection`, Private Endpoint ou `publicNetworkAccess: Disabled`. A identidade da API lê o cofre inteiro, hoje dedicado aos oito segredos de runtime.
 
 **Impacto:** endpoint público não equivale a segredo aberto; RBAC protege o acesso. Ainda assim falta restrição de rede, e exclusão/purge de chaves ameaça disponibilidade dos dados cifrados. Inserir segredo do migrador no mesmo cofre ampliaria indevidamente a API.
 
-**Recomendação:** aplicar a proposta de Private Endpoint com DNS e teste de leitura/reinício; habilitar purge protection e retenção alinhada ao restore, considerando que essa escolha impõe retenção e dificulta limpeza imediata de ambientes temporários. Manter segredos administrativos/migrador fora do escopo da API. O bypass de serviços confiáveis precisa de decisão explícita: não é sinônimo de permitir todo Azure ou GitHub Actions, e pode manter exceções com rede pública desabilitada. Ver [segurança de rede do Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/secure-your-key-vault) e [soft-delete/purge protection](https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview).
+**Recomendação:** prioridade alta para confirmar RBAC mínimo, ausência de segredos no Git/imagem/log e separação das credenciais do migrador. Private Endpoint e purge protection são melhorias P2 para o ambiente temporário; aplicar com DNS e teste de leitura/reinício se houver tempo, orçamento e necessidade. Purge protection impõe retenção e afeta limpeza. O bypass de serviços confiáveis precisa de decisão explícita: não permite todo Azure ou GitHub Actions. Ver [segurança de rede do Key Vault](https://learn.microsoft.com/en-us/azure/key-vault/general/secure-your-key-vault) e [soft-delete/purge protection](https://learn.microsoft.com/en-us/azure/key-vault/general/soft-delete-overview).
 
 ### A07 — Há logs da API, mas não uma operação observável (P1)
 
@@ -135,7 +168,7 @@ P0 = bloqueia entrada em produção financeira; corrigir antes de dados/dinheiro
 
 **Impacto:** bloqueios do WAF, falhas de acesso a chaves, aproximação do teto de conexões e pendências financeiras podem passar despercebidos. Trilha append-only no banco não protege contra administrador do banco comprometido.
 
-**Recomendação:** habilitar diagnósticos necessários e alertas com responsáveis: revisão não pronta, 5xx/latência, OOM/restarts, conexões, armazenamento, falhas de job, outbox envelhecida, tentativas de administração e alterações de RBAC. Exportar evidência crítica para armazenamento com retenção/imutabilidade definida quando os requisitos exigirem. Redigir runbooks e testar um alerta; evitar registrar corpo biométrico, tokens ou segredos. Não adicionar Sentinel apenas para preencher um diagrama.
+**Recomendação acadêmica:** ter logs acessíveis de API/deploy, diagnósticos de WAF para explicar bloqueios e um procedimento curto de recuperação. Priorizar alerta de indisponibilidade/restarts e falha de job apresentado. Não registrar corpo biométrico, tokens ou segredos. Retenção regulatória, armazenamento imutável e resposta 24/7 ficam como futuro; Sentinel não é necessário para a entrega.
 
 ### A08 — Saúde e deploy não garantem serviço funcional (P1)
 
@@ -145,21 +178,21 @@ P0 = bloqueia entrada em produção financeira; corrigir antes de dados/dinheiro
 
 **Recomendação:** esperar revisão pronta e fazer smoke tests via Front Door. Avaliar `/pronto` na borda com frequência e timeouts que não sobrecarreguem o banco. Manter `/saude` leve para liveness. Usar migrações expand/contract e compatibilidade com a revisão anterior; rollback da imagem não implica rollback seguro do schema. A publicação deve informar falha claramente, sem voltar dados automaticamente.
 
-### A09 — Validação de todos os dados no boot limita crescimento (P1)
+### A09 — Validação de todos os dados no boot limita crescimento (P2)
 
 **Evidência:** `db/base.py:87` chama auditoria de permissões e depois percorre campos pessoais e segredos de webhook, decifrando registros. Esse método é chamado pelo lifespan em produção. Startup probe permite aproximadamente 180 segundos.
 
 **Impacto:** o tempo de boot cresce com a base e cada réplica repete trabalho. Rollout, rotação de segredos ou recuperação podem gerar leituras e CPU simultâneas, falhar probes e provocar ciclo de reinícios. É uma inferência de capacidade baseada no caminho de código, não uma falha de carga reproduzida.
 
-**Recomendação:** preservar checks de configuração e permissões no boot, mas mover varredura completa para job paginado e controlado. Usar marcador verificado de migração e verificações limitadas de compatibilidade/chaves no startup. Não simplesmente retirar validação de segurança sem substituir sua garantia. Medir com volume de dados representativo e restauração real.
+**Recomendação:** medir o startup com a quantidade de contas da apresentação. Para base pequena, manter o controle existente se cumprir probes e tempo aceitável. Se houver lentidão/restarts, preservar checks de configuração/permissões e mover varredura completa para job controlado com garantia substituta. Não retirar validações apenas para simplificar.
 
-### A10 — Pool e réplicas usam todo o orçamento (P1)
+### A10 — Pool e réplicas usam todo o orçamento (P2)
 
 **Evidência:** pool default de 5 + 5 conexões por processo; máximo de 3 réplicas; papel runtime documentado com teto de 30 conexões. Uvicorn roda um processo. Já há timeouts de query/lock/transação e concorrência HTTP limitada, o que é positivo.
 
 **Impacto:** `3 × (5 + 5) = 30` não deixa folga para sobreposição de revisões, conexão operacional que use runtime ou jobs com esse papel. Um servidor Burstable pequeno pode saturar antes do teto. A igualdade não comprova saturação, mas evidencia planejamento sem margem.
 
-**Recomendação:** definir orçamento por identidade e reservar espaço para deploy/recuperação; configurar pool pelo Bicep; medir throughput/latência/conexões antes de aumentar réplicas. Considerar pooling gerenciado se necessário. Separar credenciais/limites de jobs; não escalar API como solução para gargalo no banco.
+**Recomendação:** testar com acessos simultâneos representativos da turma e reservar margem para rollout/jobs. Ajustar pool/réplicas se necessário; não aumentar infraestrutura sem evidência de gargalo. Pooling gerenciado e capacidade comercial são opcionais para evolução.
 
 ### A11 — Validar a fronteira Front Door → ACA → aplicação (P1)
 
@@ -167,15 +200,15 @@ P0 = bloqueia entrada em produção financeira; corrigir antes de dados/dinheiro
 
 **Impacto:** CIDR/headers incorretos podem agrupar clientes pelo proxy ou enfraquecer limites; NAT compartilhado pode bloquear usuários legítimos. Modelos/JSON grandes podem causar falso positivo ou exceder limites/inspeção da borda. Um WAF não comprova autenticidade documental nem proteção completa do conteúdo de imagens.
 
-**Recomendação:** testar IPs diferentes, NAT, IPv6, headers falsos/duplicados, origem direta, probes e Private Link. Testar cadastro/login com quadros reais e documentos válidos via WAF, incluindo limites de corpo e latência. Ajustar exceções por campo/regra estritamente necessário; não liberar rotas biométricas com regra Allow ampla que elimine inspeção. Dimensionar processamento pesado com limites próprios; extrair OCR/biometria apenas se carga e isolamento justificarem. Ver [WAF no Front Door](https://learn.microsoft.com/en-us/azure/web-application-firewall/afds/afds-overview) e [proteção da origem](https://learn.microsoft.com/en-us/azure/frontdoor/origin-security).
+**Recomendação:** testar origem direta, headers falsos, IP real, probes e Private Link. Priorizar cadastro/login com câmera e quadros reais, transferência e acesso simultâneo dos colegas pela rede da faculdade; documentos podem ser fictícios ou dispensados conforme o contrato. Ajustar exceções estritas de WAF sem liberar amplamente rotas biométricas. Não exigir autenticação oficial de RG nem separar OCR/biometria em serviços sem necessidade medida. Ver [WAF no Front Door](https://learn.microsoft.com/en-us/azure/web-application-firewall/afds/afds-overview) e [proteção da origem](https://learn.microsoft.com/en-us/azure/frontdoor/origin-security).
 
-### A12 — Rotação exige sequência por tipo de chave (P1)
+### A12 — Preservar chaves agora; rotação avançada depois (P1/P2)
 
 **Evidência:** referências Key Vault não fixam versão. PII/webhook usam MultiFernet; biometria usa chave única; índice HMAC e contexto de banco têm chaves próprias. O código valida separação das chaves.
 
 **Impacto:** trocar Fernet biométrica pode inutilizar templates antigos; trocar índice HMAC exige reindexar; trocar contexto sem sincronizar banco/API impede autenticar contexto RLS. JWT novo pode invalidar sessões. O ACA pode buscar nova versão sem versão fixa em até 30 minutos e reiniciar revisões que a usam por variável de ambiente, segundo [gestão de segredos do ACA](https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets). Isso também aciona o custo de boot de A09.
 
-**Recomendação:** ensaiar rotação com chave nova + antiga onde suportado, recifragem paginada, verificação e retirada só após janela de backup/recovery. Planejar separadamente biometria, JWT, HMAC de índice e contexto SQL. Para mudanças coordenadas, considerar versão fixa por release e promoção explícita. Documentar recuperação de versão anterior e não remover chaves necessárias a backups válidos.
+**Recomendação acadêmica:** manter chaves persistentes no cofre e recuperáveis, evitar regenerá-las em cada deploy e documentar que sua troca exige coordenação. Isso protege rostos cadastrados e acesso aos dados da apresentação. Recifragem paginada, rotação sem interrupção e promoção por versão são melhorias P2/futuras. Não remover chaves necessárias a backups preservados.
 
 ### A13 — Cadeia de entrega e confiança (P2)
 
@@ -199,14 +232,14 @@ P0 = bloqueia entrada em produção financeira; corrigir antes de dados/dinheiro
 | AKS | Não introduzir agora | Não há necessidade demonstrada que compense operar cluster |
 | API Management | Adiar até existir necessidade de parceiros, quotas/contratos ou gestão de APIs | Front Door + API já cobrem parte relevante da entrada |
 | Webhooks | Começar com worker/job e outbox no Postgres, com claim/backoff | Aproveita garantia transacional existente; Service Bus só quando volume/integrações justificarem |
-| Ambientes | Um perfil local seguro, uma demo pública isolada e uma produção explícita | Evita switches ambíguos que alteram regras financeiras |
+| Ambientes | Um perfil local e um acadêmico publicado, ambos documentados | Dinheiro simulado com facial, autorização e persistência reais; produção bancária separada só no futuro |
 | IaC | Separar módulos rede/dados/identidades/runtime/borda e parâmetros por ambiente | Facilita revisão e evita alterar imagem ou chave por redeploy acidental |
 | Hospedagens | Escolher um caminho principal e declarar os demais como demo/local | Azure, Docker Hub, Render, Netlify e túneis ampliam manutenção e risco de divergência |
 | Frontend | Preservar SWA para frontend estático; manter código pesado/versionado sob controle | Não é necessário adicionar container só para servir SPA; considerar hospedar WASM/modelos próprios para reduzir dependências externas |
-| Disponibilidade | Melhorar banco e recuperação antes de multi-região da API | Réplicas não removem o ponto único transacional |
+| Disponibilidade | Backup simples e roteiro para apresentação; HA/multi-região opcionais | Segurança e funcionamento têm prioridade sobre escala comercial |
 | Segurança | Reutilizar recursos gerenciados e testes de fronteira; revisar criptografia/RLS customizados | Controles customizados têm valor, mas exigem revisão independente e manutenção |
 
-A estrutura alvo mínima mantém SWA/APK → Front Door Premium/WAF → ACA privado → PostgreSQL privado, Key Vault restrito, job migrador separado, consumidor da outbox e monitoramento. Não há justificativa atual para Kubernetes, Redis, Service Bus, Sentinel e API Management todos juntos.
+A estrutura acadêmica pode manter SWA/APK → Front Door Premium/WAF → ACA privado → PostgreSQL privado, identidade gerenciada, Key Vault com RBAC e migração separada. Consumidor da outbox só é necessário se webhooks fizerem parte dos fluxos apresentados; monitoramento básico basta. Não há justificativa atual para Kubernetes, Redis, Service Bus, Sentinel e API Management todos juntos. O Premium sustenta o Private Link já escolhido; uma redução de custo da borda precisaria reprojetar e validar a proteção da origem, não apenas trocar o SKU.
 
 ## 7. Validação executada e limites
 
@@ -226,12 +259,12 @@ Comando da seleção, a partir de `backend/` (PowerShell):
 
 ## 8. Ordem prática de execução
 
-1. Criar perfil seguro e isolamento da demonstração; condicionar promoção aos checks do SHA.
-2. Completar bootstrap/job migrador e compilar/validar IaC; implantar ambiente descartável e provar conectividade/Private Link.
-3. Restringir/proteger Key Vault; testar backup de chaves e restore financeiro com RPO/RTO medidos.
-4. Provisionar jobs operacionais e observabilidade; comprovar recuperação da outbox e conciliação após crash.
-5. Remover varredura integral do boot mediante verificação substituta; reservar conexões e executar carga representativa pela borda.
-6. Ensaiar rotação e rollback compatível; atualizar runbook e revisão de custos; realizar revisão independente de segurança antes de uso financeiro real.
+1. Fixar o contrato acadêmico: depósito e RG simulados, transferência persistente e facial real. Executar a matriz A00, incluindo tentativas de acesso indevido e gasto concorrente.
+2. Completar o procedimento de migração/segredos e validar IaC; comprovar aplicação acessível no Azure, banco privado e origem protegida.
+3. Condicionar deploy aos testes do mesmo SHA; esperar readiness e fazer smoke test pela borda.
+4. Conferir RBAC, preservar chaves e preparar backup/roteiro de recuperação para a banca; testar câmera e facial nos dispositivos apresentados.
+5. Finalizar apenas jobs usados no trabalho, ter logs úteis e medir startup/carga da turma. Ajustar pool e WAF se a medição mostrar necessidade.
+6. Atualizar runbook e custos. Tratar Private Endpoint do cofre, rotação avançada, HA, recuperação regional e exigências bancárias como evolução, sem bloquear uma entrega acadêmica segura e funcional.
 
 ## 9. Referências verificadas
 
