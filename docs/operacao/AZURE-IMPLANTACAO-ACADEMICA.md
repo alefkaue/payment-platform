@@ -16,9 +16,10 @@ Os textos e conexões foram lidos diretamente do JSON dos três arquivos. O diag
 
 - Azure CLI 2.91.0 e Bicep 0.48.1 instalados nesta máquina.
 - `main.bicep`, `orcamento.bicep` e `migracao.bicep` compilaram sem erros.
-- Nenhum recurso Azure foi criado nesta preparação sem autenticação.
-- Login Microsoft iniciado por device code; depende de autenticação do titular. Código expira e não deve ser salvo no repositório.
-- Faltam assinatura autenticada, confirmação de região disponível, valor do orçamento, duração do ambiente e e-mail dos alertas.
+- Login Microsoft concluído por device code; códigos e tokens não devem ser salvos no repositório.
+- Grupo gratuito `rg-astro-academico` criado em `canadacentral`, sem serviços pagos. Região do grupo não resolve a restrição regional do frontend.
+- Orçamento de proteção da assinatura inteira criado; detalhes na seção de configuração aplicada abaixo.
+- Faltam liberação de região para Static Web Apps, confirmação do saldo/moeda e duração de uso antes da implantação paga.
 - O atalho local `docs/Documentos.lnk` não faz parte da implantação.
 
 Compilação verifica sintaxe/tipos; não substitui validação ARM, `what-if`, quotas, RBAC e testes na assinatura.
@@ -139,6 +140,17 @@ Para preservar a arquitetura exigida, solicitar ao suporte Azure liberação de 
 Configuração mínima proposta, ainda não aplicada: Static Web Apps Free, PostgreSQL B1ms/32 GB sem HA, ACR Basic, API Consumption com mínimo zero e máximo uma réplica (aquecer antes da demonstração), limite de logs e orçamento com alertas. Definir o valor do orçamento na moeda efetiva de faturamento após confirmar crédito e duração de uso; orçamento é alerta, não limite que bloqueia cobranças. Preservar o spending limit já ativo.
 
 Referências de custo: [comparação de preços](https://learn.microsoft.com/en-us/azure/frontdoor/understanding-pricing), [cobrança por hora do Front Door](https://learn.microsoft.com/en-us/azure/frontdoor/billing). Evidência de região: consultas autenticadas `az policy assignment list`, `az policy definition show` e `az provider show --namespace Microsoft.Web`, realizadas em 12/10/2026.
+
+## Configuração aplicada com autorização de economia — 12/10/2026
+
+- Criado o grupo `rg-astro-academico` em Canada Central, com tags de projeto acadêmico e preparação sem serviços pagos. Um grupo vazio não hospeda a aplicação.
+- Criado e consultado novamente o orçamento **no escopo da assinatura inteira**, `astro-protecao-students`, sem filtro por grupo. Abrange também gastos fora do grupo do projeto.
+- Valor: **10 unidades da moeda de cobrança por mês**, de 01/10/2026 até 01/10/2027. É um valor conservador de alerta escolhido para detectar consumo cedo, não uma estimativa do custo de hospedar a arquitetura. A moeda e o saldo de crédito ainda não foram confirmados; não interpretar automaticamente como reais ou dólares.
+- Alertas de gasto real em 10%, 50%, 80% e 100% (respectivamente 1, 5, 8 e 10 unidades), mais previsão em 100%, habilitados para o e-mail da conta autenticada, em português. A persistência da configuração foi verificada por GET; entrega efetiva de e-mail não foi testada.
+- `spendingLimit: On` preservado. Essa proteção da oferta não é um limite personalizado de 10 e não impede consumir todo o crédito Students. Budget também não desliga recursos, e dados/alertas podem atrasar.
+- Não foram criados PostgreSQL, ACR, Container Apps nem Front Door Premium. Não foi implantada a API ou o frontend, e não foram feitas mudanças para expor banco/API publicamente ou contornar a política de região. Criar apenas os componentes pagos permitidos agora consumiria crédito sem disponibilizar o desenho completo.
+
+**Próximo passo necessário:** obter liberação de uma região suportada por Static Web Apps para preservar a arquitetura, ou decidir explicitamente uma revisão do desenho para Students. Depois, validar cotas, calcular consumo para uma janela curta e testar transferência/facial com o menor dimensionamento viável. O trabalho acadêmico continua aceitando depósitos fictícios; isso não remove requisitos de autenticação, isolamento e transferência correta.
 
 ## Referências
 
