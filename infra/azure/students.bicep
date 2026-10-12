@@ -14,6 +14,7 @@ param imagemFront string = ''
 param pgMigradorSenha string
 
 param habilitarBootstrap bool = false
+param publicarApi bool = true
 
 @description('Imagem da API no ACR (ex.: acrastroxxxx.azurecr.io/astro-api:abc123). Vazio = 1º passo, sem API.')
 param imagem string = ''
@@ -286,7 +287,7 @@ resource ambiente 'Microsoft.App/managedEnvironments@2025-07-01' = {
   }
 }
 
-resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
+resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi && publicarApi) {
   name: '${nome}-api'
   location: local
   identity: {
@@ -347,18 +348,18 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi) {
             // Partida: migrações + carga dos modelos podem levar ~1 min.
             {
               type: 'Startup'
-              httpGet: { path: '/saude', port: 8000 }
+              httpGet: { path: '/saude', port: 8000, httpHeaders: [{ name: 'Host', value: apiHost }] }
               periodSeconds: 10
               failureThreshold: 18
             }
             {
               type: 'Liveness'
-              httpGet: { path: '/saude', port: 8000 }
+              httpGet: { path: '/saude', port: 8000, httpHeaders: [{ name: 'Host', value: apiHost }] }
               periodSeconds: 30
             }
             {
               type: 'Readiness'
-              httpGet: { path: '/pronto', port: 8000 }
+              httpGet: { path: '/pronto', port: 8000, httpHeaders: [{ name: 'Host', value: apiHost }] }
               periodSeconds: 10
             }
           ]

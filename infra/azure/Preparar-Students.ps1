@@ -2,7 +2,8 @@ param(
     [ValidateSet('validate','what-if','create')][string]$Operacao = 'validate',
     [string]$Imagem = '',
     [string]$ImagemFront = '',
-    [switch]$Bootstrap
+    [switch]$Bootstrap,
+    [switch]$SomenteBootstrap
 )
 $ErrorActionPreference = 'Stop'
 $astroRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -35,6 +36,7 @@ foreach ($astroKey in $astroSecrets.Keys) {
 $astroParameters.imagem = @{value=$Imagem}
 $astroParameters.imagemFront = @{value=$ImagemFront}
 $astroParameters.habilitarBootstrap = @{value=[bool]$Bootstrap}
+$astroParameters.publicarApi = @{value=(-not [bool]$SomenteBootstrap)}
 $astroParameters.adminEmail = @{value=$astroAccount.user.name}
 $astroParameters.replicasMin = @{value=0}
 $astroParameters.replicasMax = @{value=1}
