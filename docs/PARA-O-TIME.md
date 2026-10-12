@@ -33,35 +33,52 @@ São 3 imagens, todas **públicas** (qualquer um puxa, sem login) em `matheussou
 **Nenhum segredo fica dentro das imagens** — JWT, chaves de cifragem e senhas do banco vêm do arquivo
 `.env.docker` (gerado pelo `./install.sh`, e ignorado pelo git). Em produção, viriam do Key Vault.
 
-## 3. Observação importante sobre o front (modo de rodar)
-O stack local roda o front em **modo desenvolvimento** apontando para `http://localhost:8000`, porque o
-**modo produção do app exige HTTPS** (trava de segurança do próprio `vite.config`) — e não dá HTTPS em
-`localhost` puro. É normal e esperado.
+## 3. Dois perfis — e qual usar (⚠️ use o SEGURO)
+Existem **dois jeitos** de rodar, com níveis de segurança diferentes. **Para qualquer coisa que valha
+nota de segurança ou pro pentest, use o perfil SEGURO.** O de apresentação é só pra mostrar as telas.
 
-- Para o **deploy real** (VPC/Azure com HTTPS), buildar o front em produção:
-  `docker build --build-arg VITE_MODE=production --build-arg VITE_API_URL=https://<url-da-api> ...`
-- Login/cadastro usam **biometria em stub** (aprova qualquer rosto) e há **depósito de teste** pra gerar
-  saldo — tudo é **simulação**, nada é dinheiro real.
+### 🔒 Perfil SEGURO (recomendado) — `docker-compose.full.yml`
+Controles **reais** ligados: **biometria real** (`BIOMETRIA_STUB=0`), **DPoP obrigatório**
+(`DPOP_OBRIGATORIO=1`), CORS restrito, healthchecks. Builda do código local.
+```bash
+./install.sh   # (uma vez, pros segredos)
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.full.yml up -d --build
+```
+> O login exige **rosto de verdade** (webcam) — é o comportamento real.
+
+### 🧪 Perfil APRESENTAÇÃO (só demo) — `./astro.sh up`
+Usa as imagens do Docker Hub com **`BIOMETRIA_STUB=1`** (aprova qualquer rosto) e **`DPOP_OBRIGATORIO=0`**.
+Serve pra clicar nas telas rápido, mas **NÃO representa a segurança real** — não use pra avaliar segurança.
+
+**Sobre o front:** nos dois casos ele roda em **modo desenvolvimento** apontando pra `http://localhost:8000`,
+porque o **modo produção exige HTTPS** (trava do `vite.config`) e não dá HTTPS em `localhost` puro. Pro
+**deploy real** (Azure com HTTPS), buildar em produção:
+`docker build --build-arg VITE_MODE=production --build-arg VITE_API_URL=https://<url-da-api> ...`.
+Tudo é **simulação** (dinheiro fictício), e há **depósito de teste** pra gerar saldo.
 
 ## 4. Arquitetura pra nuvem (Azure)
-Dois diagramas em `docs/arquitetura/` (abrir em https://excalidraw.com — arraste o arquivo):
-- **`azure-base.excalidraw`** — o desenho simples: Container Apps + Postgres + Key Vault + ACR/Docker Hub.
-- **`azure-endurecida.excalidraw`** — a versão com **defesa em camadas**: Front Door + WAF na frente,
-  Container Apps **privado** dentro da VNet, Postgres e Key Vault por **Private Endpoint**.
+**3 diagramas** em `docs/arquitetura/` — ver o [`README`](arquitetura/README.md) de lá. Atenção ao status:
+- ✅ **`azure-conforme-bicep.excalidraw`** — o que o `infra/azure/main.bicep` **realmente cria** (use como referência): **frontend no Static Web Apps**, só a **API no Container Apps**, **Front Door + WAF (Prevention)**, Postgres por **VNet integration** (sem rede pública, **não** é Private Endpoint), Key Vault por **RBAC + endpoint público**.
+- 🟠 **`azure-endurecida.excalidraw`** e **`azure-base.excalidraw`** — **PROPOSTAS** (ideal/didático), não a infra atual.
 
-Guia técnico de deploy já existe em [`docs/operacao/AZURE.md`](operacao/AZURE.md) e o `infra/azure/main.bicep`.
+Guia técnico: [`docs/operacao/AZURE.md`](operacao/AZURE.md) + `infra/azure/main.bicep`.
 
-> Dica pro pentest: se usarem o WAF, deixem em **modo detecção** (só loga, não bloqueia) durante os
-> testes, pra não barrar os ataques dos outros grupos e ainda ter a visibilidade.
+> **WAF e pentest (sem meio-termo errado):** o Bicep usa **Prevention** (bloqueia de verdade) — é o mais
+> seguro. Um WAF em "detecção" **só loga, não protege**; não confundir as duas coisas. Se precisarem medir
+> a segurança da **aplicação** sem o WAF no caminho, façam **uma rodada** assim e **outra rodada** com o
+> WAF em Prevention pra validar o conjunto — não troquem pra detecção achando que é "o mesmo, só seguro".
 
 ## 5. Auditoria de segurança (leitura recomendada)
-Em [`docs/auditoria-personas/`](auditoria-personas/) tem uma auditoria read-only do projeto (15 "personas"
-+ relatórios `01`–`11`). Começar pelo [`01-RESUMO-EXECUTIVO.md`](auditoria-personas/01-RESUMO-EXECUTIVO.md).
+Em [`docs/auditoria-personas/`](auditoria-personas/) tem uma auditoria **read-only** do projeto
+(relatórios `01`–`11`). Começar pelo [`01-RESUMO-EXECUTIVO.md`](auditoria-personas/01-RESUMO-EXECUTIVO.md).
 
-**Veredito:** o backend está bem endurecido (autorização por conta/papel, DPoP, isolamento do banco com
-RLS, idempotência, maker-checker) — **nenhum P0/P1 confirmado**. Prioridades pro pentest (roadmap `08`):
-1. garantir teste negativo de autorização em **toda** rota por id;
-2. teste adversarial da biometria.
+**Veredito (com as ressalvas honestas):** o backend está bem endurecido (autorização por conta/papel, DPoP,
+isolamento do banco com RLS, idempotência, maker-checker) e **nenhum P0/P1 foi confirmado** — **mas isso
+NÃO quer dizer "sem vulnerabilidades"**. A auditoria foi **leitura estática de código**, sem verificação
+dinâmica; as **15 "personas" são definições de agente**, não 15 auditorias concluídas (as análises
+automáticas falharam por limite de uso). Prioridades reais pro pentest (roadmap `08`):
+1. garantir **teste negativo de autorização** em **toda** rota por id;
+2. **teste adversarial** da biometria (foto/vídeo/máscara).
 
 ## 6. Onde está a documentação
 A raiz do repo ficou limpa; tudo está organizado em `docs/`:
