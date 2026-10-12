@@ -1,0 +1,38 @@
+# Stack completo a partir do código local, sem imagens de aplicação do Docker Hub.
+# docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.full.yml up -d --build
+services:
+  backend:
+    environment:
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      DPOP_ORIGEM_PUBLICA: ${DOCKER_APP_API_ORIGEM:-http://localhost:8000}
+      DPOP_OBRIGATORIO: '1'
+      BIOMETRIA_STUB: '0'
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8000/pronto', timeout=3).status == 200"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+  app:
+    build:
+      context: ./app
+      args:
+        VITE_MODE: development
+        VITE_MODO_DEMO: '0'
+        VITE_API_URL: ${DOCKER_APP_API_ORIGEM:-http://localhost:8000}
+    ports:
+      - 127.0.0.1:8080:8080
+    depends_on:
+      backend:
+        condition: service_healthy
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: [CMD-SHELL, 'wget -q -O /dev/null http://127.0.0.1:8080/']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped

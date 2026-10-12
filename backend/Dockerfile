@@ -31,6 +31,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 RUN AMBIENTE=desenvolvimento python -m app.core.modelos baixar \
     && chmod -R a-w /opt/astro/modelos
+# mkstemp baixa os modelos com modo 0600. O usuário da API precisa lê-los.
+RUN chmod -R a+rX /opt/astro/modelos
 ENV MODELOS_DOWNLOAD=0
 
 COPY scripts ./scripts
@@ -42,6 +44,8 @@ RUN useradd --create-home --uid 10001 astro \
     && chmod 0555 entrypoint.sh
 USER astro
 ENV HOME=/home/astro
+# Regressão de permissão: valida todos os hashes como o usuário real da API.
+RUN AMBIENTE=desenvolvimento python -m app.core.modelos baixar
 
 EXPOSE 8000
 

@@ -38,10 +38,12 @@ RUN npx --no-install vite build --mode ${VITE_MODE}
 # (hidratação) -> "Cannot set properties of undefined". Sem async, o módulo é
 # deferido e roda depois do inline. Mantém a página de renderizar.
 RUN sed -i 's/ async=""//g' dist/client/_shell.html
+RUN node scripts/cabecalhos-container.mjs
 
 # ---- runtime ----
 # nginx-unprivileged: roda como usuário sem privilégio (uid 101) na porta 8080.
 FROM nginxinc/nginx-unprivileged:1.27-alpine AS runtime
 COPY --chown=nginx:nginx nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build --chown=nginx:nginx /app/dist/client /usr/share/nginx/html
+COPY --from=build /app/security-headers.conf /etc/nginx/security-headers.conf
 EXPOSE 8080

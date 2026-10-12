@@ -59,6 +59,30 @@ npm run dev                                          # http://localhost:8081
 Sem `VITE_API_URL`, o app roda em **modo demonstração** (mocks). Para usar o backend, crie `app/.env`
 com `VITE_API_URL=http://localhost:8000`.
 
+**Stack completo a partir do código local (app, API e PostgreSQL):**
+
+Com `.env` e `.env.docker` configurados, execute:
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.full.yml up -d --build
+```
+
+App em `http://localhost:8080`; API em `http://localhost:8000`. Este perfil mantém
+DPoP e biometria real ligados, valida os modelos faciais como o usuário do container
+e espera API/banco saudáveis. O frontend usa a API, sem os mocks do app.
+O banco mantém o volume existente e não publica porta no host.
+
+Para ver o estado e parar sem apagar dados:
+
+```bash
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.full.yml ps -a
+docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.full.yml down
+```
+
+Este é o perfil local: produção exige HTTPS e a configuração do ambiente de
+implantação. Não confunda esta execução com a publicação de imagens no Docker Hub
+ou com o deploy Azure.
+
 **Jeito fácil (3 containers via Docker Hub) — recomendado:**
 ```bash
 ./install.sh     # uma vez: checa Docker, gera segredos, baixa as imagens
