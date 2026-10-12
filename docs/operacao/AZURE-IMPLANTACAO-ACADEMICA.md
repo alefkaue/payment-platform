@@ -126,6 +126,20 @@ Conferir `/saude`, `/pronto`, CORS/CSP, falha do acesso direto, Postgres sem ace
 
 Verificar custos diariamente durante a publicação, alertas e limite de logs; antes da banca, manter a réplica aquecida. A publicação só estará concluída quando os recursos e esses fluxos forem verificados. Não considerar os templates compilados como implantação já realizada.
 
+## Verificação da assinatura após login — 12/10/2026
+
+O login Azure CLI foi concluído. A assinatura Azure for Students está Enabled, com `spendingLimit: On`; nenhum grupo de recursos foi encontrado. Nenhum recurso pago foi criado nesta verificação. O saldo de crédito disponível ainda não foi confirmado.
+
+**P0 — bloqueio de implantação do frontend:** a atribuição `sys.regionrestriction` permite apenas `spaincentral`, `mexicocentral`, `northcentralus`, `canadacentral` e `italynorth`. A consulta ao provedor `Microsoft.Web`, tipo `staticSites`, retorna apenas Central US, East US 2, West US 2, West Europe e East Asia. Não há interseção. A definição de política `b86dabb9-b578-4d7b-b842-3b45e95769a1` aplica `deny` às demais regiões; suas exceções são recursos globais e diretórios B2C, não Static Web Apps. Trocar apenas `localFront` no Bicep não resolve.
+
+Para preservar a arquitetura exigida, solicitar ao suporte Azure liberação de uma região suportada por Static Web Apps, por exemplo East US 2, ou usar uma assinatura que permita esse recurso. A aprovação pelo suporte não é garantida. Não remover a política nem substituir o frontend silenciosamente. Depois da liberação, verificar também disponibilidade e cotas de Container Apps, PostgreSQL B1ms, ACR e Private Link na região escolhida antes de criar a infraestrutura paga.
+
+**P0 — custo fixo incompatível com tratar Students como hospedagem gratuita contínua:** a documentação Microsoft apresenta US$ 330/mês como referência ilustrativa da taxa base Front Door Premium, antes de PostgreSQL, ACR, logs, tráfego e demais consumos. Isso não é uma cotação da assinatura. A cobrança real é por hora ou fração de hora em que o perfil existe. Reduzir réplicas da API a zero não interrompe essa taxa. Para economia mantendo o desenho, usar janelas curtas de demonstração e planejar retirada dos recursos que continuam cobrando; exclusão do banco exige backup e autorização específica.
+
+Configuração mínima proposta, ainda não aplicada: Static Web Apps Free, PostgreSQL B1ms/32 GB sem HA, ACR Basic, API Consumption com mínimo zero e máximo uma réplica (aquecer antes da demonstração), limite de logs e orçamento com alertas. Definir o valor do orçamento na moeda efetiva de faturamento após confirmar crédito e duração de uso; orçamento é alerta, não limite que bloqueia cobranças. Preservar o spending limit já ativo.
+
+Referências de custo: [comparação de preços](https://learn.microsoft.com/en-us/azure/frontdoor/understanding-pricing), [cobrança por hora do Front Door](https://learn.microsoft.com/en-us/azure/frontdoor/billing). Evidência de região: consultas autenticadas `az policy assignment list`, `az policy definition show` e `az provider show --namespace Microsoft.Web`, realizadas em 12/10/2026.
+
 ## Referências
 
 - [Budgets em Bicep](https://learn.microsoft.com/en-us/azure/templates/microsoft.consumption/budgets)
