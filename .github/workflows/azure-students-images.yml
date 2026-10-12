@@ -1,0 +1,45 @@
+name: Azure Students - imagens de teste
+on:
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: Origem HTTPS exata da API Container Apps
+        required: true
+        type: string
+permissions:
+  contents: read
+  id-token: write
+concurrency:
+  group: azure-students-images
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.STUDENTS_BUILD_CLIENT_ID }}
+          tenant-id: ${{ vars.STUDENTS_TENANT_ID }}
+          subscription-id: ${{ vars.STUDENTS_SUBSCRIPTION_ID }}
+      - uses: docker/setup-buildx-action@v3
+      - name: Login ACR por identidade federada (sem senha persistente)
+        env:
+          ACR: ${{ vars.STUDENTS_ACR }}
+        run: az acr login --name "$ACR"
+      - name: Backend real e modelos conferidos no build
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ vars.STUDENTS_ACR }}.azurecr.io/astro-api:${{ github.sha }}
+      - name: Frontend ligado à API real com CSP
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          file: app/Dockerfile.students
+          push: true
+          build-args: VITE_API_URL=${{ inputs.api_url }}
+          tags: ${{ vars.STUDENTS_ACR }}.azurecr.io/astro-front:${{ github.sha }}

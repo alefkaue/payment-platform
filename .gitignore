@@ -56,3 +56,7 @@ payment/
 
 # Credenciais exclusivas do Compose (não entram no env_file da API)
 .env.docker
+
+# Provisionamento local Azure: nunca versionar credenciais ou parâmetros gerados.
+.azure-local/
+app/nginx-students.conf
