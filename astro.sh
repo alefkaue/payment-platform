@@ -79,7 +79,7 @@ menu() {
     echo "  0) Sair"
     printf "Escolha: "; read -r op
     case "$op" in
-      1) bash ./install.sh ;;
+      1) bash ./install.sh --hub ;;
       2) up ;;
       3) down ;;
       4) restart ;;

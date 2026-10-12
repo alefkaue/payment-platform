@@ -3,13 +3,14 @@
 Resumo rápido do que foi preparado pra facilitar a vida de todo mundo (rodar o projeto, apresentar e
 preparar o pentest). Qualquer dúvida, só chamar.
 
-## 1. Rodar o projeto inteiro em 2 comandos
-Precisa só do **Docker** instalado. Não precisa de Node, Python, nem conta no Docker Hub.
+## 1. Rodar o perfil de apresentação
+Precisa de Docker, Compose e OpenSSL. Não precisa de Node/Python na máquina nem conta no Docker Hub.
+Este primeiro exemplo usa biometria de teste; para avaliar segurança, use o perfil local da seção 3.
 
 ```bash
 git clone https://github.com/alefkaue/payment-platform
 cd payment-platform
-./install.sh      # checa o Docker, gera os segredos de teste e baixa as imagens
+./install.sh --hub # prepara segredos e baixa as imagens de apresentação
 ./astro.sh up     # sobe os 3 containers
 ```
 Depois: **app em http://localhost:8080** · **API (Swagger) em http://localhost:8000/docs**
@@ -41,17 +42,30 @@ nota de segurança ou pro pentest, use o perfil SEGURO.** O de apresentação é
 Controles **reais** ligados: **biometria real** (`BIOMETRIA_STUB=0`), **DPoP obrigatório**
 (`DPOP_OBRIGATORIO=1`), CORS restrito, healthchecks. Builda do código local.
 ```bash
-./install.sh   # (uma vez, pros segredos)
+./install.sh --local # prepara segredos persistentes sem baixar as imagens de apresentação
 docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.full.yml up -d --build
 ```
 > O login exige **rosto de verdade** (webcam) — é o comportamento real.
+
+Neste perfil, JWT_SECRET, EMBEDDING_KEY e ADMIN_SENHA são passados explicitamente
+à API pelo Compose. Não apague nem regenere essas chaves ao reiniciar: a chave
+facial é necessária para ler os rostos já cadastrados. O instalador preserva
+segredos existentes e importa do `.env` antigo somente esses três valores ausentes
+do `.env.docker`, sem copiar senhas administrativas do banco para a API.
+
+O depósito fictício está ligado e o documento é opcional. Cadastro e login
+continuam com biometria real e DPoP obrigatório. O arquivo `.env` fica disponível
+para outras opções da API; os segredos deste perfil ficam no `.env.docker`.
+
+`./install.sh` sem argumentos também prepara o perfil local. O download de
+imagens do Docker Hub ocorre apenas com `--hub`.
 
 ### 🧪 Perfil APRESENTAÇÃO (só demo) — `./astro.sh up`
 Usa as imagens do Docker Hub com **`BIOMETRIA_STUB=1`** (aprova qualquer rosto) e **`DPOP_OBRIGATORIO=0`**.
 Serve pra clicar nas telas rápido, mas **NÃO representa a segurança real** — não use pra avaliar segurança.
 
 **Sobre o front:** nos dois casos ele roda em **modo desenvolvimento** apontando pra `http://localhost:8000`,
-porque o **modo produção exige HTTPS** (trava do `vite.config`) e não dá HTTPS em `localhost` puro. Pro
+porque o **modo produção exige HTTPS** (trava do `vite.config`); o perfil local usa HTTP por padrão. Pro
 **deploy real** (Azure com HTTPS), buildar em produção:
 `docker build --build-arg VITE_MODE=production --build-arg VITE_API_URL=https://<url-da-api> ...`.
 Tudo é **simulação** (dinheiro fictício), e há **depósito de teste** pra gerar saldo.

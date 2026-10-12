@@ -8,10 +8,18 @@ services:
       # biometria real (STUB=0) e DPoP obrigatório -> é a opção mais segura que roda local.
       AMBIENTE: desenvolvimento
       CNPJ_PROVEDOR: stub
+      # Segredos persistentes: --env-file só interpola; não injeta tudo na API.
+      JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET em .env.docker}
+      EMBEDDING_KEY: ${EMBEDDING_KEY:?defina EMBEDDING_KEY em .env.docker}
+      ADMIN_SENHA: ${ADMIN_SENHA:?defina ADMIN_SENHA em .env.docker}
+      # Simulação financeira/documental; autenticação facial continua real.
+      DEPOSITO_DEMO: '1'
+      KYC_DOCUMENTO_OBRIGATORIO: '0'
       CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
       DPOP_ORIGEM_PUBLICA: ${DOCKER_APP_API_ORIGEM:-http://localhost:8000}
       DPOP_OBRIGATORIO: '1'
       BIOMETRIA_STUB: '0'
+      BIOMETRIA_STUB_CADASTRO: '0'
     healthcheck:
       test: [CMD, python, -c, "import urllib.request; assert urllib.request.urlopen('http://127.0.0.1:8000/pronto', timeout=3).status == 200"]
       interval: 10s

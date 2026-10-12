@@ -1,7 +1,8 @@
 #!/bin/sh
-# Gera o .env.docker com segredos de TESTE para o stack local (docker-compose.hub.yml).
+# Gera o .env.docker com segredos persistentes para os perfis locais.
 # Segredos de teste -- NÃO use em produção. O .env.docker é ignorado pelo git.
 set -eu
+umask 077
 cd "$(dirname "$0")"
 
 if [ -f .env.docker ]; then
@@ -28,4 +29,4 @@ DATABASE_CONTEXT_KEY=$(fernet)
 EOF
 
 chmod 600 .env.docker
-echo ".env.docker gerado. Agora: docker compose -f docker-compose.hub.yml --env-file .env.docker up -d"
+echo ".env.docker gerado. Para o perfil local com controles reais, siga o README."
