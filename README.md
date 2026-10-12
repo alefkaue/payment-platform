@@ -59,11 +59,15 @@ npm run dev                                          # http://localhost:8081
 Sem `VITE_API_URL`, o app roda em **modo demonstração** (mocks). Para usar o backend, crie `app/.env`
 com `VITE_API_URL=http://localhost:8000`.
 
-**Docker (3 containers via imagens do Docker Hub):**
+**Jeito fácil (3 containers via Docker Hub) — recomendado:**
 ```bash
-./gerar-segredos.sh
-docker compose -f docker-compose.hub.yml --env-file .env.docker up -d   # app :8080 · api :8000
+./install.sh     # uma vez: checa Docker, gera segredos, baixa as imagens
+./astro.sh       # painel: subir, parar, logs, status, testes, limpar…
+# ou direto:  ./astro.sh up   →  app http://localhost:8080 · api http://localhost:8000
 ```
+O painel `./astro.sh` aceita comandos: `up`, `down`, `restart`, `status`, `logs [api|app|db]`, `open`,
+`test`, `clean`, `help`.
+
 O `docker-compose.yml` (build local, backend + Postgres + migração com credenciais separadas) também
 está disponível. Detalhes do banco em [`docs/arquitetura/BANCO.md`](docs/arquitetura/BANCO.md).
 
