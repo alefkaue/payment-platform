@@ -167,8 +167,8 @@ def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...], *, checar_o
         raise HTTPException(status_code=401, detail=motivo)
 
     frontais = liveness_logic.melhores_frontais(sinais, n=2)
-    if not frontais:
-        raise HTTPException(status_code=400, detail="Não foi possível isolar um quadro nítido do rosto. Tente com mais luz.")
+    if len(frontais) < 2 or any(abs(sinais[i].yaw) >= liveness_logic.YAW_FRONTAL for i in frontais):
+        raise HTTPException(status_code=400, detail="Mantenha o rosto de frente entre os movimentos, com boa luz, e tente novamente.")
 
     m = face_engine.motor()
     referencia: list[float] | None = None
@@ -186,10 +186,14 @@ def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...], *, checar_o
             if msg:
                 raise HTTPException(status_code=400, detail=msg)
             oculos.append(q.oculos)
-        real, prob = m.anti_spoof(imagens[i], rosto)
-        prob_real_min = min(prob_real_min, prob)
-        if not real:
-            raise HTTPException(status_code=401, detail="Falha na prova de vida: a imagem parece ser foto, tela ou máscara.")
+        if i in frontais:
+            # Textura frontal para o classificador passivo; movimentos e identidade
+            # continuam conferidos na sequência e nas amostras de início/meio/fim.
+            real, prob = m.anti_spoof(imagens[i], rosto)
+            prob_real_min = min(prob_real_min, prob)
+            if not real:
+                logger.info("biometria_passiva_recusada", extra={"prob_real": round(prob, 4)})
+                raise HTTPException(status_code=401, detail="Não foi possível confirmar a presença real. Fique de frente entre os movimentos, melhore a luz e tente novamente.")
         t = m.embedding(imagens[i], rosto)
         if referencia is None:
             referencia = t
