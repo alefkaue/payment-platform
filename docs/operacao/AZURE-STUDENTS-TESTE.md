@@ -41,6 +41,14 @@ Janela inicial definida até **15/10/2026 19:41:45 UTC**, correspondente a **16:
 
 ## Publicação e validação
 
+### Correção do cadastro facial — 14/10/2026
+
+O teste inicial do desafio não cobria o processamento do rosto. Os logs de uma tentativa real mostraram `OSError: libEGL.so.1` ao criar o FaceLandmarker no backend. O endpoint `/usuarios/cadastro-sessao` retornava 500; sem CORS nessa resposta, o navegador apresentava `Failed to fetch` e o app mostrava "sem conexão". A restrição de IP era um impedimento potencial para outras redes, mas não resolvia esta falha interna.
+
+Correção: `libegl1`/`libgles2` na imagem de produção e execução real de `landmarks_service.extrair` durante o build, como usuário sem privilégios. A resposta de erro interno também preserva CORS somente para origens autorizadas, com request ID e sem detalhes da exceção. Três testes de regressão verificam origem permitida, origem hostil e domínio com prefixo enganoso.
+
+Validação no Edge contra a imagem corrigida: pedido de cadastro-sessão com DPoP assinado e quadros sem rosto recebeu recusa 401 legível pelo JavaScript, sem erro CORS; nenhuma conta foi criada. Isso valida execução do motor e tratamento da recusa, não substitui o cadastro de uma pessoa real. O bloqueio CSP de `odml.pa.googleapis.com/v1/log` permanece: trata-se de telemetria do SDK, não da API do cadastro.
+
 Infraestrutura base provisionada. Imagens de backend e frontend construídas e enviadas ao ACR por OIDC no GitHub Actions, sem senha de registro persistente. Build confirmado no [run 38299226008](https://github.com/alefkaue/payment-platform/actions/runs/38299226008).
 
 O build Linux apresentou divergência entre localhost IPv4/IPv6 na prerenderização; `preview.host=127.0.0.1` resolveu. Build de produção local e imagem Linux concluíram; a imagem Students remove `async` do módulo do shell antes de recalcular hashes da CSP, preservando a ordem de hidratação.
