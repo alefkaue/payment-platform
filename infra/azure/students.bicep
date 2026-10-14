@@ -16,7 +16,7 @@ param pgMigradorSenha string
 param habilitarBootstrap bool = false
 param publicarApi bool = true
 @description('Redes autorizadas a testar; ingress nega as demais.')
-@minLength(1)
+// Lista vazia permite acesso público; autenticação e banco privado permanecem.
 param ipsTeste array
 
 @description('Imagem da API no ACR (ex.: acrastroxxxx.azurecr.io/astro-api:abc123). Vazio = 1º passo, sem API.')

@@ -3,7 +3,8 @@ param(
     [string]$Imagem = '',
     [string]$ImagemFront = '',
     [switch]$Bootstrap,
-    [switch]$SomenteBootstrap
+    [switch]$SomenteBootstrap,
+    [switch]$AcessoPublico
 )
 $ErrorActionPreference = 'Stop'
 $astroRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
@@ -37,10 +38,14 @@ $astroParameters.imagem = @{value=$Imagem}
 $astroParameters.imagemFront = @{value=$ImagemFront}
 $astroParameters.habilitarBootstrap = @{value=[bool]$Bootstrap}
 $astroParameters.publicarApi = @{value=(-not [bool]$SomenteBootstrap)}
-$astroAddress = (Invoke-RestMethod -Uri 'https://api.ipify.org?format=json').ip
-$astroParsedAddress = $null
-if (-not [Net.IPAddress]::TryParse($astroAddress, [ref]$astroParsedAddress) -or $astroParsedAddress.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { throw 'IP publico IPv4 indisponivel; acesso aberto nao sera configurado.' }
-$astroParameters.ipsTeste = @{value=@($astroAddress + '/32')}
+if ($AcessoPublico) {
+    $astroParameters.ipsTeste = @{value=@()}
+} else {
+    $astroAddress = (Invoke-RestMethod -Uri 'https://api.ipify.org?format=json').ip
+    $astroParsedAddress = $null
+    if (-not [Net.IPAddress]::TryParse($astroAddress, [ref]$astroParsedAddress) -or $astroParsedAddress.AddressFamily -ne [Net.Sockets.AddressFamily]::InterNetwork) { throw 'IP publico IPv4 indisponivel; use -AcessoPublico somente para uma abertura intencional.' }
+    $astroParameters.ipsTeste = @{value=@($astroAddress + '/32')}
+}
 $astroParameters.adminEmail = @{value=$astroAccount.user.name}
 $astroParameters.replicasMin = @{value=0}
 $astroParameters.replicasMax = @{value=1}

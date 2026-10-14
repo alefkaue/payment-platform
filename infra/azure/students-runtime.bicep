@@ -5,7 +5,7 @@ param local string = resourceGroup().location
 param imagem string
 param imagemFront string
 param publicarApi bool = true
-@minLength(1)
+// Lista vazia permite acesso público; autenticação e banco privado permanecem.
 param ipsTeste array
 param adminEmail string
 param origensExtras array = ['https://localhost']

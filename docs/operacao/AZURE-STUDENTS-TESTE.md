@@ -2,6 +2,8 @@
 
 Adaptação autorizada em 12/10/2026. O template original `main.bicep` permanece disponível; a variante está em `infra/azure/students.bicep`.
 
+**Atualização em 14/10/2026:** frontend e API retomados e abertos para qualquer rede a pedido do responsável; ingress sem restrição por IP. Banco continua privado, autenticação/DPoP, CORS e HTTPS preservados. Teste em Microsoft Edge com Playwright: página `/criar-conta` carregou sem erros de JavaScript/rede e `fetch` do próprio navegador para `/biometria/desafios` retornou 201. Isso valida a comunicação inicial do cadastro, não a conclusão da biometria de uma pessoa real. A restrição anterior podia impedir a API de responder para outras redes. Para reproduzir acesso público no provisionamento, usar `Preparar-Students.ps1 -AcessoPublico`; no template runtime, passar `ipsTeste=[]`. Janela atual: 15/10/2026 00:11:08 UTC (14/10 às 21:11:08 em Brasília), com verificação de pausa a cada seis horas.
+
 ## Arquitetura e decisões
 
 ```mermaid
