@@ -162,7 +162,23 @@ async def _erro_inesperado(request: Request, exc: Exception):
     # Mensagens de exceção podem carregar URLs com senha ou entradas do cliente.
     logger.error("Erro inesperado", extra={"request_id": getattr(request.state, "request_id", None),
                                           "tipo_erro": type(exc).__name__})
-    return _problema(request, 500, "Erro interno. Tente de novo; se continuar, informe o código da requisição.")
+    resposta = _problema(request, 500, "Erro interno. Tente de novo; se continuar, informe o código da requisição.")
+    # ServerErrorMiddleware produz esta resposta fora do CORSMiddleware. Sem
+    # estes cabeçalhos o navegador esconde o 500 e informa uma falha de conexão.
+    origem = request.headers.get("origin")
+    if origem and (origem in settings.cors_origins_lista or
+                   (settings.cors_origin_regex and re.fullmatch(settings.cors_origin_regex, origem))):
+        resposta.headers["Access-Control-Allow-Origin"] = origem
+        resposta.headers["Access-Control-Expose-Headers"] = "X-Request-Id"
+        resposta.headers["Vary"] = "Origin"
+    resposta.headers["Cache-Control"] = "no-store"
+    resposta.headers["X-Content-Type-Options"] = "nosniff"
+    request_id = getattr(request.state, "request_id", None)
+    if request_id:
+        resposta.headers["X-Request-Id"] = request_id
+    if settings.em_producao:
+        resposta.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return resposta
 
 
 for r in (auth, contas, identidade, biometria, pagamentos, cobrancas, beneficios, seguranca, admin):
