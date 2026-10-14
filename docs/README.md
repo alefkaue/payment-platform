@@ -28,6 +28,7 @@
 |---|---|
 | [AZURE.md](operacao/AZURE.md) | Deploy na Azure (Container Apps + ACR + Key Vault) |
 | [AZURE-STUDENTS-TESTE.md](operacao/AZURE-STUDENTS-TESTE.md) | Aplicação publicada: acesso, segurança, custos, pausa e prioridades |
+| [DOCUMENTO-COLETA-ACADEMICA.md](operacao/DOCUMENTO-COLETA-ACADEMICA.md) | Coleta documental sem validar identidade/rosto no modo acadêmico; alteração apenas no GitHub |
 | [AZURE-IMPLANTACAO-ACADEMICA.md](operacao/AZURE-IMPLANTACAO-ACADEMICA.md) | Sequência atual conforme os três diagramas, orçamento e migrador separado |
 | [RODAR-NO-PC.md](operacao/RODAR-NO-PC.md) | Rodar no PC / emulador Android |
 | [COMO-RODAR-REMOTO.md](operacao/COMO-RODAR-REMOTO.md) | Subir por túneis HTTPS (ambiente de pentest) |

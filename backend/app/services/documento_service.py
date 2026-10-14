@@ -73,6 +73,14 @@ def analisar_documento_pessoa(*, tipo: str, frente_b64: str, verso_b64: str | No
         sha = f"{sha}:{sha_v}"
 
     cpf = somente_digitos(cpf)
+    if not s.documento_verificar_identidade:
+        # Coleta acadêmica: arquivos continuam validados; documento não autentica
+        # a pessoa, não gera template e não recebe aprovação de identidade.
+        return {"tipo": tipo, "status": "em_analise", "provedor": "coleta_academica", "sha256": sha,
+                "campos": {"nome": mascarar_nome(nome), "cpf": mascarar_cpf(cpf)},
+                "verificacoes": {"identidade": "nao_verificada", "rosto": "nao_comparado"},
+                "motivos": ["Documento recebido para o trabalho acadêmico; identidade documental não verificada."],
+                "nivel_risco": "medio"}
     prov = ocr_service.provedor()
     v: dict = {}
     motivos: list[str] = []

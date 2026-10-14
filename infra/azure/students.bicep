@@ -326,6 +326,7 @@ resource api 'Microsoft.App/containerApps@2024-03-01' = if (comApi && publicarAp
             { name: 'AMBIENTE', value: 'producao' }
             { name: 'DEMONSTRACAO_PUBLICA', value: demonstracaoPublica ? '1' : '0' }
             { name: 'DEPOSITO_DEMO', value: demonstracaoPublica ? '1' : '0' }
+            { name: 'DOCUMENTO_VERIFICAR_IDENTIDADE', value: demonstracaoPublica ? '0' : '1' }
             { name: 'KYC_DOCUMENTO_OBRIGATORIO', value: demonstracaoPublica ? '0' : '1' }
             { name: 'DPOP_ORIGEM_PUBLICA', value: 'https://${apiHost}' }
             { name: 'CNPJ_PROVEDOR', value: 'brasilapi' }

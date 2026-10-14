@@ -60,6 +60,7 @@ def test_admin_ligado_em_producao_exige_totp(producao):
 @pytest.mark.parametrize(
     ("variavel", "valor", "erro"),
     [
+        ("DOCUMENTO_VERIFICAR_IDENTIDADE", "0", "DOCUMENTO_VERIFICAR_IDENTIDADE"),
         ("DATABASE_URL", "", "DATABASE_URL"),
         ("DATABASE_URL", "sqlite://", "PostgreSQL"),
         ("DATABASE_URL", "postgresql://u:p@db/test?sslmode=require", "verify-full"),

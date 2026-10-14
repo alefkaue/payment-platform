@@ -205,6 +205,7 @@ class Settings(BaseSettings):
     # "tesseract" | "stub" (testes: lê o que foi declarado). stub é recusado em produção.
     documento_provedor: str = Field(default="auto", alias="DOCUMENTO_PROVEDOR")
     kyc_documento_obrigatorio: bool = Field(default=True, alias="KYC_DOCUMENTO_OBRIGATORIO")
+    documento_verificar_identidade: bool = Field(default=True, alias="DOCUMENTO_VERIFICAR_IDENTIDADE")
     documento_max_bytes: int = Field(default=6 * 1024 * 1024, alias="DOCUMENTO_MAX_BYTES")
     empresa_documento_max_bytes: int = Field(default=10 * 1024 * 1024, alias="EMPRESA_DOCUMENTO_MAX_BYTES")
 
@@ -325,6 +326,8 @@ def get_settings() -> Settings:
         raise RuntimeError("DOCUMENTO_PROVEDOR=stub não pode ser usado em produção (aceita o que foi declarado).")
     if not s.kyc_documento_obrigatorio and s.em_producao and not s.demonstracao_publica:
         raise RuntimeError("KYC_DOCUMENTO_OBRIGATORIO=0 não pode ser usado em produção.")
+    if not s.documento_verificar_identidade and s.em_producao and not s.demonstracao_publica:
+        raise RuntimeError("DOCUMENTO_VERIFICAR_IDENTIDADE=0 exige demonstração acadêmica.")
     if not s.dpop_obrigatorio and s.em_producao:
         raise RuntimeError("DPOP_OBRIGATORIO=0 não pode ser usado em produção (token roubado voltaria a servir).")
     if s.biometria_motor not in ("opencv", "deepface"):
