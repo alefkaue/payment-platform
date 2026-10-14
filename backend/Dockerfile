@@ -7,6 +7,8 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         libgl1 \
+        libegl1 \
+        libgles2 \
         libglib2.0-0 \
         tesseract-ocr \
         tesseract-ocr-por \
@@ -46,6 +48,9 @@ USER astro
 ENV HOME=/home/astro
 # Regressão de permissão: valida todos os hashes como o usuário real da API.
 RUN AMBIENTE=desenvolvimento python -m app.core.modelos baixar
+# Carrega também as bibliotecas nativas e executa o motor real como usuário da API.
+# Hashes/imports sozinhos não detectam dependências como libEGL ausentes.
+RUN AMBIENTE=desenvolvimento python -c "import numpy as np; from app.services.landmarks_service import extrair; extrair(np.zeros((128, 128, 3), dtype=np.uint8)); print('Motor facial real carregado e executado')"
 
 EXPOSE 8000
 

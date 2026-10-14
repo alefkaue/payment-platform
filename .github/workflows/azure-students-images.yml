@@ -6,6 +6,10 @@ on:
         description: Origem HTTPS exata da API Container Apps
         required: true
         type: string
+      build_frontend:
+        description: Reconstruir frontend também
+        type: boolean
+        default: true
 permissions:
   contents: read
   id-token: write
@@ -36,6 +40,7 @@ jobs:
           push: true
           tags: ${{ vars.STUDENTS_ACR }}.azurecr.io/astro-api:${{ github.sha }}
       - name: Frontend ligado à API real com CSP
+        if: inputs.build_frontend
         uses: docker/build-push-action@v6
         with:
           context: app
