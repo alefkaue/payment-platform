@@ -1,0 +1,3 @@
+# Prompt para correção
+
+Leia `REVISAO-PROBLEMAS.md` na raiz e corrija os achados R01–R10, priorizando pagamentos duplicados, alçadas e resultados de lotes/folhas. Confirme cada problema antes de alterar o código; para R05, explicite a regra de desligamento, e para R09, valide a concorrência em PostgreSQL. Preserve o escopo escolar: não implemente validação oficial de CPF/RG, biometria real ou integrações bancárias reais. Siga os `AGENTS.md` aplicáveis, adicione testes de regressão para os defeitos corrigidos e execute testes, verificação de tipos e builds pertinentes. Atualize o relatório com o que foi corrigido, evidências e pendências; não declare resolvido o que não foi validado.
