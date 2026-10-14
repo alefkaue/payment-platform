@@ -43,6 +43,8 @@ Janela inicial definida até **15/10/2026 19:41:45 UTC**, correspondente a **16:
 
 ### Correção do cadastro facial — 14/10/2026
 
+**Ajuste posterior de falso negativo:** o classificador passivo era executado também sobre amostras com o rosto virado; uma única recusa dessas amostras bloqueava a sequência. Agora exige dois quadros frontais, ambos aprovados pelo mesmo classificador e limiar. Movimentos continuam conferidos na sequência completa e comparação de identidade continua no início/meio/fim. Não houve redução de limiar nem ativação de stub. 22 testes de lógica passaram, incluindo recusa de frontal falso, ausência de frontal e mudança de identidade. A calibração com pessoas/dispositivos reais ainda precisa de aceite: a alteração reduz uma causa potencial de falsas recusas, mas não comprova que toda câmera será aceita.
+
 O teste inicial do desafio não cobria o processamento do rosto. Os logs de uma tentativa real mostraram `OSError: libEGL.so.1` ao criar o FaceLandmarker no backend. O endpoint `/usuarios/cadastro-sessao` retornava 500; sem CORS nessa resposta, o navegador apresentava `Failed to fetch` e o app mostrava "sem conexão". A restrição de IP era um impedimento potencial para outras redes, mas não resolvia esta falha interna.
 
 Correção: `libegl1`/`libgles2` na imagem de produção e execução real de `landmarks_service.extrair` durante o build, como usuário sem privilégios. A resposta de erro interno também preserva CORS somente para origens autorizadas, com request ID e sem detalhes da exceção. Três testes de regressão verificam origem permitida, origem hostil e domínio com prefixo enganoso.
