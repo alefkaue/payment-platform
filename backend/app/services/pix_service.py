@@ -28,6 +28,7 @@ from app.core.documentos import (
     normalizar_celular,
     somente_digitos,
 )
+from app.repositories.exceptions import LimiteQuantidadeError
 from app.repositories.repository import Repositorio
 
 MAX_CHAVES = {"PF": 5, "PJ": 20}
@@ -96,8 +97,11 @@ def consultar(repo: Repositorio, *, usuario: dict, chave: str, ip: str | None) -
 
 
 def criar_chave(repo: Repositorio, *, conta: dict, tipo: str, valor: str | None, ip: str | None, autor: dict) -> dict:
-    if repo.contar_chaves(conta["carteira_id"]) >= MAX_CHAVES[conta["titular_tipo"]]:
-        raise HTTPException(status_code=400, detail=f"Limite de {MAX_CHAVES[conta['titular_tipo']]} chaves por conta atingido.")
+    maximo = MAX_CHAVES[conta["titular_tipo"]]
+    limite = HTTPException(status_code=400, detail=f"Limite de {maximo} chaves por conta atingido.")
+    # Checagem rápida; a que vale é refeita com a carteira travada, junto da inserção (R09).
+    if repo.contar_chaves(conta["carteira_id"]) >= maximo:
+        raise limite
     if get_settings().em_producao and tipo in ("email", "celular"):
         raise HTTPException(status_code=409, detail="Chaves de e-mail/celular exigem confirmação de posse, ainda não disponível.")
     if tipo == "aleatoria":
@@ -119,7 +123,10 @@ def criar_chave(repo: Repositorio, *, conta: dict, tipo: str, valor: str | None,
         if not valor_final:
             raise HTTPException(status_code=400, detail="Celular inválido. Use DDD + número.")
     # TODO(produção): e-mail e celular precisam de confirmação por código antes de valer.
-    k = repo.criar_chave(carteira_id=conta["carteira_id"], tipo=tipo, valor=valor_final)
+    try:
+        k = repo.criar_chave(carteira_id=conta["carteira_id"], tipo=tipo, valor=valor_final, maximo=maximo)
+    except LimiteQuantidadeError:
+        raise limite from None
     if k is None:
         raise HTTPException(status_code=409, detail="Esta chave já está cadastrada.")
     repo.registrar_log(ator=autor["email"], acao="chave_pix_criada", ip=ip, usuario_id=autor["id"], empresa_id=conta.get("empresa_id"), detalhe={"tipo": tipo, "carteira_id": conta["carteira_id"]})

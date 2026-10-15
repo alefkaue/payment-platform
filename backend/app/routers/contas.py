@@ -210,6 +210,9 @@ def operacoes_pendentes(conta: dict = Depends(conta_atual), repo: Repositorio = 
             u = repo.obter_usuario_por_id(uid)
             nomes[uid] = u["nome"] if u else "—"
         p["criado_por_nome"] = nomes[uid]
+        if p["tipo"] == "folha" and p["status"] == "pendente":
+            # R05: quem aprova vê que alguém da folha foi desligado depois do lançamento.
+            p["funcionarios_desligados"] = folha_service.desligados_na_folha(repo, p)
     return pendentes
 
 

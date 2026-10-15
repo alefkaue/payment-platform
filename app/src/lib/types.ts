@@ -459,9 +459,25 @@ export interface PoliticaEmpresa {
   usuarios_ocupados?: number;
 }
 
-/** Operação acima da alçada de quem lançou, aguardando um 2º aprovador (maker-checker). */
-export type StatusPendente = "aguardando" | "aprovada" | "recusada";
-export type TipoPendente = "transferencia" | "pagamento_cobranca" | "folha" | "acesso";
+/** Operação acima da alçada de quem lançou, aguardando um 2º aprovador (maker-checker).
+ * "recusada" é a rejeição por quem aprova; "falhou" é erro ao executar depois de aprovada. */
+export type StatusPendente =
+  "aguardando" | "executando" | "aprovada" | "recusada" | "cancelada" | "expirada" | "falhou";
+export type TipoPendente =
+  "transferencia" | "pagamento_cobranca" | "folha" | "acesso" | "devolucao";
+export interface ItemExecucaoFolha {
+  funcionario_id: number;
+  nome: string;
+  situacao: "pago" | "erro";
+  erro?: string;
+}
+/** Folha aprovada: quantos salários saíram de fato (aprovar não é o mesmo que pagar). */
+export interface ExecucaoFolha {
+  executados: number;
+  itens: number;
+  parcial: boolean;
+  resultados: ItemExecucaoFolha[];
+}
 export interface OperacaoPendente {
   id: number;
   tipo?: TipoPendente;
@@ -474,6 +490,11 @@ export interface OperacaoPendente {
   /** Grande empresa acima do limite: 2 pessoas diferentes aprovam. */
   aprovacoes_necessarias?: number;
   aprovadores?: string[];
+  /** Motivo de uma execução que falhou. */
+  erro?: string;
+  execucao?: ExecucaoFolha;
+  /** Folha aguardando aprovação: funcionários desligados depois do lançamento (não recebem). */
+  desligados?: string[];
 }
 
 export type DirecaoFatura = "receber" | "pagar";

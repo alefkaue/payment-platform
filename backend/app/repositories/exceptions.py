@@ -35,3 +35,8 @@ class RostoDuplicadoError(Exception):
 
 class CadastroFacialIndisponivelError(Exception):
     """Não foi possível conferir todas as identidades faciais existentes."""
+
+
+class LimiteQuantidadeError(Exception):
+    """Limite de quantidade (chaves Pix por conta, funcionários da MEI) atingido,
+    conferido com a carteira/empresa travada na mesma transação da inserção."""

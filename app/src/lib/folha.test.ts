@@ -166,7 +166,7 @@ describe("folha em demonstração", () => {
     if (!("pendente" in r)) throw new Error("Esperava uma pendência.");
     await expect(decidirPendente(r.pendente.id, true, bio)).rejects.toThrow(/própria operação/);
     expect(await decidirPendente(r.pendente.id, false)).toMatchObject({
-      status: "recusada",
+      status: "cancelada",
       mensagem: "Folha cancelada.",
     });
     expect(sessao.conta.saldo).toBe(10000);

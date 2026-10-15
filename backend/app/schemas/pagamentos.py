@@ -62,6 +62,12 @@ class DecisaoPendente(BaseModel):
     biometria: ProvaBiometrica | None = None
 
 
+class RepeticaoPendente(BaseModel):
+    """Repetir os salários que não saíram de uma folha aprovada (rosto acima do limite facial)."""
+
+    biometria: ProvaBiometrica | None = None
+
+
 class NotaFiscal(BaseModel):
     """Documento fiscal da operação. CBS e IBS são os valores DESTACADOS na nota."""
 

@@ -33,7 +33,7 @@ from app.db.models import (
     Usuario,
     Vinculo,
 )
-from app.repositories.exceptions import CpfDuplicadoError
+from app.repositories.exceptions import CpfDuplicadoError, LimiteQuantidadeError
 
 # Status que ocupam uma "vaga" de usuário da empresa (limite por porte).
 STATUS_OCUPAM_VAGA = ("pendente", "aguardando", "ativo", "suspenso")
@@ -468,11 +468,21 @@ class RepositorioExtras:
     # =========================================================================
 
     def criar_funcionario(self, *, empresa_id: int, nome: str, cpf: str, cargo: Optional[str],
-                          salario: Optional[Decimal], criado_por: int) -> dict:
+                          salario: Optional[Decimal], criado_por: int, maximo: Optional[int] = None) -> dict:
+        """Com `maximo` (MEI), conta os ativos e insere com a empresa travada (FOR UPDATE):
+        dois cadastros simultâneos não passam juntos do limite (R09)."""
         with self._sf() as s:
+            if maximo is not None:
+                trava = select(Empresa.id).where(Empresa.id == empresa_id)
+                if s.bind.dialect.name == "postgresql":
+                    trava = trava.with_for_update()
+                s.execute(trava)
             f = s.scalar(select(Funcionario).where(Funcionario.empresa_id == empresa_id, Funcionario.cpf == cpf))
             if f is not None and f.ativo:
                 raise CpfDuplicadoError("Esse CPF já está na folha desta empresa.")
+            if maximo is not None and (s.scalar(select(func.count(Funcionario.id)).where(
+                    Funcionario.empresa_id == empresa_id, Funcionario.ativo.is_(True))) or 0) >= maximo:
+                raise LimiteQuantidadeError()
             if f is None:
                 f = Funcionario(empresa_id=empresa_id, cpf=cpf)
                 s.add(f)

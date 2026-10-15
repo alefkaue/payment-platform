@@ -734,6 +734,36 @@ export async function transacoes_(): Promise<Transacao[]> {
 }
 export { transacoes_ as transacoes };
 
+/** Tamanho da página do extrato (o servidor aceita até 200 por consulta). */
+export const PAGINA_EXTRATO = 100;
+
+export interface PaginaExtrato {
+  itens: Transacao[];
+  /** offset da próxima página, ou null quando o histórico acabou. */
+  proximo: number | null;
+}
+
+/** Extrato em páginas: operações antigas continuam acessíveis (antes parava nas 100 últimas). */
+export async function paginaExtrato(offset = 0): Promise<PaginaExtrato> {
+  if (MODO_API) {
+    const conferir = capturarContexto();
+    const c = await get<ContaApi>("/contas/atual");
+    conferir();
+    // Um a mais que a página: sabe se existe a próxima sem outra consulta.
+    const ts = await get<TransacaoApi[]>(
+      `/pagamentos/transacoes?limite=${PAGINA_EXTRATO + 1}&offset=${offset}`,
+    );
+    conferir();
+    return {
+      itens: ts.slice(0, PAGINA_EXTRATO).map((t) => mapTransacao(t, c.carteira_id)),
+      proximo: ts.length > PAGINA_EXTRATO ? offset + PAGINA_EXTRATO : null,
+    };
+  }
+  const todas = await transacoes_();
+  const fim = offset + PAGINA_EXTRATO;
+  return { itens: todas.slice(offset, fim), proximo: fim < todas.length ? fim : null };
+}
+
 export async function transacaoPorId(id: number): Promise<Transacao> {
   if (!MODO_API) await delay(200);
   if (MODO_API) {
@@ -1468,9 +1498,22 @@ export async function apuracaoPJ(): Promise<ApuracaoPJ> {
 const minhasCobrancasDemo = () =>
   cobrancasDemo.filter((c) => c.recebedor_carteira_id === sessao.conta.carteira_id);
 
+/** Todas as cobranças emitidas, página a página (antes parava nas 100 mais recentes). */
+async function todasCobrancasApi(): Promise<CobrancaApi[]> {
+  const pagina = 200; // máximo aceito pelo servidor
+  const todas: CobrancaApi[] = [];
+  // Teto de segurança: 50 páginas (10 mil cobranças) numa conta de demonstração.
+  for (let offset = 0; offset < pagina * 50; offset += pagina) {
+    const lote = await get<CobrancaApi[]>(`/cobrancas?limite=${pagina}&offset=${offset}`);
+    todas.push(...lote);
+    if (lote.length < pagina) break;
+  }
+  return todas;
+}
+
 export async function listarCobrancas(): Promise<Cobranca[]> {
   if (!MODO_API) await delay(300);
-  if (MODO_API) return (await get<CobrancaApi[]>("/cobrancas?limite=100")).map(mapCobranca);
+  if (MODO_API) return (await todasCobrancasApi()).map(mapCobranca);
   return minhasCobrancasDemo().sort((a, b) => b.id - a.id);
 }
 
@@ -1573,7 +1616,7 @@ export async function listarFaturas(direcao?: Fatura["direcao"]): Promise<Fatura
   if (!MODO_API) await delay(350);
   if (MODO_API) {
     if (direcao === "pagar") return [];
-    const cobs = await get<CobrancaApi[]>("/cobrancas?limite=100");
+    const cobs = await todasCobrancasApi();
     return cobs
       .filter((c) => c.status === "aberta" || c.status === "paga")
       .map((c) => {
@@ -2120,16 +2163,28 @@ export async function recusarConvite(id: number): Promise<void> {
   await post(`/convites/${id}/recusar`);
 }
 
+type StatusPendenteApi =
+  "pendente" | "executando" | "aprovada" | "rejeitada" | "cancelada" | "expirada" | "falhou";
+
 interface PendenteApi {
   id: number;
   tipo: TipoPendente;
   valor: string;
   descricao: string | null;
-  status: "pendente" | "aprovada" | "rejeitada" | "falhou";
+  status: StatusPendenteApi;
   criado_por_nome?: string;
   criado_em: string;
   aprovacoes_necessarias: number;
   aprovacoes: { usuario_id: number; nome: string }[];
+  payload?: { itens?: { funcionario_id: number; nome: string }[] } | null;
+  resultado?: {
+    erro?: string;
+    executados?: number;
+    itens?: number;
+    parcial?: boolean;
+    resultados?: { funcionario_id: number; situacao: "pago" | "erro"; erro?: string }[];
+  } | null;
+  funcionarios_desligados?: number[];
 }
 
 const TIPO_PENDENTE: Record<TipoPendente, string> = {
@@ -2137,9 +2192,24 @@ const TIPO_PENDENTE: Record<TipoPendente, string> = {
   pagamento_cobranca: "Pagamento de cobrança",
   folha: "Folha de pagamento",
   acesso: "Acesso à conta",
+  devolucao: "Devolução de Pix",
+};
+
+// Cada estado do servidor tem o seu: rejeição não é erro de execução nem prazo vencido.
+const STATUS_PENDENTE: Record<StatusPendenteApi, OperacaoPendente["status"]> = {
+  pendente: "aguardando",
+  executando: "executando",
+  aprovada: "aprovada",
+  rejeitada: "recusada",
+  cancelada: "cancelada",
+  expirada: "expirada",
+  falhou: "falhou",
 };
 
 function mapPendente(p: PendenteApi): OperacaoPendente {
+  const nomes = new Map((p.payload?.itens ?? []).map((i) => [i.funcionario_id, i.nome]));
+  const nome = (id: number) => nomes.get(id) ?? `Funcionário ${id}`;
+  const r = p.resultado;
   return {
     id: p.id,
     tipo: p.tipo,
@@ -2148,25 +2218,37 @@ function mapPendente(p: PendenteApi): OperacaoPendente {
     valor: num(p.valor),
     criado_por: p.criado_por_nome ?? "—",
     criado_em: p.criado_em,
-    status:
-      p.status === "pendente" ? "aguardando" : p.status === "aprovada" ? "aprovada" : "recusada",
+    status: STATUS_PENDENTE[p.status] ?? "falhou",
     aprovacoes_necessarias: p.aprovacoes_necessarias,
     aprovadores: p.aprovacoes.map((a) => a.nome),
+    ...(r?.erro ? { erro: r.erro } : {}),
+    ...(p.tipo === "folha" && r?.resultados
+      ? {
+          execucao: {
+            executados: r.executados ?? r.resultados.filter((i) => i.situacao === "pago").length,
+            itens: r.itens ?? r.resultados.length,
+            parcial: Boolean(r.parcial),
+            resultados: r.resultados.map((i) => ({
+              funcionario_id: i.funcionario_id,
+              nome: nome(i.funcionario_id),
+              situacao: i.situacao,
+              ...(i.erro ? { erro: i.erro } : {}),
+            })),
+          },
+        }
+      : {}),
+    ...(p.funcionarios_desligados?.length
+      ? { desligados: p.funcionarios_desligados.map(nome) }
+      : {}),
   };
 }
 
 export async function pendentes(): Promise<OperacaoPendente[]> {
   if (!MODO_API) await delay(300);
   if (MODO_API) {
-    const listas = await Promise.all(
-      ["pendente", "aprovada", "rejeitada"].map((st) =>
-        get<PendenteApi[]>(`/empresas/atual/pendentes?status=${st}`),
-      ),
-    );
-    return listas
-      .flat()
-      .map(mapPendente)
-      .sort((a, b) => b.criado_em.localeCompare(a.criado_em));
+    // status vazio = todos os estados (pendente, executando, falhou, expirada, cancelada...).
+    const lista = await get<PendenteApi[]>("/empresas/atual/pendentes?status=");
+    return lista.map(mapPendente).sort((a, b) => b.criado_em.localeCompare(a.criado_em));
   }
   return [
     ...(ehContaDoRoteiro() ? pendentesDemo : []),
@@ -2199,13 +2281,39 @@ export async function decidirPendente(
       throw new ApiError("Quem lançou a folha não pode aprovar a própria operação.", 403);
     if (minhaFolha.status !== "aguardando")
       throw new ApiError("Esta operação já foi decidida.", 409);
-    minhaFolha.status = "recusada";
+    // Quem lançou desiste: no servidor isso é "cancelada", não uma recusa de outra pessoa.
+    minhaFolha.status = "cancelada";
     return { ...minhaFolha, mensagem: "Folha cancelada." };
   }
   const op = pendentesDemo.find((o) => o.id === id);
   if (!op) throw new ApiError("Operação não encontrada.", 404);
   op.status = aprovar ? "aprovada" : "recusada";
   return { ...op };
+}
+
+/** Folha aprovada com salários que não saíram: paga só os que faltam (os pagos não repetem). */
+export function podeRepetirFolha(o: OperacaoPendente): boolean {
+  return (
+    o.tipo === "folha" &&
+    (o.status === "aprovada" || o.status === "falhou") &&
+    Boolean(o.execucao?.resultados.some((i) => i.situacao === "erro"))
+  );
+}
+
+/** Rosto na repetição: o servidor pede acima do limite facial (conservador: valor da folha). */
+export function repeticaoPedeRosto(o: OperacaoPendente): boolean {
+  return o.valor > LIMITE_SELFIE;
+}
+
+export async function repetirPendente(
+  id: number,
+  biometria?: ProvaBiometrica,
+): Promise<OperacaoPendente> {
+  if (!MODO_API)
+    throw new ApiError("A repetição da folha só existe com o servidor (fora da demonstração).");
+  return mapPendente(
+    await post<PendenteApi>(`/pagamentos/pendentes/${id}/repetir`, biometria ? { biometria } : {}),
+  );
 }
 
 export { VIGENCIA_ATUAL };

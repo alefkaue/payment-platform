@@ -68,6 +68,7 @@ from app.repositories.exceptions import (
     CpfDuplicadoError,
     EmailDuplicadoError,
     IdempotenciaConflitanteError,
+    LimiteQuantidadeError,
     SaldoInsuficienteError,
 )
 from app.repositories.extras import RepositorioExtras
@@ -751,9 +752,11 @@ class Repositorio(RepositorioExtras):
 
     def devolver_voluntario(self, *, transacao_id: int, recebedor_carteira_id: int, valor: Optional[Decimal],
                             autor_usuario_id: int, auth_metodo: AuthMetodo, idempotency_key: Optional[str],
-                            verificacao_facial: Optional[dict], prazo_dias: int) -> dict:
+                            verificacao_facial: Optional[dict], prazo_dias: int,
+                            checar: Optional[Callable[[Session, Carteira], None]] = None) -> dict:
         """Quem RECEBEU um Pix devolve tudo ou parte ao pagador (devolução Pix, até o prazo).
-        A soma das devoluções nunca passa do valor recebido; tudo com as carteiras travadas."""
+        A soma das devoluções nunca passa do valor recebido; tudo com as carteiras travadas.
+        `checar(sessao, carteira_do_recebedor)` roda com o lock (alçada diária de quem devolve)."""
         with self._sf() as s:
             if idempotency_key:
                 ja = s.scalar(select(Transacao).where(Transacao.idempotency_key.in_(_chaves_equivalentes(idempotency_key))))
@@ -784,6 +787,8 @@ class Repositorio(RepositorioExtras):
                 stmt = stmt.with_for_update().execution_options(populate_existing=True)
             cs = {c.id: c for c in s.scalars(stmt).all()}
             pagador, recebedor = cs[t.origem_carteira_id], cs[t.destino_carteira_id]
+            if checar:
+                checar(s, recebedor)
             if recebedor.saldo < valor:
                 raise SaldoInsuficienteError()
             self._mover(s, recebedor, -valor, motivo="devolucao")
@@ -932,13 +937,15 @@ class Repositorio(RepositorioExtras):
     @staticmethod
     def soma_saidas_do_usuario(s: Session, carteira_id: int, usuario_id: int, desde: datetime) -> Decimal:
         """O que ESTA pessoa tirou desta carteira desde `desde`, sem contar o que foi
-        executado por aprovação (já passou por outra pessoa) nem o que foi devolvido."""
+        executado por aprovação (já passou por outra pessoa) nem o que foi devolvido.
+        Devolução voluntária de Pix também é saída de dinheiro e entra na conta (R02);
+        a do MED (método SISTEMA) não, porque não foi decisão de quem opera."""
         stmt = select(func.coalesce(func.sum(Transacao.valor_bruto), 0)).where(
             Transacao.origem_carteira_id == carteira_id,
             Transacao.autor_usuario_id == usuario_id,
-            Transacao.tipo.in_(["transferencia", "cobranca"]),
+            Transacao.tipo.in_(["transferencia", "cobranca", "devolucao"]),
             Transacao.status != StatusTransacao.DEVOLVIDA,
-            Transacao.auth_metodo != AuthMetodo.APROVACAO,
+            Transacao.auth_metodo.not_in([AuthMetodo.APROVACAO, AuthMetodo.SISTEMA]),
             Transacao.criado_em >= desde,
         )
         return Decimal(s.scalar(stmt) or 0)
@@ -1118,8 +1125,17 @@ class Repositorio(RepositorioExtras):
     # Chaves Pix
     # =========================================================================
 
-    def criar_chave(self, *, carteira_id: int, tipo: str, valor: str) -> Optional[dict]:
+    def criar_chave(self, *, carteira_id: int, tipo: str, valor: str, maximo: Optional[int] = None) -> Optional[dict]:
+        """None se a chave já existe. Com `maximo`, conta e insere com a carteira travada
+        (FOR UPDATE): dois cadastros simultâneos não passam juntos do limite (R09)."""
         with self._sf() as s:
+            if maximo is not None:
+                trava = select(Carteira.id).where(Carteira.id == carteira_id)
+                if s.bind.dialect.name == "postgresql":
+                    trava = trava.with_for_update()
+                s.execute(trava)
+                if (s.scalar(select(func.count(ChavePix.id)).where(ChavePix.carteira_id == carteira_id)) or 0) >= maximo:
+                    raise LimiteQuantidadeError()
             k = ChavePix(carteira_id=carteira_id, tipo=tipo, valor=valor)
             s.add(k)
             try:
@@ -1308,6 +1324,23 @@ class Repositorio(RepositorioExtras):
             r = self._pendente_dict(p)
             r["_entregas"] = [e.id for e in entregas]
             return r
+
+    def pendente_por_chave(self, empresa_id: int, idempotency_key: str) -> Optional[dict]:
+        """A pendência que nasceu desta chave (qualquer status), para o reenvio achar a
+        mesma intenção antes de decidir de novo entre pagar e pedir aprovação (R01)."""
+        with self._sf() as s:
+            p = s.scalar(select(OperacaoPendente).where(OperacaoPendente.empresa_id == empresa_id,
+                                                        OperacaoPendente.idempotency_key == idempotency_key))
+            return self._pendente_dict(p) if p else None
+
+    def mudar_status_pendente(self, pendente_id: int, de: str, para: str) -> bool:
+        """de -> para, só se ainda estiver em `de` (UPDATE condicional)."""
+        with self._sf() as s:
+            n = s.query(OperacaoPendente).filter(
+                OperacaoPendente.id == pendente_id, OperacaoPendente.status == de,
+            ).update({"status": para}, synchronize_session=False)
+            s.commit()
+            return n == 1
 
     def obter_pendente(self, pendente_id: int) -> Optional[dict]:
         with self._sf() as s:

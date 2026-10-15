@@ -17,7 +17,10 @@ def aplicar_limites():
 if __name__ == '__main__':
     aplicar_limites()
     from fastapi import HTTPException
-    from app.core.arquivos import _validar_pdf_local
+    from app.core.arquivos import PRONTO_PDF, _validar_pdf_local
+    # Daqui em diante, uma saída com erro é do documento, não da inicialização (R10).
+    sys.stdout.buffer.write(PRONTO_PDF)
+    sys.stdout.buffer.flush()
     # Limite absoluto independente do pai; documento no produto tem no máximo 10 MiB.
     bruto = sys.stdin.buffer.read(10 * 1024 * 1024 + 1)
     if len(bruto) > 10 * 1024 * 1024:

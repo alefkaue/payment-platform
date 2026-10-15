@@ -17,7 +17,10 @@ Ordem das checagens numa transferência (as baratas primeiro):
 
 Idempotência: a chave enviada pelo cliente vale por conta de origem (prefixo
 `<carteira_id>:`). Antes era global -- outra pessoa que repetisse a mesma chave
-recebia de volta a transação de quem usou primeiro.
+recebia de volta a transação de quem usou primeiro. O reenvio é resolvido ANTES da
+alçada (R01): se a chave já gerou um pagamento ou uma pendência, devolve o mesmo
+resultado em vez de recalcular a alçada (que o pagamento original já consumiu) e
+abrir uma segunda operação.
 """
 
 import hashlib
@@ -48,6 +51,28 @@ def _limite_facial() -> Decimal:
 
 def chave_idempotencia(conta: dict, chave: str | None) -> str | None:
     return f"{conta['carteira_id']}:{chave}" if chave else None
+
+
+_CHAVE_CONFLITANTE = "Esta chave de idempotência já foi usada em outra operação."
+
+
+def _feita_com_a_chave(repo: Repositorio, conta: dict, chave: str | None, *, mesma) -> dict | None:
+    """R01: o que esta chave já produziu, antes de decidir entre executar e pedir aprovação.
+    {"transacao": ...} se já virou movimento (conferido por `mesma(transacao)`; outro
+    pedido com a mesma chave é 409), {"pendente": ...} se virou pendência (o payload é
+    conferido em criar_pendente), None se é a primeira vez."""
+    if not chave:
+        return None
+    t = repo.transacao_por_chave(chave)
+    if t is not None:
+        if t["origem"]["carteira_id"] != conta["carteira_id"] or not mesma(t):
+            raise HTTPException(status_code=409, detail=_CHAVE_CONFLITANTE)
+        return {"transacao": t}
+    if conta.get("empresa_id") is not None:
+        p = repo.pendente_por_chave(conta["empresa_id"], chave)
+        if p is not None:
+            return {"pendente": p}
+    return None
 
 
 class AlcadaDiariaExcedida(Exception):
@@ -131,7 +156,7 @@ def criar_pendente(repo: Repositorio, *, conta: dict, usuario: dict, tipo: str, 
                                 criado_por=usuario["id"], descricao=descricao, aprovacoes_necessarias=necessarias,
                                 idempotency_key=f"{conta['carteira_id']}:{idempotency_key}" if idempotency_key else None)
     except IdempotenciaConflitanteError:
-        raise HTTPException(status_code=409, detail="Esta chave de idempotência já foi usada em outra operação.") from None
+        raise HTTPException(status_code=409, detail=_CHAVE_CONFLITANTE) from None
     if p.pop("_repetida", False):
         p.pop("_entregas", None)
         return p  # reenvio: a mesma pendência, sem novo aviso nem nova trilha
@@ -180,6 +205,15 @@ def transferir(
             }, idempotency_key=idempotency_key)}
 
     if not pular_alcada:
+        anterior = _feita_com_a_chave(
+            repo, conta, chave_idempotencia(conta, idempotency_key),
+            mesma=lambda t: (t["tipo"], t["destino"]["carteira_id"], t["valor_bruto"])
+            == ("transferencia", destino["carteira_id"], valor))
+        if anterior and "transacao" in anterior:
+            return anterior
+        if anterior:
+            # Mesma pendência (criar_pendente confere o pedido inteiro), sem nova alçada.
+            return pendente((anterior["pendente"]["payload"] or {}).get("motivo") or "acima_da_alcada")
         motivo = motivo_aprovacao(repo, conta, usuario, valor)
         if motivo:
             return pendente(motivo)
@@ -250,6 +284,10 @@ def transferir_lote(repo: Repositorio, *, usuario: dict, conta: dict, dispositiv
         except HTTPException as e:
             resultados.append({"indice": indice, "situacao": "erro", "erro": str(e.detail)})
             continue
+        except IdempotenciaConflitanteError:
+            # R03: antes escapava do laço -- 409 no lote inteiro depois de itens já pagos.
+            resultados.append({"indice": indice, "situacao": "erro", "erro": _CHAVE_CONFLITANTE})
+            continue
         if "pendente" in r:
             resultados.append({"indice": indice, "situacao": "pendente_aprovacao", "operacao_id": r["pendente"]["id"]})
         else:
@@ -280,7 +318,19 @@ def _bate_com(p: dict, t: dict) -> bool:
     if p["tipo"] == "folha":
         destinos = {i["destino_carteira_id"]: Decimal(i["valor"]) for i in p["payload"].get("itens") or []}
         return destinos.get(t["destino_carteira_id"]) == t["valor"]
+    if p["tipo"] == "devolucao":
+        # Sem valor no pedido, devolve o que faltava: nunca mais que o valor da pendência.
+        return (t["destino_carteira_id"] == p["payload"].get("destino_carteira_id")
+                and t["valor"] <= p["valor"])
     return False
+
+
+def resumo_folha(itens: list[dict], resultados: list[dict]) -> dict:
+    """R04: aprovar a folha não é o mesmo que pagar. O resultado guarda cada funcionário
+    e quantos salários saíram de fato; nenhum pago = a operação fica "falhou"."""
+    pagos = sum(1 for r in resultados if r["situacao"] == "pago")
+    return {"resultados": resultados, "executados": pagos, "itens": len(itens),
+            "parcial": 0 < pagos < len(itens)}
 
 
 def conciliar_executando(repo: Repositorio) -> dict:
@@ -402,11 +452,19 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
             )["transacao"]
             resultado = {"transacao_id": transacao["id"]}
         elif p["tipo"] == "folha":
-            resultado = {"resultados": folha_service.executar(
+            resultado = resumo_folha(payload["itens"], folha_service.executar(
                 repo, usuario=usuario, conta=conta, dispositivo=dispositivo, itens=payload["itens"],
                 descricao=payload["descricao"], ip=ip, verificacao=verificacao, chave_base=f"pendente-{operacao_id}",
                 auth_metodo=AuthMetodo.APROVACAO,
-            )}
+            ))
+        elif p["tipo"] == "devolucao":
+            r = devolver_pix(
+                repo, usuario=usuario, conta=conta, dispositivo=dispositivo, transacao_id=payload["transacao_id"],
+                valor=Decimal(payload["valor"]) if payload.get("valor") is not None else None, biometria=None,
+                idempotency_key=f"pendente-{operacao_id}", ip=ip, pular_alcada=True, verificacao_previa=verificacao,
+                auth_metodo=AuthMetodo.APROVACAO,
+            )
+            resultado = {"transacao_id": r["transacao"]["id"]}
         elif p["tipo"] == "acesso":
             vinc = equipe_service.aplicar_aprovacao_acesso(repo, conta=conta, aprovador=usuario, payload=payload, ip=ip)
             resultado = {"vinculo_id": vinc["id"], "status": vinc["status"]}
@@ -415,9 +473,63 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
     except HTTPException as e:
         repo.concluir_pendente(operacao_id, "falhou", {"erro": str(e.detail)})
         raise
-    repo.concluir_pendente(operacao_id, "aprovada", resultado)
-    repo.registrar_log(ator=usuario["email"], acao="operacao_aprovada", ip=ip,
-                       detalhe={"operacao_id": operacao_id, "tipo": p["tipo"], **resultado}, **log)
+    # Folha em que nenhum salário saiu não aparece como "aprovada" (R04).
+    status = "falhou" if p["tipo"] == "folha" and not resultado["executados"] else "aprovada"
+    repo.concluir_pendente(operacao_id, status, resultado)
+    repo.registrar_log(ator=usuario["email"], acao="operacao_aprovada" if status == "aprovada" else "operacao_falhou",
+                       ip=ip, detalhe={"operacao_id": operacao_id, "tipo": p["tipo"], **resultado}, **log)
+    return repo.obter_pendente(operacao_id)
+
+
+def repetir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, operacao_id: int,
+                     biometria, ip: str | None) -> dict:
+    """R04: repete só os salários que não saíram de uma folha já aprovada (ex.: faltou
+    saldo). Mesmas chaves "pendente-{id}-f{funcionario}" da execução original: o que já
+    foi pago não paga de novo. Mesmas regras de quem aprova (outra pessoa, papel, alçada,
+    aparelho, rosto acima do limite) e o cadastro é conferido de novo (R05)."""
+    from app.services import folha_service  # import tardio (ciclo)
+
+    exigir_pj(conta)
+    p = repo.obter_pendente(operacao_id)
+    if not p or p["empresa_id"] != conta["empresa_id"]:
+        raise HTTPException(status_code=404, detail="Operação não encontrada.")
+    if p["tipo"] != "folha":
+        raise HTTPException(status_code=400, detail="Só a folha de pagamento pode ser repetida. Nas outras operações, lance de novo.")
+    if p["status"] not in ("aprovada", "falhou"):
+        raise HTTPException(status_code=409, detail=f"Operação está '{p['status']}' e não pode ser repetida.")
+    if p["criado_por_usuario_id"] == usuario["id"]:
+        raise HTTPException(status_code=403, detail="A repetição precisa ser feita por quem pode aprovar a folha, não por quem lançou.")
+    exigir_papel(conta, PapelVinculo.ADMIN, PapelVinculo.APROVADOR)
+    v = conta["vinculo"]
+    if v["alcada"] is not None and p["valor"] > v["alcada"]:
+        raise HTTPException(status_code=403, detail="O valor passa da sua alçada de aprovação.")
+    itens = p["payload"].get("itens") or []
+    pagas = {t["destino_carteira_id"]: t["id"] for t in repo.transacoes_da_pendente(operacao_id, p["empresa_id"])
+             if _bate_com(p, t)}
+    faltam = [it for it in itens if it["destino_carteira_id"] not in pagas]
+    if not faltam:
+        raise HTTPException(status_code=409, detail="Todos os salários desta folha já foram pagos.")
+    seguranca_service.exigir_dispositivo(dispositivo)
+    verificacao = None
+    if sum((Decimal(it["valor"]) for it in faltam), Decimal("0")) > _limite_facial():
+        verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="aprovacao")
+    # Uma repetição por vez; se o processo cair no meio, o job de conciliação fecha a operação.
+    if not repo.mudar_status_pendente(operacao_id, p["status"], "executando"):
+        raise HTTPException(status_code=409, detail="A operação mudou enquanto você decidia. Atualize a lista.")
+    novos = {r["funcionario_id"]: r for r in folha_service.executar(
+        repo, usuario=usuario, conta=conta, dispositivo=dispositivo, itens=faltam,
+        descricao=p["payload"]["descricao"], ip=ip, verificacao=verificacao, chave_base=f"pendente-{operacao_id}",
+        auth_metodo=AuthMetodo.APROVACAO)}
+    resultados = [{"funcionario_id": it["funcionario_id"], "situacao": "pago",
+                   "transacao_id": pagas[it["destino_carteira_id"]]}
+                  if it["destino_carteira_id"] in pagas else novos[it["funcionario_id"]] for it in itens]
+    resultado = {**resumo_folha(itens, resultados), "repeticoes": int((p["resultado"] or {}).get("repeticoes", 0)) + 1}
+    status = "aprovada" if resultado["executados"] else "falhou"
+    repo.concluir_pendente(operacao_id, status, resultado)
+    repo.registrar_log(ator=usuario["email"], acao="operacao_repetida", ip=ip, usuario_id=usuario["id"],
+                       empresa_id=conta["empresa_id"],
+                       detalhe={"operacao_id": operacao_id, "status": status, "executados": resultado["executados"],
+                                "itens": resultado["itens"]})
     return repo.obter_pendente(operacao_id)
 
 
@@ -427,26 +539,60 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
 
 
 def devolver_pix(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, transacao_id: int,
-                 valor: Decimal | None, biometria, idempotency_key: str | None, ip: str | None) -> dict:
+                 valor: Decimal | None, biometria, idempotency_key: str | None, ip: str | None,
+                 pular_alcada: bool = False, verificacao_previa: dict | None = None,
+                 auth_metodo: AuthMetodo | None = None) -> dict:
     """Devolução voluntária: quem recebeu um Pix devolve tudo ou parte (R1-13). Não é MED:
     é decisão do recebedor. Mesmas travas de quem movimenta: papel, aparelho, rosto acima
-    do limite facial, idempotência."""
+    do limite facial, idempotência -- e, na PJ, a alçada por operação e diária de quem
+    devolve (R02): acima dela, vira operação pendente de aprovação.
+
+    Devolve {"transacao": ...} ou {"pendente": ...}. Sem `valor`, a alçada é conferida
+    sobre o valor recebido (teto do que pode ser devolvido)."""
     exigir_papel(conta, *PODE_MOVIMENTAR)
     seguranca_service.exigir_dispositivo(dispositivo)
     t = repo.obter_transacao(transacao_id)
     if not t or t["destino"]["carteira_id"] != conta["carteira_id"]:
         raise HTTPException(status_code=404, detail="Transação não encontrada nesta conta.")
     teto = Decimal(valor) if valor is not None else t["liquido"]
-    verificacao, metodo = None, AuthMetodo.SENHA
-    if teto > _limite_facial():
+    chave = chave_idempotencia(conta, idempotency_key)
+
+    def pendente(motivo: str) -> dict:
+        return {"pendente": criar_pendente(
+            repo, conta=conta, usuario=usuario, tipo="devolucao", valor=teto, ip=ip, motivo=motivo,
+            descricao=f"Devolução de Pix para {t['origem'].get('nome') or 'pagador'}"[:200], payload={
+                "transacao_id": transacao_id, "valor": str(valor) if valor is not None else None,
+                "destino_carteira_id": t["origem"]["carteira_id"], "idempotency_key": idempotency_key,
+            }, idempotency_key=idempotency_key)}
+
+    checar = None
+    if not pular_alcada:
+        anterior = _feita_com_a_chave(
+            repo, conta, chave,
+            mesma=lambda d: d["tipo"] == "devolucao" and d["transacao_original_id"] == transacao_id
+            and (valor is None or d["valor_bruto"] == Decimal(valor)))
+        if anterior and "transacao" in anterior:
+            return anterior
+        if anterior:
+            return pendente((anterior["pendente"]["payload"] or {}).get("motivo") or "acima_da_alcada")
+        motivo = motivo_aprovacao(repo, conta, usuario, teto)
+        if motivo:
+            return pendente(motivo)
+        checar = _checar_alcada_diaria(conta, usuario, teto, None)
+
+    verificacao = verificacao_previa
+    metodo = auth_metodo or (AuthMetodo.SELFIE if verificacao else AuthMetodo.SENHA)
+    if verificacao is None and not pular_alcada and teto > _limite_facial():
         verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="devolucao")
-        metodo = AuthMetodo.SELFIE
+        metodo = auth_metodo or AuthMetodo.SELFIE
     try:
         dev = repo.devolver_voluntario(
             transacao_id=transacao_id, recebedor_carteira_id=conta["carteira_id"],
             valor=Decimal(valor) if valor is not None else None, autor_usuario_id=usuario["id"], auth_metodo=metodo,
-            idempotency_key=chave_idempotencia(conta, idempotency_key), verificacao_facial=verificacao,
-            prazo_dias=get_settings().devolucao_prazo_dias)
+            idempotency_key=chave, verificacao_facial=verificacao,
+            prazo_dias=get_settings().devolucao_prazo_dias, checar=checar)
+    except AlcadaDiariaExcedida:
+        return pendente("alcada_diaria")
     except LookupError:
         raise HTTPException(status_code=404, detail="Transação não encontrada nesta conta.") from None
     except SaldoInsuficienteError:
@@ -458,7 +604,7 @@ def devolver_pix(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: 
     repo.registrar_log(ator=usuario["email"], acao="pix_devolvido", ip=ip, usuario_id=usuario["id"],
                        empresa_id=conta.get("empresa_id"),
                        detalhe={"transacao_id": transacao_id, "devolucao_id": dev["id"], "valor": str(dev["valor_bruto"])})
-    return dev
+    return {"transacao": dev}
 
 
 def contestar(repo: Repositorio, *, usuario: dict, conta: dict, transacao_id: int, motivo: str, ip: str | None) -> dict:

@@ -12,6 +12,8 @@ import base64
 import binascii
 import hashlib
 import io
+import logging
+import os
 import re
 import subprocess
 import sys
@@ -79,6 +81,24 @@ def _validar_pdf_local(bruto: bytes) -> None:
 _COMANDO_PDF = (sys.executable, "-m", "app.core.pdf_worker")
 _TEMPO_PDF = 5
 _VAGAS_PDF = threading.BoundedSemaphore(2)
+# O worker escreve esta linha depois de importar tudo: sem ela, a falha foi do processo
+# (ambiente, instalação), não do documento (R10).
+PRONTO_PDF = b"pronto\n"
+# Windows: sem SystemRoot o Python não inicializa o Winsock e `import asyncio` (puxado
+# pelo FastAPI/Starlette em algumas versões) quebra com WinError 10106. São caminhos do
+# sistema, sem credenciais; o resto do ambiente do pai continua de fora.
+_AMBIENTE_WINDOWS = ("SYSTEMROOT", "WINDIR")
+
+logger = logging.getLogger("payflow.arquivos")
+
+
+def _ambiente_pdf() -> dict[str, str]:
+    env = {"PYTHONNOUSERSITE": "1", "OMP_NUM_THREADS": "1"}
+    if sys.platform == "win32":
+        for nome in _AMBIENTE_WINDOWS:
+            if os.environ.get(nome):
+                env[nome] = os.environ[nome]
+    return env
 
 
 def _executar_pdf(bruto: bytes, *, texto: bool = False) -> bytes:
@@ -91,7 +111,7 @@ def _executar_pdf(bruto: bytes, *, texto: bool = False) -> bytes:
             resultado = subprocess.run(comando, input=bruto, stdout=subprocess.PIPE,
                                        stderr=subprocess.DEVNULL, timeout=_TEMPO_PDF,
                                        cwd=Path(__file__).resolve().parents[2],
-                                       env={"PYTHONNOUSERSITE": "1", "OMP_NUM_THREADS": "1"},
+                                       env=_ambiente_pdf(),
                                        close_fds=True)
         except subprocess.TimeoutExpired:
             raise HTTPException(status_code=413, detail="PDF excedeu o tempo de análise.") from None
@@ -99,11 +119,16 @@ def _executar_pdf(bruto: bytes, *, texto: bool = False) -> bytes:
             raise HTTPException(status_code=503, detail="Análise de PDF indisponível.") from None
     finally:
         _VAGAS_PDF.release()
+    iniciou = resultado.stdout.startswith(PRONTO_PDF)
+    saida = resultado.stdout[len(PRONTO_PDF):] if iniciou else resultado.stdout
     if resultado.returncode != 0:
+        if not iniciou:
+            logger.error("Worker de PDF não iniciou (código %s).", resultado.returncode)
+            raise HTTPException(status_code=503, detail="Análise de PDF indisponível no servidor. Tente mais tarde.")
         raise HTTPException(status_code=413, detail="PDF excedeu os recursos de análise.")
-    if len(resultado.stdout) > 262150:
+    if len(saida) > 262150:
         raise HTTPException(status_code=413, detail="Texto do PDF excedeu o limite de análise.")
-    return resultado.stdout
+    return saida
 
 
 def _validar_pdf(bruto: bytes) -> None:

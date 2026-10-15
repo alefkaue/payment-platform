@@ -13,6 +13,7 @@ from app.schemas.pagamentos import (
     DecisaoPendente,
     LoteCreate,
     LoteItemResultado,
+    RepeticaoPendente,
     TransferenciaCreate,
 )
 from app.core.config import get_settings
@@ -80,7 +81,8 @@ def comprovante(transacao_id: int, conta: dict = Depends(conta_atual), repo: Rep
     return t
 
 
-@router.post("/transacoes/{transacao_id}/devolver", response_model=TransacaoResponse, status_code=201)
+@router.post("/transacoes/{transacao_id}/devolver", response_model=TransacaoResponse, status_code=201,
+             responses={202: {"model": PendenteResponse, "description": "PJ: acima da alçada, aguardando aprovação"}})
 def devolver(
     transacao_id: int,
     dados: DevolucaoCreate,
@@ -91,10 +93,12 @@ def devolver(
     ip: str | None = Depends(ip_cliente),
     chave_header: str | None = Depends(chave_idempotencia),
 ):
-    """Quem recebeu um Pix devolve tudo (sem `valor`) ou parte, até 90 dias (não é MED)."""
-    return pagamento_service.devolver_pix(
+    """Quem recebeu um Pix devolve tudo (sem `valor`) ou parte, até 90 dias (não é MED).
+    PJ: acima da alçada de quem devolve, vira operação pendente (202)."""
+    r = pagamento_service.devolver_pix(
         repo, usuario=usuario, conta=conta, dispositivo=dispositivo, transacao_id=transacao_id, valor=dados.valor,
         biometria=dados.biometria, idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip)
+    return resposta_pendente(r["pendente"]) if "pendente" in r else r["transacao"]
 
 
 @router.post("/transacoes/{transacao_id}/contestar", status_code=201)
@@ -124,6 +128,21 @@ def decidir_pendente(
     return pagamento_service.decidir_pendente(repo, usuario=usuario, conta=conta, dispositivo=dispositivo,
                                               operacao_id=operacao_id, aprovar=dados.aprovar,
                                               biometria=dados.biometria, ip=ip)
+
+
+@router.post("/pendentes/{operacao_id}/repetir")
+def repetir_pendente(
+    operacao_id: int,
+    dados: RepeticaoPendente,
+    usuario: dict = Depends(usuario_atual),
+    conta: dict = Depends(conta_atual),
+    dispositivo: dict | None = Depends(dispositivo_atual),
+    repo: Repositorio = Depends(get_repo),
+    ip: str | None = Depends(ip_cliente),
+):
+    """PJ: paga os salários que não saíram de uma folha aprovada, sem repetir os já pagos."""
+    return pagamento_service.repetir_pendente(repo, usuario=usuario, conta=conta, dispositivo=dispositivo,
+                                              operacao_id=operacao_id, biometria=dados.biometria, ip=ip)
 
 
 @router.get("/split/simular")

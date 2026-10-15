@@ -16,7 +16,7 @@ from sqlalchemy import text
 pytestmark = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL", "").startswith("postgresql"),
                                 reason="precisa de Postgres (TEST_DATABASE_URL)")
 
-from tests.helpers import Pessoa, admin_h, conta_ref, depositar, gerar_chave_nfe  # noqa: E402
+from tests.helpers import Pessoa, admin_h, conta_ref, depositar, gerar_chave_nfe, gerar_cpf  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from verificar_banco import CONSULTAS  # noqa: E402
@@ -132,3 +132,69 @@ def test_liberar_bloqueio_em_paralelo_libera_uma_vez(cliente):
     conta_b = cliente.get("/contas/atual", headers=b.h()).json()
     assert (conta_b["saldo"], conta_b["saldo_bloqueado"]) == ("1500.00", "0.00")
     _integro()
+
+
+# ------------------------------------------------------------------ R09 (REVISAO-PROBLEMAS.md, 14/10/2026)
+# Contar e inserir na mesma transação, com a carteira/empresa travada: N cadastros
+# simultâneos não passam juntos do limite de quantidade.
+
+
+def test_r09_chaves_aleatorias_em_paralelo_respeitam_o_limite(cliente):
+    from app.services.pix_service import MAX_CHAVES
+
+    pf = Pessoa(cliente, "chaves.cc@ex.com")
+    while len(cliente.get("/pix/chaves", headers=pf.h()).json()) < MAX_CHAVES["PF"] - 1:
+        assert cliente.post("/pix/chaves", json={"tipo": "aleatoria"}, headers=pf.h()).status_code == 201
+
+    def criar():
+        return cliente.post("/pix/chaves", json={"tipo": "aleatoria"}, headers=pf.h()).status_code
+
+    res = _paralelo([criar for _ in range(N)])
+    assert res.count(201) == 1 and res.count(400) == N - 1, res
+    assert len(cliente.get("/pix/chaves", headers=pf.h()).json()) == MAX_CHAVES["PF"]
+
+
+def test_r09_funcionarios_da_mei_em_paralelo_respeitam_o_limite(cliente):
+    from app.core.config import get_settings
+
+    dono = Pessoa(cliente, "mei.cc@ex.com")
+    n = dono.abrir_empresa(porte="MEI")["numero"]
+    cpfs = {gerar_cpf() for _ in range(N)}  # funcionário não precisa ter conta para ser cadastrado
+
+    def cadastrar(cpf):
+        return lambda: cliente.post("/empresas/atual/funcionarios", headers=dono.h(n),
+                                    json={"nome": "Func Silva", "cpf": cpf, "salario": "100.00"}).status_code
+
+    res = _paralelo([cadastrar(c) for c in cpfs])
+    limite = get_settings().mei_max_funcionarios
+    assert res.count(201) == limite and res.count(409) == len(cpfs) - limite, res
+    assert len(cliente.get("/empresas/atual/funcionarios", headers=dono.h(n)).json()) == limite
+
+
+def test_r09_chave_com_contagem_desatualizada_nao_passa_do_limite(cliente, monkeypatch):
+    """Força a janela da corrida: todos contam 4 chaves antes de qualquer um inserir.
+    A contagem que vale é a refeita com a carteira travada, junto da inserção."""
+    import threading
+
+    from app.repositories import get_repository
+    from app.services import pix_service
+
+    pf = Pessoa(cliente, "chaves2.cc@ex.com")
+    while len(cliente.get("/pix/chaves", headers=pf.h()).json()) < pix_service.MAX_CHAVES["PF"] - 1:
+        assert cliente.post("/pix/chaves", json={"tipo": "aleatoria"}, headers=pf.h()).status_code == 201
+    repo = get_repository()
+    conta = repo.obter_conta_por_numero(pf.numero)
+    autor = repo.obter_usuario_por_login(pf.email)
+    barreira = threading.Barrier(N)
+    contar = repo.contar_chaves
+
+    def contar_e_esperar(carteira_id):
+        n = contar(carteira_id)
+        barreira.wait(timeout=10)
+        return n
+
+    monkeypatch.setattr(repo, "contar_chaves", contar_e_esperar)
+    res = _paralelo([_tentar(lambda: pix_service.criar_chave(repo, conta=conta, tipo="aleatoria", valor=None,
+                                                              ip=None, autor=autor)) for _ in range(N)])
+    assert sum(1 for r in res if isinstance(r, dict)) == 1, res
+    assert len(repo.listar_chaves(conta["carteira_id"])) == pix_service.MAX_CHAVES["PF"]

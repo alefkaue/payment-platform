@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery } from "@tanstack/react-query";
 import { RefreshCw, Search } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { transacoes } from "@/lib/api";
+import { paginaExtrato } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL } from "@/lib/format";
 import type { Transacao } from "@/lib/types";
@@ -38,14 +38,28 @@ const mesLabel = (iso: string) => {
 function Extrato() {
   const { conta } = useAuth();
   const minha = conta?.carteira_id ?? 0;
-  const q = useQuery({ queryKey: ["transacoes"], queryFn: transacoes });
+  // Página a página: operações antigas continuam acessíveis (antes parava nas 100 últimas).
+  const q = useInfiniteQuery({
+    queryKey: ["transacoes", "extrato"],
+    queryFn: ({ pageParam }) => paginaExtrato(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (ultima) => ultima.proximo ?? undefined,
+  });
+  const carregadas = useMemo(() => {
+    // Uma operação nova entre duas páginas desloca o offset: não mostra a mesma duas vezes.
+    const vistas = new Set<number>();
+    return (q.data?.pages ?? [])
+      .flatMap((p) => p.itens)
+      .filter((t) => !vistas.has(t.id) && Boolean(vistas.add(t.id)));
+  }, [q.data]);
+  const temMais = Boolean(q.hasNextPage);
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const [busca, setBusca] = useState("");
   const [pull, setPull] = useState(0);
   const startY = useRef<number | null>(null);
 
   const { grupos, saldoMes } = useMemo(() => {
-    const txs = q.data ?? [];
+    const txs = carregadas;
     const termo = busca.trim().toLowerCase();
     const filtradas = txs.filter((t) => {
       const entrada = t.destino_carteira_id === minha;
@@ -69,7 +83,7 @@ function Extrato() {
       return a + (entrada ? v : -v);
     }, 0);
     return { grupos: [...mapa.entries()], saldoMes: saldo };
-  }, [q.data, filtro, busca, minha]);
+  }, [carregadas, filtro, busca, minha]);
 
   const vazio = !grupos.length;
 
@@ -141,7 +155,14 @@ function Extrato() {
 
       {!vazio && (
         <div className="mb-4 flex items-center justify-between rounded-[16px] bg-tint px-4 py-3">
-          <span className="text-sm text-mut2">Resultado do filtro</span>
+          <span className="text-sm text-mut2">
+            Resultado do filtro
+            {temMais && (
+              <span className="block text-xs text-mut3">
+                nas {carregadas.length} operações mais recentes carregadas
+              </span>
+            )}
+          </span>
           <span className={cn("tabular font-semibold", saldoMes >= 0 ? "text-pos" : "text-ink")}>
             {saldoMes >= 0 ? "+" : "−"} {fmtBRL(Math.abs(saldoMes))}
           </span>
@@ -160,10 +181,13 @@ function Extrato() {
             title={busca || filtro !== "todas" ? "Nada encontrado" : "Extrato vazio"}
             hint={
               busca || filtro !== "todas"
-                ? "Tente outro termo ou filtro."
+                ? temMais
+                  ? `Nada nas ${carregadas.length} operações mais recentes. Carregue as anteriores para continuar buscando.`
+                  : "Tente outro termo ou filtro."
                 : "Quando você enviar ou receber dinheiro, tudo aparece aqui."
             }
           />
+          {temMais && <CarregarMais q={q} />}
         </section>
       ) : (
         <div className="space-y-5">
@@ -181,7 +205,29 @@ function Extrato() {
               </div>
             </section>
           ))}
+          {temMais && <CarregarMais q={q} />}
         </div>
+      )}
+    </div>
+  );
+}
+
+function CarregarMais({
+  q,
+}: {
+  q: { fetchNextPage: () => unknown; isFetchingNextPage: boolean; isFetchNextPageError: boolean };
+}) {
+  return (
+    <div className="px-5 pb-4 text-center">
+      <button
+        className="btn btn-ghost w-full"
+        disabled={q.isFetchingNextPage}
+        onClick={() => void q.fetchNextPage()}
+      >
+        {q.isFetchingNextPage ? "Carregando…" : "Carregar operações anteriores"}
+      </button>
+      {q.isFetchNextPageError && (
+        <p className="mt-2 text-sm text-err">Não foi possível carregar as anteriores.</p>
       )}
     </div>
   );

@@ -124,8 +124,16 @@ def criar(repo: Repositorio, *, usuario: dict, conta: dict, dados, ip: str | Non
     if n > 1 and dados.vencimento is None:
         raise HTTPException(status_code=400, detail="Cobrança parcelada precisa de data de vencimento.")
 
+    # R06: o banco exige parcela > 0 e imposto <= parcela; antes isso virava erro 500.
+    centavos = int(valor * 100)
+    if centavos < n:
+        raise HTTPException(status_code=400, detail=f"Cada parcela precisa ser de pelo menos R$ 0,01: com este valor, "
+                                                    f"o máximo é {max(centavos, 1)} parcela(s).")
     grupo = gerar_txid() if n > 1 else None
     valores, cbss, ibss = _dividir(valor, n), _dividir(cbs, n), _dividir(ibs, n)
+    if any(c + i > v for v, c, i in zip(valores, cbss, ibss)):
+        raise HTTPException(status_code=400, detail="O imposto da nota não cabe em todas as parcelas. "
+                                                    "Use menos parcelas.")
     linhas = []
     for i in range(n):
         linhas.append({

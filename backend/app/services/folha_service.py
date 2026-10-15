@@ -11,6 +11,14 @@ com a orientação de abrir conta (ou pagar por outro meio).
 
 Alçada vale sobre o TOTAL da folha: acima dela, a folha inteira vira UMA operação
 pendente de aprovação (com 2 aprovações na grande empresa, se passar do limite).
+
+Regra de desligamento (R05): a folha paga só funcionário ATIVO, no momento em que o
+dinheiro sai. Quem foi desligado depois do lançamento e antes da aprovação (ou da
+repetição) não recebe por esta folha: o item fica com erro explicando o motivo, e a
+listagem de pendências mostra o desligamento antes de alguém aprovar. Acerto e verbas
+rescisórias de quem já saiu não passam pela folha: vão por Pix comum, que segue a
+alçada de quem lança. Isso não diz que todo pagamento a ex-funcionário é indevido --
+só que a folha não é o caminho para ele.
 """
 
 from __future__ import annotations
@@ -25,7 +33,7 @@ from app.core.config import get_settings
 from app.core.documentos import cpf_valido, mascarar_cpf, somente_digitos
 from app.db.models import AuthMetodo, PapelVinculo
 from app.deps import exigir_papel, exigir_pj
-from app.repositories.exceptions import CpfDuplicadoError
+from app.repositories.exceptions import CpfDuplicadoError, IdempotenciaConflitanteError, LimiteQuantidadeError
 from app.repositories.repository import Repositorio
 from app.services import pagamento_service, politica_pj, seguranca_service
 
@@ -47,13 +55,17 @@ def cadastrar(repo: Repositorio, *, conta: dict, autor: dict, nome: str, cpf: st
     if not cpf_valido(cpf):
         raise HTTPException(status_code=400, detail="CPF inválido.")
     pol = politica_pj.politica(repo.obter_empresa(conta["empresa_id"])["porte"])
+    limite = HTTPException(status_code=409, detail=f"MEI pode ter até {pol.max_funcionarios} funcionário(s) registrado(s).")
+    # Checagem rápida; a que vale é refeita com a empresa travada, junto da inserção (R09).
     if pol.max_funcionarios is not None and repo.contar_funcionarios_ativos(conta["empresa_id"]) >= pol.max_funcionarios:
-        raise HTTPException(status_code=409, detail=f"MEI pode ter até {pol.max_funcionarios} funcionário(s) registrado(s).")
+        raise limite
     try:
         f = repo.criar_funcionario(empresa_id=conta["empresa_id"], nome=nome.strip(), cpf=cpf, cargo=cargo,
-                                   salario=salario, criado_por=autor["id"])
+                                   salario=salario, criado_por=autor["id"], maximo=pol.max_funcionarios)
     except CpfDuplicadoError as e:
         raise HTTPException(status_code=409, detail=str(e))
+    except LimiteQuantidadeError:
+        raise limite from None
     _log(repo, autor, conta, "funcionario_cadastrado", ip, funcionario_id=f["id"], cpf=mascarar_cpf(cpf))
     return para_api(f)
 
@@ -96,6 +108,30 @@ def _resolver_itens(repo: Repositorio, conta: dict, itens: list) -> list[dict]:
     return resolvidos
 
 
+def _motivo_para_nao_pagar(repo: Repositorio, conta: dict, item: dict) -> str | None:
+    """R05: confere o cadastro no momento da execução, não só no lançamento."""
+    f = repo.obter_funcionario(item["funcionario_id"])
+    if not f or f["empresa_id"] != conta["empresa_id"]:
+        return "Funcionário não está mais nesta empresa: salário não pago."
+    if not f["ativo"]:
+        quando = f" em {tempo.em_brt(f['desligado_em']):%d/%m/%Y}" if f["desligado_em"] else ""
+        return (f"{f['nome']} foi desligado{quando}, depois do lançamento: salário não pago por esta folha. "
+                "Acerto/rescisão vai por Pix comum.")
+    if not f["conta_salario"] or f["conta_salario"]["carteira_id"] != item["destino_carteira_id"]:
+        return f"A conta pessoal de {f['nome']} mudou desde o lançamento: lance a folha de novo."
+    return None
+
+
+def desligados_na_folha(repo: Repositorio, p: dict) -> list[int]:
+    """Funcionários de uma folha pendente que não estão mais ativos (aviso para quem aprova)."""
+    ids = []
+    for it in (p.get("payload") or {}).get("itens") or []:
+        f = repo.obter_funcionario(it["funcionario_id"])
+        if not f or not f["ativo"] or f["empresa_id"] != p["empresa_id"]:
+            ids.append(it["funcionario_id"])
+    return ids
+
+
 def _chave_da_folha(conta: dict, rotulo: str, resolvidos: list[dict], informada: str | None) -> str:
     """Base das chaves de idempotência de uma folha executada na hora. Sem chave do app,
     deriva da competência + itens: reenviar a mesma folha (duplo clique, rede ruim) devolve
@@ -119,17 +155,33 @@ def pagar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | 
     rotulo = descricao or f"Salário {tempo.hoje_brt():%m/%Y}"
 
     chave = _chave_da_folha(conta, rotulo, resolvidos, idempotency_key)
-    motivo = pagamento_service.motivo_aprovacao(repo, conta, usuario, total)
-    if motivo:
-        p = pagamento_service.criar_pendente(
+
+    def pendente(motivo: str | None) -> dict:
+        return {"pendente": pagamento_service.criar_pendente(
             repo, conta=conta, usuario=usuario, tipo="folha", valor=total, ip=ip, motivo=motivo,
             descricao=f"{rotulo} — {len(resolvidos)} funcionário(s)",
             payload={"itens": resolvidos, "descricao": rotulo}, idempotency_key=chave,
-        )
-        return {"pendente": p}
+        )}
+
+    # R01: a idempotência é resolvida antes da alçada. Reenvio de uma folha que virou
+    # pendência devolve a mesma pendência; reenvio de uma folha já paga na hora não
+    # recalcula a alçada sobre salários que já saíram (e que já gastaram a alçada).
+    carteira = conta["carteira_id"]
+    anterior = repo.pendente_por_chave(conta["empresa_id"], f"{carteira}:{chave}")
+    if anterior is not None:
+        return pendente((anterior["payload"] or {}).get("motivo"))
+    ja_pagos = {r["funcionario_id"] for r in resolvidos
+                if repo.transacao_por_chave(f"{carteira}:{chave}-f{r['funcionario_id']}") is not None}
+    restante = sum((Decimal(r["valor"]) for r in resolvidos if r["funcionario_id"] not in ja_pagos), Decimal("0"))
+    motivo = pagamento_service.motivo_aprovacao(repo, conta, usuario, restante) if restante > 0 else None
+    if motivo:
+        if ja_pagos:
+            raise HTTPException(status_code=409, detail="Parte desta folha já foi paga e o restante passa da sua "
+                                                        "alçada: lance os demais funcionários numa folha separada.")
+        return pendente(motivo)
 
     verificacao = None
-    if total > Decimal(str(get_settings().limite_facial_reais)):
+    if restante > Decimal(str(get_settings().limite_facial_reais)):
         verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="folha")
     return {"resultados": executar(repo, usuario=usuario, conta=conta, dispositivo=dispositivo, itens=resolvidos,
                                    descricao=rotulo, ip=ip, verificacao=verificacao,
@@ -141,6 +193,10 @@ def executar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict
              auth_metodo: AuthMetodo | None = None) -> list[dict]:
     resultados = []
     for it in itens:
+        motivo = _motivo_para_nao_pagar(repo, conta, it)
+        if motivo:
+            resultados.append({"funcionario_id": it["funcionario_id"], "situacao": "erro", "erro": motivo})
+            continue
         destino = repo.buscar_destinatario(it["destino_carteira_id"])
         try:
             r = pagamento_service.transferir(
@@ -156,6 +212,10 @@ def executar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict
                                "transacao_id": r["transacao"]["id"]})
         except HTTPException as e:
             resultados.append({"funcionario_id": it["funcionario_id"], "situacao": "erro", "erro": str(e.detail)})
+        except IdempotenciaConflitanteError:
+            # R03: um item com chave em conflito não interrompe os demais.
+            resultados.append({"funcionario_id": it["funcionario_id"], "situacao": "erro",
+                               "erro": "Esta chave de idempotência já foi usada em outra operação."})
     _log(repo, usuario, conta, "folha_paga", ip, itens=len(itens),
          pagos=sum(1 for r in resultados if r["situacao"] == "pago"))
     return resultados
