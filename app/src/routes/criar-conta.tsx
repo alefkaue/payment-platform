@@ -7,6 +7,7 @@ import { PORTES, REGIMES_APURACAO } from "@/lib/empresa";
 import { useAuth } from "@/lib/auth";
 import { mascararCelular, normalizarCelular } from "@/lib/celular";
 import { maskDoc } from "@/lib/format";
+import { dataIso, problemaNascimento } from "@/lib/nascimento";
 import type {
   KycResultado,
   EmpresaPayload,
@@ -88,6 +89,8 @@ function CriarConta() {
   const [doc, setDoc] = useState("");
   const [nascimento, setNascimento] = useState("");
   const [celular, setCelular] = useState("");
+  // Avisa na hora (data no futuro ou menor de idade), sem esperar o "Continuar".
+  const nascimentoErro = nascimento.length === 10 ? problemaNascimento(nascimento) : null;
   const [setor, setSetor] = useState(SETORES[0] ?? "Indústria");
   const [porte, setPorte] = useState<PortePJ>("PME");
   const [regime, setRegime] = useState<RegimeApuracao>("regular");
@@ -127,7 +130,8 @@ function CriarConta() {
       return setErro(`${tipo === "PF" ? "CPF" : "CNPJ"} incompleto.`);
     if (tipo === "PJ" && (!representante.trim() || cpf.replace(/\D/g, "").length !== 11))
       return setErro("Informe o seu nome e o seu CPF (de quem vai operar a conta da empresa).");
-    if (!nascimento) return setErro("Informe a data de nascimento.");
+    const nascErro = problemaNascimento(nascimento);
+    if (nascErro) return setErro(nascErro);
     if (!normalizarCelular(celular))
       return setErro("Informe um celular válido: DDD e 9 dígitos começando por 9.");
     irPara("documento");
@@ -329,9 +333,17 @@ function CriarConta() {
                       id="nasc"
                       type="date"
                       className="field"
+                      max={dataIso(new Date())}
                       value={nascimento}
+                      aria-invalid={nascimentoErro ? true : undefined}
+                      aria-describedby={nascimentoErro ? "nasc-erro" : undefined}
                       onChange={(e) => setNascimento(e.target.value)}
                     />
+                    {nascimentoErro && (
+                      <p id="nasc-erro" role="alert" className="mt-1 text-xs text-destructive">
+                        {nascimentoErro}
+                      </p>
+                    )}
                   </Field>
                   <Field label="Celular" id="cel">
                     <input
@@ -392,8 +404,8 @@ function CriarConta() {
                 <Voltar onClick={() => irPara("dados")} />
                 <h1 className="text-2xl text-ink">Documento com foto</h1>
                 <p className="text-sm text-muted-foreground">
-                  Foto nítida, sem reflexo, com o documento inteiro. Conferimos CPF, nome e o rosto
-                  com a sua verificação facial. As imagens não ficam guardadas.
+                  Foto nítida, sem reflexo, com o documento inteiro. Conferimos CPF, nome e data de
+                  nascimento. As imagens não ficam guardadas.
                 </p>
                 <DocumentoPessoa
                   tipo={tipoDoc}

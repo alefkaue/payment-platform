@@ -8,15 +8,14 @@ Pessoa -- documento de identidade (RG, CNH, CIN ou passaporte):
   3. MRZ (CIN/passaporte): dígitos verificadores ICAO + nascimento batendo;
   4. QR code presente (CNH digital/CIN) -- só registramos SE há e se aponta para
      domínio gov.br, nunca o conteúdo;
-  5. ROSTO DO DOCUMENTO x SELFIE da prova de vida (SFace). É o que liga o
-     documento à pessoa que está na câmera agora.
+  5. o rosto do documento NÃO é comparado com a selfie; a biometria fica só na
+     prova de vida (cadastro e login).
 
 Decisão (sem aprovar às cegas):
   - reprovado: algo CONTRADIZ (CPF de outra pessoa, nascimento diferente,
-    documento vencido, MRZ adulterada, rosto claramente de outra pessoa);
-  - aprovado: tudo que foi conferido bateu, inclusive o rosto;
-  - em_analise: faltou como conferir algo (sem OCR, foto ruim, rosto na faixa
-    de dúvida) -- vai para a fila de análise humana (admin).
+    documento vencido, MRZ adulterada);
+  - aprovado: tudo que foi conferido bateu;
+  - em_analise: faltou como conferir algo (sem OCR, foto ruim) -- vai para a fila de análise humana (admin).
 
 Empresa -- contrato social / CCMEI / cartão CNPJ / procuração: arquivo validado
 (PDF sem conteúdo ativo), texto extraído (pypdf ou OCR) e conferido se o CNPJ da
@@ -33,15 +32,13 @@ from fastapi import HTTPException
 from app.core import arquivos, tempo, imagens as imagens_seguras
 from app.core.config import get_settings
 from app.core.documentos import mascarar_cpf, mascarar_nome, somente_digitos
-from app.services import biometria_service, ocr_service
+from app.services import ocr_service
 
 logger = logging.getLogger("payflow.kyc")
 
 TIPOS_DOC_PESSOA = ("rg", "cnh", "cin", "passaporte")
 TIPOS_COM_VERSO = ("rg", "cnh", "cin")
 TIPOS_DOC_EMPRESA = ("contrato_social", "ccmei", "cartao_cnpj", "procuracao", "outro")
-# Rosto do documento abaixo disto (em relação ao limiar) é "claramente outra pessoa".
-_MARGEM_REPROVA_ROSTO = 0.12
 
 
 def _decodificar(bruto: bytes):
@@ -129,43 +126,15 @@ def analisar_documento_pessoa(*, tipo: str, frente_b64: str, verso_b64: str | No
     v["qr"] = {"encontrado": bool(qrs), "dominio_gov": any("gov.br" in q.lower() for q in qrs)}
 
     # ---------------------------------------------------------- rosto
-    if biometria_service.stub_ligado() or template_selfie is None:
-        v["rosto"] = "stub" if biometria_service.stub_ligado() else None
-        rosto_ok = True if biometria_service.stub_ligado() else None
-        if template_selfie is None and not biometria_service.stub_ligado():
-            motivos.append("Sem selfie para comparar com o documento.")
-    else:
-        t_doc = None
-        for img in imagens:
-            t_doc = biometria_service.template_de_documento(img)
-            if t_doc:
-                break
-        if t_doc is None:
-            rosto_ok = None
-            v["rosto"] = {"encontrado": False}
-            motivos.append("Não encontramos o rosto na foto do documento.")
-        else:
-            sim = biometria_service.similaridade(t_doc, template_selfie["vetor"])
-            limiar = s.face_doc_limiar_cosseno
-            rosto_ok = sim >= limiar
-            v["rosto"] = {"encontrado": True, "similaridade": round(sim, 4), "limiar": limiar}
-            if sim < limiar - _MARGEM_REPROVA_ROSTO:
-                rosto_ok = False
-                motivos.append("O rosto do documento não corresponde à selfie.")
-            elif not rosto_ok:
-                rosto_ok = None
-                motivos.append("Semelhança do rosto na faixa de dúvida: análise humana.")
+    # O rosto do documento NÃO é comparado com a selfie (decisão de 15/10/2026):
+    # o documento continua obrigatório e conferido por CPF/nome/nascimento/MRZ/QR;
+    # a biometria fica só na prova de vida do cadastro e do login.
+    v["rosto"] = "nao_comparado"
 
     # ---------------------------------------------------------- decisão
-    # Desenvolvimento mantém o modo informativo para capturas de demonstração.
-    # Produção vincula a identidade ao rosto da pessoa que fez a prova de vida.
     contradicoes = [v.get("cpf") is False, v.get("nascimento") is False, v.get("validade") is False,
                     v.get("mrz") is False]
     conferidos = [v.get("cpf"), v.get("nome"), v.get("nascimento") if data_nascimento else True]
-    if s.em_producao:
-        # Sem correspondência não há aprovação automática; dúvida vai para análise.
-        contradicoes.append(rosto_ok is False)
-        conferidos.append(rosto_ok)
     if any(contradicoes):
         status, risco = "reprovado", "alto"
     elif all(x is True for x in conferidos):

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useFecharAoVoltar } from "@/lib/mobile";
 import { Check, Loader2, X } from "lucide-react";
 import { pedirDesafio } from "@/lib/api";
+import { ContadorPiscadas } from "@/lib/piscadas";
 import {
   giroDoRosto,
   mediana,
@@ -54,8 +55,7 @@ const MODELO =
 
 // Limiares do GUIA (blendshapes 0..1 e giro). Só servem para o passo acabar assim que o
 // movimento aparece, com folga sobre os do servidor; sem eles, o passo acaba pelo tempo.
-const BLINK_FECHADO = 0.5;
-const BLINK_ABERTO = 0.2;
+// Piscar usa limiares calibrados pela pessoa (lib/piscadas).
 const SORRISO_NEUTRO = 0.15;
 const SORRISO_ALVO = 0.5;
 const YAW_FRONTAL = 0.06;
@@ -242,7 +242,7 @@ export function LivenessCheck({
     let semRostoDesde: number | null = null;
     let desafioEm = 0;
     // máquinas de estado do passo atual (só para saber quando o movimento aconteceu)
-    let piscouEstado: "aberto" | "fechado" = "aberto";
+    const contador = new ContadorPiscadas();
     let piscadas = 0;
     let viuNeutro = false;
     let sorrisoGravado = false;
@@ -259,7 +259,7 @@ export function LivenessCheck({
       feitoEm = 0;
       semRostoDesde = null;
       ultimaCaptura = 0;
-      piscouEstado = "aberto";
+      contador.recomecar();
       piscadas = 0;
       viuNeutro = false;
       sorrisoGravado = false;
@@ -434,6 +434,11 @@ export function LivenessCheck({
       setTemRosto(Boolean(lm));
 
       if (!preparado) {
+        // Calibra o olho aberto da pessoa já no preparo (sem contar piscadas).
+        if (lm && rostos === 1) {
+          const b = Math.max(bs(cats, "eyeBlinkLeft"), bs(cats, "eyeBlinkRight"));
+          contador.observar(b, giroDoRosto(lm), false);
+        }
         preparar(v, lm, rostos, agora);
         raf = requestAnimationFrame(loop);
         return;
@@ -468,7 +473,9 @@ export function LivenessCheck({
 
       // Rajada: um quadro a cada CADENCIA_MS, sempre (como um vídeo). Piscada é rápida
       // (~150 ms): com o olho fechando, grava no ritmo da câmera para não perder.
-      const olhoFechando = blink > 0.4 && agora - ultimaCaptura >= 30;
+      const ehPiscar = passo.id === "piscar2" || passo.id === "piscar3";
+      piscadas = contador.observar(blink, yaw, ehPiscar);
+      const olhoFechando = contador.fechando(blink) && agora - ultimaCaptura >= 30;
       let gravou = false;
       if (agora - ultimaCaptura >= CADENCIA_MS || olhoFechando) {
         rajada.push({ img: capturar(v), t: agora, blink, smile, yaw });
@@ -478,12 +485,7 @@ export function LivenessCheck({
 
       // Só para saber quando o movimento já aconteceu (e mostrar o progresso).
       let feito = false;
-      if (passo.id === "piscar2" || passo.id === "piscar3") {
-        if (piscouEstado === "aberto" && blink > BLINK_FECHADO) piscouEstado = "fechado";
-        else if (piscouEstado === "fechado" && blink < BLINK_ABERTO) {
-          piscouEstado = "aberto";
-          piscadas += 1;
-        }
+      if (ehPiscar) {
         const exigidas = piscadasDo(passo.id);
         setProgresso(Math.min(1, piscadas / exigidas));
         feito = piscadas >= exigidas;

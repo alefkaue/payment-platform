@@ -60,6 +60,17 @@ EAR_FECHADO = 0.16
 # folga a favor de quem pisca: o app só dá o passo por feito com > 0.5 / < 0.2.
 BLINK_FECHADO = 0.45
 BLINK_ABERTO = 0.30
+# Calibração por pessoa (15/10/2026): quem tem olhos mais fechados, usa óculos ou olha
+# para baixo para o celular fica com o olho ABERTO em 0.25-0.35 -- com limiar fixo a
+# piscada nunca "reabria". Os limiares passam a ser relativos ao olho aberto da própria
+# pessoa (percentil baixo da série), nunca mais rígidos que os fixos acima.
+BLINK_BASE_PERCENTIL = 0.2
+BLINK_FECHADO_MIN = 0.35
+BLINK_FECHADO_MAX = 0.75
+BLINK_SUBIDA_FECHA = 0.25
+BLINK_SUBIDA_ABRE = 0.12
+# Rosto virado infla o eyeBlink (pálpebra em perspectiva): esses quadros não contam piscada.
+YAW_PISCADA_MAX = 0.18
 # Piscadas naturais toleradas além do pedido (ninguém controla 100% o piscar).
 PISCADAS_EXTRAS = 1
 PISCADAS_NATURAIS_MAX = 2
@@ -134,11 +145,26 @@ def contar_piscadas(ears: list[float], aberto: float = EAR_ABERTO, fechado: floa
     return piscadas
 
 
+def limiares_piscada(blinks: list[float]) -> tuple[float, float]:
+    """(fechado, aberto) do eyeBlink calibrados pelo olho aberto da pessoa na série."""
+    if not blinks:
+        return BLINK_FECHADO, BLINK_ABERTO
+    ordenados = sorted(blinks)
+    base = ordenados[int(BLINK_BASE_PERCENTIL * (len(ordenados) - 1))]
+    fechado = min(BLINK_FECHADO_MAX, max(BLINK_FECHADO_MIN, base + BLINK_SUBIDA_FECHA))
+    aberto = max(BLINK_ABERTO, base + BLINK_SUBIDA_ABRE)
+    return fechado, aberto
+
+
 def piscadas_da_serie(seq: list[SinaisQuadro]) -> int:
     """Piscadas numa série real. Usa o blendshape eyeBlink quando os quadros o trazem
-    (sempre, com o MediaPipe) -- é o mesmo sinal que o app mostra à pessoa; senão a EAR."""
+    (sempre, com o MediaPipe) -- é o mesmo sinal que o app mostra à pessoa; senão a EAR.
+    Só quadros com o rosto de frente contam (girar a cabeça imita piscada)."""
+    seq = [s for s in seq if abs(s.yaw) <= YAW_PISCADA_MAX]
     if any(s.blink > 0 for s in seq):
-        return contar_piscadas([1.0 - s.blink for s in seq], aberto=1.0 - BLINK_ABERTO, fechado=1.0 - BLINK_FECHADO)
+        blinks = [s.blink for s in seq]
+        fechado, aberto = limiares_piscada(blinks)
+        return contar_piscadas([1.0 - b for b in blinks], aberto=1.0 - aberto, fechado=1.0 - fechado)
     return contar_piscadas([s.ear for s in seq])
 
 

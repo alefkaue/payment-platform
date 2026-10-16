@@ -12,7 +12,6 @@ def test_coleta_academica_nao_executa_ocr_ou_compara_rosto(monkeypatch):
     def proibido(*args, **kw):
         pytest.fail("Coleta documental não deve executar verificação de identidade")
     monkeypatch.setattr(d.ocr_service, "provedor", proibido)
-    monkeypatch.setattr(d.biometria_service, "template_de_documento", proibido)
     resultado = d.analisar_documento_pessoa(tipo="rg", frente_b64="frente", verso_b64="verso",
         nome="Pessoa Teste", cpf="52998224725", data_nascimento=date(1990, 1, 1), template_selfie={"vetor": [1]})
     assert resultado["provedor"] == "coleta_academica"

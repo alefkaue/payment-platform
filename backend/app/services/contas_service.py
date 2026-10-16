@@ -48,6 +48,8 @@ def criar_pessoa(repo: Repositorio, *, nome: str, email: str, senha: str, cpf: s
     cpf = somente_digitos(cpf)
     if not cpf_valido(cpf):
         raise HTTPException(status_code=400, detail="CPF inválido.")
+    if data_nascimento is not None and data_nascimento > date.today():
+        raise HTTPException(status_code=400, detail="A data de nascimento não pode estar no futuro.")
     if data_nascimento is not None and not (18 <= _idade(data_nascimento) <= 120):
         raise HTTPException(status_code=400, detail="É preciso ter 18 anos ou mais para abrir conta.")
     cel = None
