@@ -16,6 +16,7 @@ vêm do Azure Key Vault / variáveis do App Service.
 import ipaddress
 import secrets
 from datetime import date
+from decimal import Decimal
 from functools import lru_cache
 
 from pydantic import Field
@@ -108,6 +109,10 @@ class Settings(BaseSettings):
     # Acima deste valor (em reais), a transferência exige MFA facial (selfie).
     # Abaixo, basta o JWT. Espelha o LIMITE_FACIAL do design (padrão R$ 500).
     limite_facial_reais: float = Field(default=500.0, alias="LIMITE_FACIAL_REAIS")
+    # Pagamentos exigem SENHA (reautenticação); acima deste valor exigem também um 2º fator
+    # (TOTP de app autenticador). Decisão ACADÊMICA (R$ 5.000) para dar liberdade ao pentest --
+    # NÃO é recomendação para instituição financeira real. Comparação em Decimal.
+    limite_autenticacao_adicional: Decimal = Field(default=Decimal("5000.00"), alias="LIMITE_AUTENTICACAO_ADICIONAL")
 
     # Admin bootstrap: uma PESSOA com papel admin (sem carteira). Não é mais a
     # conta Governo -- caixa e tributos são contas de sistema separadas (ver
