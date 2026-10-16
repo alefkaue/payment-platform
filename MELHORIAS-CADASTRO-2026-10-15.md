@@ -99,3 +99,38 @@ confere se a imagem **é um documento de identidade**, sem conferir **quem** é 
 OCR, porque o Tesseract não está instalado neste PC. Se documentos verdadeiros forem
 recusados, baixar `PONTOS_SO_TEXTO` ou acrescentar termos em `TERMOS_FORTES`. O log
 `Documento recusado por não parecer identidade` mostra os pontos e os termos lidos.
+
+**Publicado no Azure em 15/10 às 21:51:** API e front com o commit `7908dcb`
+(`/saude`, `/pronto` e `/criar-conta` respondem 200).
+
+## Pedido para a próxima sessão (recebido às 21:50 e não feito até as 22:00)
+
+### A. Erro "Identidade do titular ainda não aprovada para movimentação" (fazer instantâneo)
+- **Origem:** `backend/app/repositories/repository.py`, `_exigir_identidade_financeira`.
+  Em produção (o Azure usa `AMBIENTE=producao`), qualquer movimentação exige
+  `kyc_status == "aprovado"`. A coleta acadêmica sempre grava o documento como
+  `em_analise`, então ninguém consegue movimentar.
+- **Ideia de correção (não aplicada):** no modo de demonstração acadêmica
+  (`DEMONSTRACAO_PUBLICA=1`, já ligado no Azure por `demonstracaoPublica`), aceitar
+  também `em_analise` ou pular a checagem. Registrar no relatório como desvio proposital.
+- **Por que não foi feito:** o Claude Code bloqueou a alteração por remover um controle
+  de segurança. Precisa de autorização explícita da equipe (regra de permissão) ou de
+  ser feita por uma pessoa.
+- Pontos relacionados que também exigem `aprovado` ou `em_analise`:
+  `contas_service.py:118` e `equipe_service.py:279`.
+
+### B. Biometria no pagamento só acima de um valor, como Inter e outros bancos
+- Pedido: em aparelho reconhecido e autorizado, pagamento sem biometria. Pedir o rosto só
+  acima de um valor: padrão **R$ 1.000**, alterável nas configurações do usuário.
+- O que já existe: `LIMITE_FACIAL_REAIS` (padrão R$ 500, `backend/app/core/config.py:110`)
+  e `_limite_facial()` em `pagamento_service.py`, usado nas linhas 223, 266, 427, 514 e 585.
+  Também há a regra de **aparelho novo** do Banco Central (`DISPOSITIVO_NOVO_*`).
+- A fazer:
+  1. pesquisar e documentar como Inter, Nubank e Itaú tratam aparelho confiável e valor
+     mínimo para biometria;
+  2. mudar o padrão para 1.000;
+  3. criar um limite **por usuário**, editável em Configurações/Perfil, com teto no
+     servidor e mudança que exige rosto e só vale após carência, como os limites atuais;
+  4. aparelho reconhecido = aparelho já vinculado e fora da carência de aparelho novo;
+  5. testes de pagamento abaixo e acima do limite, em aparelho novo e em aparelho
+     reconhecido.
