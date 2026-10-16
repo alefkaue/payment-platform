@@ -18,11 +18,16 @@ vi.mock("@/lib/api", () => ({
   consultarDestino: mocks.consultarDestino,
   pagarCobranca: vi.fn(),
   consultarCobranca: vi.fn(),
+  temTotp: vi.fn(),
+  pedeTotp: (valor: number) => valor > 5000,
+  LIMITE_AUTENTICACAO_ADICIONAL: 5000,
+  ApiError: class extends Error {},
 }));
 vi.mock("@/components/payflow/liveness", () => ({ LivenessCheck: () => null }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ conta: mocks.conta }) }));
 vi.mock("@tanstack/react-query", () => ({
   useQueryClient: () => ({ invalidateQueries: mocks.invalidar }),
+  useQuery: () => ({ data: undefined, refetch: vi.fn() }),
 }));
 vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof import("@tanstack/react-router")>()),
@@ -118,7 +123,9 @@ it("Pix bloqueia clique repetido e conserva a intenção após erro de rede", as
   await act(async () => {
     fireEvent.submit(tela.container.querySelector("form")!);
   });
-  const confirmar = screen.getByText("Confirmar transferência");
+  fireEvent.click(screen.getByText("Confirmar transferência"));
+  fireEvent.change(screen.getByLabelText("Senha da conta"), { target: { value: "s3nh@" } });
+  const confirmar = screen.getByRole("button", { name: "Confirmar" });
   fireEvent.click(confirmar);
   fireEvent.click(confirmar);
   expect(mocks.transferir).toHaveBeenCalledTimes(1);
@@ -129,7 +136,7 @@ it("Pix bloqueia clique repetido e conserva a intenção após erro de rede", as
   expect(screen.getByText("Rede caiu")).toBeInTheDocument();
   mocks.transferir.mockResolvedValueOnce({ tipo: "transacao", transacao: { id: 123 } });
   await act(async () => {
-    fireEvent.click(screen.getByText("Confirmar transferência"));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar" }));
   });
   expect(mocks.transferir.mock.calls[1]?.[0]).toEqual(primeira);
   expect(mocks.navegar).toHaveBeenCalledWith({ to: "/comprovante/$id", params: { id: "123" } });

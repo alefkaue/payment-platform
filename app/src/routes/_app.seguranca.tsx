@@ -18,6 +18,7 @@ import { fmtData } from "@/lib/format";
 import type { Aparelho } from "@/lib/types";
 import { Empty, ErrorBox, PageTitle, TxSkeleton } from "@/components/payflow/ui";
 import { LivenessCheck } from "@/components/payflow/liveness";
+import { SegundoFator } from "@/components/payflow/ativar-totp";
 
 export const Route = createFileRoute("/_app/seguranca")({
   head: () => ({ meta: [{ title: "Segurança — Astro" }] }),
@@ -107,6 +108,8 @@ function Seguranca() {
           na hora.
         </span>
       </div>
+
+      <SegundoFator />
 
       {aviso && <p className="text-sm text-pos">{aviso}</p>}
       {erro && <ErrorBox>{erro}</ErrorBox>}

@@ -3,14 +3,21 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Check, UserPlus } from "lucide-react";
-import { cadastrarFuncionario, funcionarios, pagarFolha, removerFuncionario } from "@/lib/api";
+import {
+  ApiError,
+  cadastrarFuncionario,
+  funcionarios,
+  pagarFolha,
+  pedeTotp,
+  removerFuncionario,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, iniciais } from "@/lib/format";
 import { num } from "@/lib/http";
 import { centavosFolha, decimalFolha, totalFolha } from "@/lib/folha";
-import type { FolhaItem, ProvaBiometrica, ResultadoFolha } from "@/lib/types";
+import type { ConfirmacaoPagamento, FolhaItem, ResultadoFolha } from "@/lib/types";
 import { Empty, ErrorBox, Field, PageTitle } from "@/components/payflow/ui";
-import { LivenessCheck } from "@/components/payflow/liveness";
+import { ConfirmarPagamento } from "@/components/payflow/confirmar-pagamento";
 import { criarIntencaoPagamento } from "@/lib/intencao-pagamento";
 
 export const Route = createFileRoute("/_app/folha")({
@@ -46,7 +53,7 @@ function FolhaConta() {
   const [selecionados, setSelecionados] = useState<Record<number, string>>({});
   const [descricao, setDescricao] = useState("");
   const [erro, setErro] = useState<string | null>(null);
-  const [rosto, setRosto] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
   const [pedido, setPedido] = useState<FolhaItem[]>([]);
   const [resultado, setResultado] = useState<ResultadoFolha | null>(null);
   const [intencao] = useState(criarIntencaoPagamento);
@@ -77,13 +84,13 @@ function FolhaConta() {
   const pagar = useMutation({
     mutationFn: ({
       itens,
-      prova,
+      confirmacao,
       chave,
     }: {
       itens: FolhaItem[];
-      prova?: ProvaBiometrica;
+      confirmacao?: ConfirmacaoPagamento;
       chave: string;
-    }) => pagarFolha(itens, descricao.trim(), prova, chave),
+    }) => pagarFolha(itens, descricao.trim(), confirmacao, chave),
     onSuccess: (r) => {
       setResultado(r);
       if ("pendente" in r || r.resultados.every((item) => item.situacao === "pago")) {
@@ -93,7 +100,7 @@ function FolhaConta() {
       void qc.invalidateQueries();
     },
   });
-  const ocupada = cadastrar.isPending || desligar.isPending || pagar.isPending || rosto;
+  const ocupada = cadastrar.isPending || desligar.isPending || pagar.isPending || confirmando;
   const valores = Object.values(selecionados);
   let total = "0.00";
   let valido = valores.length > 0;
@@ -145,8 +152,14 @@ function FolhaConta() {
     setPedido(itens);
     const chave = intencao.preparar(JSON.stringify([conta?.carteira_id, itens]));
     setChave(chave);
-    if (centavosFolha(total) > 50000n && !acimaAlcada && !conjunta) setRosto(true);
-    else pagar.mutate({ itens, chave });
+    // Vai para aprovação: quem lança não precisa confirmar (quem aprova confirma).
+    // Se o servidor executar mesmo assim (ex.: a alçada mudou), ele pede a senha.
+    if (acimaAlcada || conjunta)
+      pagar.mutate(
+        { itens, chave },
+        { onError: (e) => e instanceof ApiError && e.status === 401 && setConfirmando(true) },
+      );
+    else setConfirmando(true);
   }
 
   return (
@@ -283,7 +296,7 @@ function FolhaConta() {
           saldo não é debitado agora.
         </p>
         {erro && <ErrorBox>{erro}</ErrorBox>}
-        {pagar.isError && <ErrorBox>{pagar.error.message}</ErrorBox>}
+        {pagar.isError && !confirmando && <ErrorBox>{pagar.error.message}</ErrorBox>}
         <BotaoFinanceiro
           className="btn btn-ink w-full"
           disabled={ocupada || !valido}
@@ -424,12 +437,16 @@ function FolhaConta() {
           )}
         </section>
       )}
-      {rosto && (
-        <LivenessCheck
-          onClose={() => setRosto(false)}
-          onSuccess={async (prova) => {
-            await pagar.mutateAsync({ itens: pedido, prova, chave });
-            setRosto(false);
+      {confirmando && (
+        <ConfirmarPagamento
+          valor={num(total)}
+          pedeTotp={pedeTotp(num(total))}
+          titulo="Confirme a folha"
+          acao="Pagar salários"
+          onClose={() => setConfirmando(false)}
+          onConfirmar={async (confirmacao) => {
+            await pagar.mutateAsync({ itens: pedido, confirmacao, chave });
+            setConfirmando(false);
           }}
         />
       )}

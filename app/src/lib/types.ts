@@ -265,10 +265,18 @@ export interface CadastroResposta {
   etapa: LoginEtapaMfa;
   kyc: KycResultado;
 }
+/**
+ * Confirmação de pagamento (backend: reautenticação por SENHA e, acima de
+ * LIMITE_AUTENTICACAO_ADICIONAL, o código TOTP do app autenticador). Substitui o rosto.
+ */
+export interface ConfirmacaoPagamento {
+  senha: string;
+  codigo_totp?: string;
+}
 export interface TransferirPayload {
   destino: DestinoRef;
   valor: number;
-  biometria?: ProvaBiometrica | null;
+  confirmacao?: ConfirmacaoPagamento;
   descricao?: string;
 }
 /** Resultado de uma transferência: concluída, ou pendente de aprovação (PJ acima da alçada). */
@@ -278,11 +286,11 @@ export type ResultadoTransferencia =
 
 export interface ComprarProdutoPayload {
   produto_id: number;
-  biometria?: ProvaBiometrica | null;
+  confirmacao?: ConfirmacaoPagamento;
 }
 export interface ComprarPassagemPayload {
   voo_id: number;
-  biometria?: ProvaBiometrica | null;
+  confirmacao?: ConfirmacaoPagamento;
 }
 export interface DepositarPayload {
   valor: number;

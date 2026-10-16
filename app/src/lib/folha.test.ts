@@ -13,7 +13,11 @@ import { centavosFolha, totalFolha } from "./folha";
 import { contasDemo, sessao } from "@/mocks/data";
 import { contaPorId } from "@/mocks/banco";
 
-const bio = { desafio_id: "demo", quadros: [] };
+import type { FolhaItem } from "./types";
+
+// Conta de teste sem dona cadastrada: a demonstração usa a pessoa do roteiro (qualquer senha).
+const conf = { senha: "qualquer-senha" };
+const pagar = (itens: FolhaItem[], descricao?: string) => pagarFolha(itens, descricao, conf);
 let idConta = 80000;
 beforeEach(() => {
   localStorage.clear();
@@ -53,7 +57,7 @@ describe("folha em demonstração", () => {
     const pf = contaPorId(contasDemo.PF.carteira_id)?.saldo;
     const f = await cadastrar("100.10");
     const pontos = sessao.conta.pontos;
-    const resultado = await pagarFolha([{ funcionario_id: f.id }]);
+    const resultado = await pagar([{ funcionario_id: f.id }]);
     expect(resultado).toMatchObject({
       resultados: [{ situacao: "pago", funcionario_id: f.id }],
     });
@@ -76,30 +80,36 @@ describe("folha em demonstração", () => {
       destino_carteira_id: sessao.conta.carteira_id,
     });
     sessao.conta = empresa;
-    await pagarFolha([{ funcionario_id: f.id, valor: "0.20" }]);
+    await pagar([{ funcionario_id: f.id, valor: "0.20" }]);
     expect(sessao.conta.saldo).toBe(9899.7);
   });
-  it("pede rosto só acima de 500 e recusa saldo insuficiente", async () => {
+  it("confirma com senha, pede TOTP só acima de R$ 5.000 e recusa saldo insuficiente", async () => {
     const f = await cadastrar("500.00");
-    await pagarFolha([{ funcionario_id: f.id }]);
-    await expect(pagarFolha([{ funcionario_id: f.id, valor: "500.01" }])).rejects.toThrow(/rosto/);
+    await expect(pagarFolha([{ funcionario_id: f.id }])).rejects.toMatchObject({ status: 401 });
+    expect(sessao.conta.saldo).toBe(10000);
+    await pagar([{ funcionario_id: f.id }]);
     expect(sessao.conta.saldo).toBe(9500);
-    await pagarFolha([{ funcionario_id: f.id, valor: "500.01" }], "Salário", bio);
-    await expect(
-      pagarFolha([{ funcionario_id: f.id, valor: "9999.00" }], undefined, bio),
-    ).rejects.toThrow(/Saldo insuficiente/);
+    // R$ 5.000,00 em ponto: só a senha. Um centavo a mais: TOTP (e ele não está ativo).
+    await expect(pagar([{ funcionario_id: f.id, valor: "5000.01" }])).rejects.toMatchObject({
+      status: 403,
+      message: expect.stringMatching(/duas etapas/),
+    });
+    expect(sessao.conta.saldo).toBe(9500);
+    await pagar([{ funcionario_id: f.id, valor: "5000.00" }], "Salário");
+    expect(sessao.conta.saldo).toBe(4500);
+    await expect(pagar([{ funcionario_id: f.id, valor: "4500.01" }])).rejects.toThrow(
+      /Saldo insuficiente/,
+    );
   });
   it("alçada por operação e diária geram pendência sem débito", async () => {
     const f = await cadastrar("100.00");
     sessao.conta.papel = "operador";
     sessao.conta.alcada = 150;
-    await pagarFolha([{ funcionario_id: f.id }]);
-    const r = await pagarFolha([{ funcionario_id: f.id }]);
+    await pagar([{ funcionario_id: f.id }]);
+    const r = await pagar([{ funcionario_id: f.id }]);
     expect(r).toHaveProperty("pendente");
     expect(sessao.conta.saldo).toBe(9900);
-    expect(await pagarFolha([{ funcionario_id: f.id, valor: "5000.00" }])).toHaveProperty(
-      "pendente",
-    );
+    expect(await pagar([{ funcionario_id: f.id, valor: "5000.00" }])).toHaveProperty("pendente");
     expect(await pendentes()).toHaveLength(2);
     sessao.conta = { ...sessao.conta, carteira_id: ++idConta };
     expect(await pendentes()).toEqual([]);
@@ -107,7 +117,7 @@ describe("folha em demonstração", () => {
   it("assinatura conjunta da Grande vale para admin e registra a primeira assinatura", async () => {
     const f = await cadastrar("250000.00");
     sessao.conta.porte = "GRANDE";
-    expect(await pagarFolha([{ funcionario_id: f.id }])).toMatchObject({
+    expect(await pagar([{ funcionario_id: f.id }])).toMatchObject({
       pendente: { valor: "250000.00", aprovacoes_necessarias: 2 },
     });
     expect(sessao.conta.saldo).toBe(10000);
@@ -120,19 +130,19 @@ describe("folha em demonstração", () => {
     await expect(removerFuncionario(f.id)).rejects.toThrow(/papel/);
     sessao.conta.papel = "consulta";
     await expect(funcionarios()).rejects.toThrow(/papel/);
-    await expect(pagarFolha([{ funcionario_id: f.id }])).rejects.toThrow(/papel/);
+    await expect(pagar([{ funcionario_id: f.id }])).rejects.toThrow(/papel/);
     sessao.conta.tipo = "PF";
     await expect(funcionarios()).rejects.toThrow(/empresas/);
   });
   it("recusa folha vazia, repetidos, desconhecidos e valores inválidos sem débito", async () => {
     const f = await cadastrar();
-    await expect(pagarFolha([])).rejects.toThrow(/Selecione/);
-    await expect(pagarFolha([{ funcionario_id: f.id }, { funcionario_id: f.id }])).rejects.toThrow(
+    await expect(pagar([])).rejects.toThrow(/Selecione/);
+    await expect(pagar([{ funcionario_id: f.id }, { funcionario_id: f.id }])).rejects.toThrow(
       /repetido/,
     );
-    await expect(pagarFolha([{ funcionario_id: -1 }])).rejects.toThrow(/não encontrado/);
+    await expect(pagar([{ funcionario_id: -1 }])).rejects.toThrow(/não encontrado/);
     for (const valor of ["0", "-1", "NaN", "1.001", "Infinity"])
-      await expect(pagarFolha([{ funcionario_id: f.id, valor }])).rejects.toThrow();
+      await expect(pagar([{ funcionario_id: f.id, valor }])).rejects.toThrow();
     expect(sessao.conta.saldo).toBe(10000);
   });
   it("respeita o limite de um funcionário no MEI", async () => {
@@ -154,17 +164,17 @@ describe("folha em demonstração", () => {
     const f = await cadastrarFuncionario({ nome: "Ana Fictícia", cpf: "52998224725" });
     expect(f.salario).toBeNull();
     await expect(cadastrar()).rejects.toThrow(/já cadastrado/);
-    await expect(pagarFolha([{ funcionario_id: f.id }])).rejects.toThrow(/Informe o valor/);
-    await pagarFolha([{ funcionario_id: f.id, valor: "10.00" }]);
+    await expect(pagar([{ funcionario_id: f.id }])).rejects.toThrow(/Informe o valor/);
+    await pagar([{ funcionario_id: f.id, valor: "10.00" }]);
     expect(sessao.conta.saldo).toBe(9990);
   });
   it("quem lançou cancela a própria pendência e não pode aprová-la", async () => {
     const f = await cadastrar();
     sessao.conta.papel = "operador";
     sessao.conta.alcada = 0;
-    const r = await pagarFolha([{ funcionario_id: f.id }]);
+    const r = await pagar([{ funcionario_id: f.id }]);
     if (!("pendente" in r)) throw new Error("Esperava uma pendência.");
-    await expect(decidirPendente(r.pendente.id, true, bio)).rejects.toThrow(/própria operação/);
+    await expect(decidirPendente(r.pendente.id, true, conf)).rejects.toThrow(/própria operação/);
     expect(await decidirPendente(r.pendente.id, false)).toMatchObject({
       status: "cancelada",
       mensagem: "Folha cancelada.",
@@ -177,14 +187,14 @@ describe("folha em demonstração", () => {
       cpf: "11144477735",
       salario: "200.00",
     });
-    expect(await pagarFolha([{ funcionario_id: semConta.id }])).toEqual({
+    expect(await pagar([{ funcionario_id: semConta.id }])).toEqual({
       resultados: [{ funcionario_id: semConta.id, situacao: "erro", erro: "sem conta Astro" }],
     });
     expect(sessao.conta.saldo).toBe(10000);
     expect(await transacoes()).toEqual([]);
     const comConta = await cadastrar();
     expect(
-      await pagarFolha([{ funcionario_id: semConta.id }, { funcionario_id: comConta.id }]),
+      await pagar([{ funcionario_id: semConta.id }, { funcionario_id: comConta.id }]),
     ).toMatchObject({ resultados: [{ situacao: "erro" }, { situacao: "pago" }] });
     expect(sessao.conta.saldo).toBe(9900);
     expect(await transacoes()).toHaveLength(1);

@@ -157,19 +157,79 @@ describe.runIf(Boolean(URL_API))("equipe PJ contra o backend v9 (precisa DEPOSIT
     api.selecionarConta(pjOp);
     const pfDona = resposta.contas.find((x) => x.tipo === "PF")!;
     const destino = await api.consultarDestino(pfDona.numero!);
-    const r = await api.transferir({ destino: destino.destino!, valor: 300 });
+    const r = await api.transferir({
+      destino: destino.destino!,
+      valor: 300,
+      confirmacao: { senha: SENHA },
+    });
     expect(r.tipo).toBe("pendente");
 
-    // a dona aprova (valor <= R$ 500: sem rosto)
+    // a dona aprova com a senha (valor <= R$ 5.000: sem TOTP)
     await entrar(emailDona);
     api.selecionarConta(pj);
     const [op] = (await api.pendentes()).filter((o) => o.status === "aguardando");
     expect(op?.criado_por).toBe("Olivia Operadora");
-    expect(api.aprovacaoPedeRosto(op!)).toBe(false);
-    expect((await api.decidirPendente(op!.id, true)).status).toBe("aprovada");
+    expect(api.aprovacaoPedeTotp(op!)).toBe(false);
+    expect((await api.decidirPendente(op!.id, true, { senha: SENHA })).status).toBe("aprovada");
     const membros = await api.equipe();
     expect(membros.find((m) => m.nome === "Olivia Operadora")?.status).toBe("ativo");
     const suspensa = await api.mudarAcessoMembro(convite.id, "suspender");
     expect(suspensa.status).toBe("suspenso");
   });
 });
+
+describe.runIf(Boolean(URL_API))(
+  "pagamento por senha/TOTP contra o backend (precisa DEPOSITO_DEMO=1)",
+  () => {
+    it("senha sempre; acima de R$ 5.000 só com TOTP ativo, de uso único", async () => {
+      const api = await import("./api");
+      const { codigoTotp, PASSO_SEG } = await import("./totp");
+      const SENHA = "Cofre-Astro#2026";
+      const quadros = ["YQ==", "Yg=="];
+      const desafio = await api.pedirDesafio("cadastro");
+      const c = await api.registrar({
+        nome: "Tereza Totp",
+        email: `totp${Date.now()}@ex.com`,
+        senha: SENHA,
+        cpf: cpfValido(),
+        data_nascimento: "1990-05-04",
+        celular: "11987654321",
+        documento: null,
+        biometria: { desafio_id: desafio.desafio_id, quadros },
+      });
+      const { resposta: r } = await api.concluirCadastro(
+        c.etapa,
+        { desafio_id: c.etapa.desafio.desafio_id, quadros },
+        { cnpj: cnpjValido(), porte: "PME", regime_apuracao: "regular", nome_fantasia: "Totp" },
+      );
+      const pf = r.contas.find((x) => x.tipo === "PF")!;
+      api.selecionarConta(r.contas.find((x) => x.tipo === "PJ")!);
+      await api.depositar({ valor: 10000 });
+      const destino = (await api.consultarDestino(pf.numero!)).destino!;
+      const pix = (valor: number, confirmacao?: { senha: string; codigo_totp?: string }) =>
+        api.transferir({ destino, valor, ...(confirmacao ? { confirmacao } : {}) });
+
+      await expect(pix(10)).rejects.toMatchObject({ status: 401 });
+      await expect(pix(10, { senha: "senha-errada-1" })).rejects.toMatchObject({ status: 401 });
+      expect((await pix(10, { senha: SENHA })).tipo).toBe("transacao");
+      expect(await api.temTotp()).toBe(false);
+      await expect(pix(5000.01, { senha: SENHA })).rejects.toMatchObject({ status: 403 });
+
+      const { segredo, uri } = await api.iniciarTotp();
+      expect(uri).toMatch(/^otpauth:\/\/totp\//);
+      await expect(api.confirmarTotp("000000")).rejects.toMatchObject({ status: 400 });
+      const daAtivacao = await codigoTotp(segredo);
+      await api.confirmarTotp(daAtivacao);
+      expect(await api.temTotp()).toBe(true);
+      await expect(
+        pix(5000.01, { senha: SENHA, codigo_totp: daAtivacao }),
+      ).rejects.toMatchObject({ status: 401 });
+      // Próximo passo de 30 s: código novo (o servidor aceita ±1 passo).
+      const codigo = await codigoTotp(segredo, Date.now() + PASSO_SEG * 1000);
+      expect((await pix(5000.01, { senha: SENHA, codigo_totp: codigo })).tipo).toBe("transacao");
+      await expect(pix(5000.01, { senha: SENHA, codigo_totp: codigo })).rejects.toMatchObject({
+        status: 401,
+      });
+    }, 60_000);
+  },
+);

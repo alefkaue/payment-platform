@@ -48,3 +48,17 @@ Endpoints afetados: `POST /pagamentos/transferir`, `/pagamentos/lote`,
 - **Frontend:** `cd app && bun install && bun run test` (`vitest`). Em **Node ≥ 26** o `localStorage` do
   jsdom é sombreado por um global nativo → rode `NODE_OPTIONS="--localstorage-file=/tmp/ls.json" bun run test --no-file-parallelism`. Baseline atual (sem mexer): **282 passed**.
   Build/lint: `bun run build`, `bun run lint`.
+
+## Status (16/10/2026): frontend concluído
+- `src/lib/api.ts`: pagamentos mandam `senha`/`codigo_totp` (`ConfirmacaoPagamento` em `types.ts`), sem
+  `biometria`. Recusar uma pendência não pede nada. Novos `temTotp`, `iniciarTotp`, `confirmarTotp`,
+  `pedeTotp`, `aprovacaoPedeTotp`, `repeticaoPedeTotp` e `LIMITE_AUTENTICACAO_ADICIONAL` (5000).
+- **Modo demo** espelha a regra: senha da pessoa (hash do banco demo), TOTP RFC 6238 real
+  (`src/lib/totp.ts`), anti-replay por passo. O segredo TOTP da demo fica só no `localStorage` do aparelho.
+- **Telas**: `components/payflow/confirmar-pagamento.tsx` (senha + código; se o servidor pedir o 2º fator,
+  a janela passa a pedir) em transferir/cobrança, folha e aprovações. Ativação com QR Code em
+  **Segurança** (`components/payflow/ativar-totp.tsx`, lib `uqr`).
+- **Testes**: 295 passando (`npx vitest run`, eram 282), mais `api.e2e.test.ts` (3) contra o backend local com
+  `BIOMETRIA_STUB=1 DEPOSITO_DEMO=1`, incluindo ativar TOTP e pagar R$ 5.000,01.
+- Não havia tela de devolução de Pix nem Loja/Viagens ativas no app (estão arquivadas); a API já manda a
+  confirmação nas compras.

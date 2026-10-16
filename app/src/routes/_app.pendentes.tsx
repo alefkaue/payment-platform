@@ -2,20 +2,20 @@ import { BotaoFinanceiro } from "@/lib/mobile";
 import { createFileRoute, Navigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Check, Clock, RotateCcw, ScanFace, TriangleAlert, X } from "lucide-react";
+import { Check, Clock, KeyRound, RotateCcw, TriangleAlert, X } from "lucide-react";
 import {
-  aprovacaoPedeRosto,
+  aprovacaoPedeTotp,
   decidirPendente,
   pendentes,
   podeRepetirFolha,
-  repeticaoPedeRosto,
+  repeticaoPedeTotp,
   repetirPendente,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, fmtData } from "@/lib/format";
-import type { OperacaoPendente, ProvaBiometrica } from "@/lib/types";
+import type { ConfirmacaoPagamento, OperacaoPendente } from "@/lib/types";
 import { Empty, ErrorBox, PageTitle, TxSkeleton } from "@/components/payflow/ui";
-import { LivenessCheck } from "@/components/payflow/liveness";
+import { ConfirmarPagamento } from "@/components/payflow/confirmar-pagamento";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/_app/pendentes")({
@@ -78,10 +78,15 @@ function Pendentes() {
 
 function Card({ o, podeAprovar }: { o: OperacaoPendente; podeAprovar: boolean }) {
   const qc = useQueryClient();
-  const [rosto, setRosto] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
   const mut = useMutation({
-    mutationFn: ({ aprovar, prova }: { aprovar: boolean; prova?: ProvaBiometrica }) =>
-      decidirPendente(o.id, aprovar, prova),
+    mutationFn: ({
+      aprovar,
+      confirmacao,
+    }: {
+      aprovar: boolean;
+      confirmacao?: ConfirmacaoPagamento;
+    }) => decidirPendente(o.id, aprovar, confirmacao),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["pendentes"] });
       void qc.invalidateQueries({ queryKey: ["nao-lidas"] });
@@ -135,26 +140,31 @@ function Card({ o, podeAprovar }: { o: OperacaoPendente; podeAprovar: boolean })
               <BotaoFinanceiro
                 className="btn btn-ink gap-2"
                 disabled={mut.isPending}
-                onClick={() =>
-                  aprovacaoPedeRosto(o) ? setRosto(true) : mut.mutate({ aprovar: true })
-                }
+                onClick={() => {
+                  mut.reset();
+                  setConfirmando(true);
+                }}
               >
-                <ScanFace size={18} /> {mut.isPending ? "Enviando…" : "Aprovar"}
+                <KeyRound size={18} /> {mut.isPending ? "Enviando…" : "Aprovar"}
               </BotaoFinanceiro>
             </div>
           )}
-          {mut.isError && (
+          {mut.isError && !confirmando && (
             <div className="mt-3">
               <ErrorBox>{(mut.error as Error).message}</ErrorBox>
             </div>
           )}
           {mut.data?.mensagem && <p className="mt-3 text-sm text-mut2">{mut.data.mensagem}</p>}
-          {rosto && (
-            <LivenessCheck
-              onClose={() => setRosto(false)}
-              onSuccess={async (prova) => {
-                await mut.mutateAsync({ aprovar: true, prova });
-                setRosto(false);
+          {confirmando && (
+            <ConfirmarPagamento
+              valor={o.tipo === "acesso" ? undefined : o.valor}
+              pedeTotp={aprovacaoPedeTotp(o)}
+              titulo="Confirme a aprovação"
+              acao="Aprovar"
+              onClose={() => setConfirmando(false)}
+              onConfirmar={async (confirmacao) => {
+                await mut.mutateAsync({ aprovar: true, confirmacao });
+                setConfirmando(false);
               }}
             />
           )}
@@ -201,9 +211,9 @@ function selo(o: OperacaoPendente): { texto: string; tom: Tom; Icone: typeof Che
 
 function Desfecho({ o, podeRepetir }: { o: OperacaoPendente; podeRepetir: boolean }) {
   const qc = useQueryClient();
-  const [rosto, setRosto] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
   const mut = useMutation({
-    mutationFn: (prova?: ProvaBiometrica) => repetirPendente(o.id, prova),
+    mutationFn: (confirmacao: ConfirmacaoPagamento) => repetirPendente(o.id, confirmacao),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["pendentes"] });
       void qc.invalidateQueries({ queryKey: ["conta"] });
@@ -243,23 +253,29 @@ function Desfecho({ o, podeRepetir }: { o: OperacaoPendente; podeRepetir: boolea
         <BotaoFinanceiro
           className="btn btn-ghost mt-4 w-full gap-2"
           disabled={mut.isPending}
-          onClick={() => (repeticaoPedeRosto(o) ? setRosto(true) : mut.mutate(undefined))}
+          onClick={() => {
+            mut.reset();
+            setConfirmando(true);
+          }}
         >
           <RotateCcw size={16} />
           {mut.isPending ? "Enviando…" : `Pagar os ${faltando} que faltam`}
         </BotaoFinanceiro>
       )}
-      {mut.isError && (
+      {mut.isError && !confirmando && (
         <div className="mt-3">
           <ErrorBox>{(mut.error as Error).message}</ErrorBox>
         </div>
       )}
-      {rosto && (
-        <LivenessCheck
-          onClose={() => setRosto(false)}
-          onSuccess={async (prova) => {
-            await mut.mutateAsync(prova);
-            setRosto(false);
+      {confirmando && (
+        <ConfirmarPagamento
+          pedeTotp={repeticaoPedeTotp(o)}
+          titulo="Confirme o pagamento dos que faltam"
+          acao="Pagar"
+          onClose={() => setConfirmando(false)}
+          onConfirmar={async (confirmacao) => {
+            await mut.mutateAsync(confirmacao);
+            setConfirmando(false);
           }}
         />
       )}

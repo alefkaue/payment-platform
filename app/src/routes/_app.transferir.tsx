@@ -2,13 +2,20 @@ import { useFecharAoVoltar, BotaoFinanceiro } from "@/lib/mobile";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { Clock, ScanFace } from "lucide-react";
-import { consultarCobranca, consultarDestino, pagarCobranca, transferir } from "@/lib/api";
+import { Clock, KeyRound } from "lucide-react";
+import {
+  consultarCobranca,
+  consultarDestino,
+  LIMITE_AUTENTICACAO_ADICIONAL,
+  pagarCobranca,
+  pedeTotp,
+  transferir,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { fmtBRL, parseValor } from "@/lib/format";
-import type { CarteiraInfo, Cobranca, ProvaBiometrica } from "@/lib/types";
+import type { CarteiraInfo, Cobranca, ConfirmacaoPagamento } from "@/lib/types";
 import { ErrorBox, Field, PageTitle, ValueRow } from "@/components/payflow/ui";
-import { LivenessCheck } from "@/components/payflow/liveness";
+import { ConfirmarPagamento } from "@/components/payflow/confirmar-pagamento";
 import { criarIntencaoPagamento } from "@/lib/intencao-pagamento";
 
 export const Route = createFileRoute("/_app/transferir")({
@@ -17,7 +24,8 @@ export const Route = createFileRoute("/_app/transferir")({
       { title: "Transferir — Astro" },
       {
         name: "description",
-        content: "Pix por chave ou conta, com verificação facial em valores altos.",
+        content:
+          "Pix por chave ou conta, confirmado com a sua senha (e código do autenticador em valores altos).",
       },
       { property: "og:title", content: "Transferir — Astro" },
       { property: "og:description", content: "Pix por chave ou conta." },
@@ -26,12 +34,11 @@ export const Route = createFileRoute("/_app/transferir")({
   component: Transferir,
 });
 
-const LIMITE_FACIAL = 500;
-
 /**
  * Pix/transferência. Transferência NÃO tem split: imposto só é retido quando você
- * paga uma cobrança com nota fiscal. Acima de R$ 500 pedimos verificação facial;
- * em conta de empresa, acima da sua alçada a operação vai para aprovação.
+ * paga uma cobrança com nota fiscal. Toda transferência é confirmada com a senha;
+ * acima de R$ 5.000 também com o código do app autenticador (TOTP). Em conta de
+ * empresa, acima da sua alçada a operação vai para aprovação.
  */
 function Transferir() {
   const { conta } = useAuth();
@@ -49,7 +56,7 @@ function TransferirConta() {
     setInfo(null);
     setErro(null);
   });
-  const [liveness, setLiveness] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
   const [pendente, setPendente] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -67,8 +74,8 @@ function TransferirConta() {
   const [cobranca, setCobranca] = useState<Cobranca | null>(null);
 
   const valor = parseValor(valorStr);
-  const precisaFacial = valor > LIMITE_FACIAL;
   const acimaDaAlcada = conta?.tipo === "PJ" && conta.alcada != null && valor > conta.alcada;
+  const precisaTotp = pedeTotp(valor) && !acimaDaAlcada;
 
   async function revisar(e: React.FormEvent) {
     e.preventDefault();
@@ -103,40 +110,32 @@ function TransferirConta() {
     }
   }
 
-  async function enviar(prova: ProvaBiometrica | null) {
+  /** Erros aparecem na própria janela de confirmação (senha/código), que segue aberta. */
+  async function enviar(confirmacao: ConfirmacaoPagamento) {
     if (enviando.current || !info || (!info.destino && !cobranca)) return;
     enviando.current = true;
     setErro(null);
     setLoading(true);
     try {
       const r = cobranca
-        ? await pagarCobranca(cobranca.txid, chave, prova)
+        ? await pagarCobranca(cobranca.txid, chave, confirmacao)
         : await transferir({
             destino: info.destino!,
             valor,
-            biometria: prova,
+            confirmacao,
             idempotency_key: chave,
           });
       intencao.concluir();
       if (!ativo.current) return;
-      setLiveness(false);
+      setConfirmando(false);
       setInfo(null);
       qc.invalidateQueries();
       if (r.tipo === "pendente") setPendente(r.mensagem);
       else nav({ to: "/comprovante/$id", params: { id: String(r.transacao.id) } });
-    } catch (err) {
-      if (!ativo.current) return;
-      setErro((err as Error).message);
-      if (prova) throw err;
     } finally {
       enviando.current = false;
       setLoading(false);
     }
-  }
-
-  function confirmar() {
-    if (precisaFacial && !acimaDaAlcada) setLiveness(true);
-    else void enviar(null);
   }
 
   if (conta?.tipo === "PJ" && conta.papel === "consulta")
@@ -254,11 +253,12 @@ function TransferirConta() {
                 aprovação de outra pessoa da empresa.
               </p>
             )}
-            {precisaFacial && !acimaDaAlcada && (
-              <p className="mt-3 flex items-center gap-2 text-sm text-mut2">
-                <ScanFace size={16} /> Acima de {fmtBRL(LIMITE_FACIAL)} pedimos verificação facial.
-              </p>
-            )}
+            <p className="mt-3 flex items-center gap-2 text-sm text-mut2">
+              <KeyRound size={16} className="shrink-0" />
+              {precisaTotp
+                ? `Acima de ${fmtBRL(LIMITE_AUTENTICACAO_ADICIONAL)}: confirme com a senha e o código do app autenticador.`
+                : "Você confirma com a senha da sua conta."}
+            </p>
           </section>
 
           {erro && <ErrorBox>{erro}</ErrorBox>}
@@ -273,7 +273,11 @@ function TransferirConta() {
             >
               Voltar
             </button>
-            <BotaoFinanceiro className="btn btn-ink" onClick={confirmar} disabled={loading}>
+            <BotaoFinanceiro
+              className="btn btn-ink"
+              onClick={() => setConfirmando(true)}
+              disabled={loading}
+            >
               {loading
                 ? "Enviando…"
                 : acimaDaAlcada
@@ -286,8 +290,15 @@ function TransferirConta() {
         </div>
       )}
 
-      {liveness && (
-        <LivenessCheck onClose={() => setLiveness(false)} onSuccess={(prova) => enviar(prova)} />
+      {confirmando && (
+        <ConfirmarPagamento
+          valor={valor}
+          pedeTotp={precisaTotp}
+          titulo={cobranca ? "Confirme o pagamento" : "Confirme a transferência"}
+          acao={acimaDaAlcada ? "Enviar para aprovação" : "Confirmar"}
+          onClose={() => setConfirmando(false)}
+          onConfirmar={enviar}
+        />
       )}
     </div>
   );

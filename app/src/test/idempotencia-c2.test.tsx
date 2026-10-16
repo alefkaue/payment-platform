@@ -53,6 +53,16 @@ function abrir(rota: typeof Transferir | typeof Folha) {
     </QueryClientProvider>,
   );
 }
+/** Abre a confirmação (senha) e confirma; com a janela já aberta, só confirma de novo. */
+function confirmar(botao: string, acao = "Confirmar") {
+  if (!screen.queryByRole("dialog")) {
+    fireEvent.click(screen.getByRole("button", { name: botao }));
+    fireEvent.change(screen.getByLabelText("Senha da conta"), { target: { value: "s3nh@" } });
+  }
+  fireEvent.click(screen.getByRole("button", { name: acao }));
+}
+const fecharConfirmacao = () =>
+  fireEvent.click(screen.getAllByRole("button", { name: "Fechar" })[1]!);
 async function revisar(valor = "10", destino = "123") {
   fireEvent.change(screen.getByLabelText("Chave Pix ou conta"), { target: { value: destino } });
   fireEvent.change(screen.getByLabelText("Valor (R$)"), { target: { value: valor } });
@@ -63,33 +73,37 @@ it("Pix preserva chave após erro, troca com valor/destino e renova depois do su
   vi.mocked(transferir).mockRejectedValue(new Error("Rede caiu"));
   abrir(Transferir);
   await revisar();
-  fireEvent.click(screen.getByText("Confirmar transferência"));
+  confirmar("Confirmar transferência");
   await screen.findByText("Rede caiu");
   const primeira = vi.mocked(transferir).mock.calls[0]![0].idempotency_key;
-  fireEvent.click(screen.getByText("Confirmar transferência"));
+  expect(vi.mocked(transferir).mock.calls[0]![0].confirmacao).toEqual({ senha: "s3nh@" });
+  confirmar("Confirmar transferência");
   await waitFor(() => expect(transferir).toHaveBeenCalledTimes(2));
   expect(vi.mocked(transferir).mock.calls[1]![0].idempotency_key).toBe(primeira);
   await waitFor(() =>
-    expect(screen.getByText("Confirmar transferência").hasAttribute("disabled")).toBe(false),
+    expect(screen.getByRole("button", { name: "Confirmar" }).hasAttribute("disabled")).toBe(false),
   );
+  fecharConfirmacao();
   fireEvent.click(screen.getByText("Voltar"));
   await revisar("20");
-  fireEvent.click(screen.getByText("Confirmar transferência"));
+  confirmar("Confirmar transferência");
   await waitFor(() => expect(transferir).toHaveBeenCalledTimes(3));
   const segunda = vi.mocked(transferir).mock.calls[2]![0].idempotency_key;
   expect(segunda).not.toBe(primeira);
   await waitFor(() =>
-    expect(screen.getByText("Confirmar transferência").hasAttribute("disabled")).toBe(false),
+    expect(screen.getByRole("button", { name: "Confirmar" }).hasAttribute("disabled")).toBe(false),
   );
+  fecharConfirmacao();
   fireEvent.click(screen.getByText("Voltar"));
   await revisar("20", "456");
   vi.mocked(transferir).mockResolvedValue(sucesso as Awaited<ReturnType<typeof transferir>>);
-  fireEvent.click(screen.getByText("Confirmar transferência"));
+  confirmar("Confirmar transferência");
   await screen.findByText("Revisar");
+  expect(screen.queryByRole("dialog")).toBeNull();
   const terceira = vi.mocked(transferir).mock.calls[3]![0].idempotency_key;
   expect(terceira).not.toBe(segunda);
   await revisar("20", "456");
-  fireEvent.click(screen.getByText("Confirmar transferência"));
+  confirmar("Confirmar transferência");
   await waitFor(() => expect(transferir).toHaveBeenCalledTimes(5));
   expect(vi.mocked(transferir).mock.calls[4]![0].idempotency_key).not.toBe(terceira);
 });
@@ -114,9 +128,10 @@ it("cobrança mantém chave em tentativa após falha de rede", async () => {
     target: { value: "c2-txid" },
   });
   fireEvent.click(screen.getByText("Revisar"));
-  fireEvent.click(await screen.findByText("Confirmar pagamento"));
+  await screen.findByRole("button", { name: "Confirmar pagamento" });
+  confirmar("Confirmar pagamento");
   await screen.findByText("Rede caiu");
-  fireEvent.click(screen.getByText("Confirmar pagamento"));
+  confirmar("Confirmar pagamento");
   await waitFor(() => expect(pagarCobranca).toHaveBeenCalledTimes(2));
   expect(vi.mocked(pagarCobranca).mock.calls[0]![1]).toBe(
     vi.mocked(pagarCobranca).mock.calls[1]![1],
@@ -126,26 +141,30 @@ it("folha mantém chave após falha e muda com valor e nova operação", async (
   vi.mocked(pagarFolha).mockRejectedValue(new Error("Rede caiu"));
   abrir(Folha);
   fireEvent.click(await screen.findByRole("button", { name: /Ana.*100/ }));
-  fireEvent.click(screen.getByRole("button", { name: "Pagar folha" }));
+  confirmar("Pagar folha", "Pagar salários");
   await screen.findByText("Rede caiu");
-  fireEvent.click(screen.getByRole("button", { name: "Pagar folha" }));
+  expect(vi.mocked(pagarFolha).mock.calls[0]![2]).toEqual({ senha: "s3nh@" });
+  confirmar("Pagar folha", "Pagar salários");
   await waitFor(() => expect(pagarFolha).toHaveBeenCalledTimes(2));
   const primeira = vi.mocked(pagarFolha).mock.calls[0]![3];
   expect(vi.mocked(pagarFolha).mock.calls[1]![3]).toBe(primeira);
   await waitFor(() =>
-    expect(screen.getByLabelText("Valor para Ana (R$)").hasAttribute("disabled")).toBe(false),
+    expect(screen.getByRole("button", { name: "Pagar salários" }).hasAttribute("disabled")).toBe(
+      false,
+    ),
   );
+  fecharConfirmacao();
   fireEvent.change(screen.getByLabelText("Valor para Ana (R$)"), { target: { value: "120" } });
   vi.mocked(pagarFolha).mockResolvedValue({
     resultados: [{ funcionario_id: 2, situacao: "pago", transacao_id: 1 }],
   });
-  fireEvent.click(screen.getByRole("button", { name: "Pagar folha" }));
+  confirmar("Pagar folha", "Pagar salários");
   await waitFor(() => expect(screen.queryByLabelText("Valor para Ana (R$)")).toBeNull());
   const segunda = vi.mocked(pagarFolha).mock.calls[2]![3];
   expect(segunda).not.toBe(primeira);
   fireEvent.click(screen.getByRole("button", { name: /Ana.*100/ }));
   fireEvent.change(screen.getByLabelText("Valor para Ana (R$)"), { target: { value: "120" } });
-  fireEvent.click(screen.getByRole("button", { name: "Pagar folha" }));
+  confirmar("Pagar folha", "Pagar salários");
   await waitFor(() => expect(pagarFolha).toHaveBeenCalledTimes(4));
   expect(vi.mocked(pagarFolha).mock.calls[3]![3]).not.toBe(segunda);
 });

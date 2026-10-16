@@ -40,6 +40,7 @@ import type {
   CarteiraInfo,
   Cobranca,
   CobrancaPayload,
+  ConfirmacaoPagamento,
   ComprarPassagemPayload,
   CadastroResposta,
   ComprarProdutoPayload,
@@ -116,14 +117,30 @@ import {
   resolverChave,
   salvar,
   todasTransacoes,
+  type PessoaDemo,
 } from "@/mocks/banco";
+import { gerarSegredo, passoDoCodigo, uriOtpauth } from "./totp";
 
 export { ApiError, MODO_API };
 export { motivoSaida } from "./http";
 
 const delay = (ms = 450) => (MODO_API ? Promise.resolve() : new Promise((r) => setTimeout(r, ms)));
 const r2 = (n: number) => Math.round(n * 100) / 100;
-const LIMITE_SELFIE = 500;
+/**
+ * Acima deste valor o pagamento pede, além da senha, o código TOTP do app autenticador
+ * (backend: LIMITE_AUTENTICACAO_ADICIONAL, padrão R$ 5.000,00). Quem decide é o servidor;
+ * aqui só serve para a tela já pedir o código.
+ */
+export const LIMITE_AUTENTICACAO_ADICIONAL = 5000;
+export const pedeTotp = (valor: number) => valor > LIMITE_AUTENTICACAO_ADICIONAL;
+
+/** Campos de confirmação do pagamento no corpo do pedido. */
+function corpoConfirmacao(c?: ConfirmacaoPagamento | null) {
+  return {
+    ...(c?.senha ? { senha: c.senha } : {}),
+    ...(c?.codigo_totp?.trim() ? { codigo_totp: c.codigo_totp.trim() } : {}),
+  };
+}
 
 // =============================================================================
 // Conversão backend -> tipos do app
@@ -869,17 +886,14 @@ function ehContaDoRoteiro(): boolean {
 function registrarPagamento(args: {
   destino: CarteiraInfo;
   valor: number;
-  comBiometria: boolean;
   categoria: Transacao["categoria"];
   descricao: string;
 }): Transacao {
-  const { destino, valor, comBiometria, categoria, descricao } = args;
+  const { destino, valor, categoria, descricao } = args;
   if (destino.carteira_id === sessao.conta.carteira_id)
     throw new ApiError("Não é possível pagar a própria conta.");
   if (!(valor > 0)) throw new ApiError("Valor inválido.");
   if (valor > sessao.conta.saldo) throw new ApiError("Saldo insuficiente.");
-  if (valor > LIMITE_SELFIE && !comBiometria)
-    throw new ApiError("Valores acima de R$ 500,00 exigem verificação facial.", 400);
   // Transferência nunca tem split; compra com nota (loja/viagens) tem.
   const estimativa =
     categoria === "transferencia" ? semSplit(valor) : calcularSplit(valor, destino.tipo);
@@ -898,7 +912,7 @@ function registrarPagamento(args: {
     liquido: s.liquido,
     tipo_destino: destino.tipo,
     aplicou_split: s.aplicou_split,
-    auth_metodo: comBiometria ? "selfie" : "senha",
+    auth_metodo: "senha",
     status: "concluida",
     categoria,
     descricao,
@@ -924,7 +938,7 @@ export async function transferir(
         destino: p.destino,
         valor: p.valor.toFixed(2),
         descricao: p.descricao,
-        biometria: p.biometria ?? undefined,
+        ...corpoConfirmacao(p.confirmacao),
         idempotency_key: p.idempotency_key,
       },
     );
@@ -938,10 +952,10 @@ export async function transferir(
     return { tipo: "transacao", transacao: mapTransacao(r.dados as TransacaoApi, c.carteira_id) };
   }
   const destino = await consultarDestino(p.destino.chave ?? p.destino.numero ?? "");
+  await confirmarPagamentoDemo(p.valor, p.confirmacao);
   const t = registrarPagamento({
     destino,
     valor: p.valor,
-    comBiometria: Boolean(p.biometria),
     categoria: "transferencia",
     descricao: p.descricao || `Pix para ${destino.nome}`,
   });
@@ -960,14 +974,14 @@ export async function consultarCobranca(txid: string): Promise<Cobranca> {
 export async function pagarCobranca(
   txid: string,
   idempotency_key: string,
-  biometria: ProvaBiometrica | null,
+  confirmacao?: ConfirmacaoPagamento | null,
 ): Promise<ResultadoTransferencia> {
   if (!MODO_API) throw new ApiError("Pagamento de cobrança disponível com a API.");
   const conferir = capturarContexto();
   const r = await requisitar<TransacaoApi | { operacao_id: number; mensagem: string }>(
     "POST",
     `/cobrancas/${encodeURIComponent(txid)}/pagar`,
-    { idempotency_key, biometria: biometria ?? undefined },
+    { idempotency_key, ...corpoConfirmacao(confirmacao) },
   );
   conferir();
   if (r.status === 202) {
@@ -1704,22 +1718,25 @@ export async function produtoPorId(id: number): Promise<Produto> {
   return { ...p };
 }
 
-async function compraApi(caminho: string, biometria?: ProvaBiometrica | null): Promise<Transacao> {
-  const r = await post<CompraApi>(caminho, biometria ? { biometria } : {});
+async function compraApi(
+  caminho: string,
+  confirmacao?: ConfirmacaoPagamento | null,
+): Promise<Transacao> {
+  const r = await post<CompraApi>(caminho, corpoConfirmacao(confirmacao));
   return { ...mapTransacao(r.transacao, r.transacao.origem.carteira_id), categoria: "compra" };
 }
 
 export async function comprarProduto(p: ComprarProdutoPayload): Promise<Transacao> {
   if (!MODO_API) await delay(800);
-  if (MODO_API) return compraApi(`/loja/produtos/${p.produto_id}/comprar`, p.biometria);
+  if (MODO_API) return compraApi(`/loja/produtos/${p.produto_id}/comprar`, p.confirmacao);
   if (sessao.conta.tipo !== "PF")
     throw new ApiError("A Loja é exclusiva para contas Pessoa Física.", 403);
   const produto = await produtoPorId(p.produto_id);
   const destino = await consultarDestino(String(produto.merchant_carteira_id));
+  await confirmarPagamentoDemo(produto.preco, p.confirmacao);
   const t = registrarPagamento({
     destino,
     valor: produto.preco,
-    comBiometria: Boolean(p.biometria),
     categoria: "compra",
     descricao: `${produto.merchant_nome} · ${produto.nome}`,
   });
@@ -1760,17 +1777,17 @@ export async function vooPorId(id: number): Promise<Voo> {
 export async function comprarPassagem(p: ComprarPassagemPayload): Promise<Transacao> {
   if (!MODO_API) await delay(900);
   if (MODO_API) {
-    const t = await compraApi(`/viagens/voos/${p.voo_id}/comprar`, p.biometria);
+    const t = await compraApi(`/viagens/voos/${p.voo_id}/comprar`, p.confirmacao);
     return { ...t, categoria: "viagem" };
   }
   if (sessao.conta.tipo !== "PF")
     throw new ApiError("Viagens é um benefício das contas Pessoa Física.", 403);
   const voo = await vooPorId(p.voo_id);
   const destino = await consultarDestino(String(voo.merchant_carteira_id));
+  await confirmarPagamentoDemo(voo.preco, p.confirmacao);
   const t = registrarPagamento({
     destino,
     valor: voo.preco,
-    comBiometria: Boolean(p.biometria),
     categoria: "viagem",
     descricao: `Voo ${voo.origem} → ${voo.destino} · ${voo.companhia}`,
   });
@@ -2256,21 +2273,24 @@ export async function pendentes(): Promise<OperacaoPendente[]> {
   ].sort((a, b) => b.criado_em.localeCompare(a.criado_em));
 }
 
-/** Rosto de quem aprova: exigido acima do limite facial e em mudança de acesso. */
-export function aprovacaoPedeRosto(o: OperacaoPendente): boolean {
-  return o.tipo === "acesso" || o.valor > LIMITE_SELFIE;
+/**
+ * Aprovar sempre pede a senha de quem aprova; o código TOTP também, em mudança de
+ * acesso ou acima do limite (recusar não pede nada).
+ */
+export function aprovacaoPedeTotp(o: OperacaoPendente): boolean {
+  return o.tipo === "acesso" || pedeTotp(o.valor);
 }
 
 export async function decidirPendente(
   id: number,
   aprovar: boolean,
-  biometria?: ProvaBiometrica,
+  confirmacao?: ConfirmacaoPagamento,
 ): Promise<OperacaoPendente & { mensagem?: string }> {
   if (!MODO_API) await delay(600);
   if (MODO_API) {
     const r = await post<PendenteApi & { mensagem?: string }>(
       `/pagamentos/pendentes/${id}/decidir`,
-      { aprovar, ...(biometria ? { biometria } : {}) },
+      { aprovar, ...(aprovar ? corpoConfirmacao(confirmacao) : {}) },
     );
     return { ...mapPendente(r), ...(r.mensagem ? { mensagem: r.mensagem } : {}) };
   }
@@ -2287,6 +2307,7 @@ export async function decidirPendente(
   }
   const op = pendentesDemo.find((o) => o.id === id);
   if (!op) throw new ApiError("Operação não encontrada.", 404);
+  if (aprovar) await confirmarPagamentoDemo(op.valor, confirmacao, op.tipo === "acesso");
   op.status = aprovar ? "aprovada" : "recusada";
   return { ...op };
 }
@@ -2300,20 +2321,128 @@ export function podeRepetirFolha(o: OperacaoPendente): boolean {
   );
 }
 
-/** Rosto na repetição: o servidor pede acima do limite facial (conservador: valor da folha). */
-export function repeticaoPedeRosto(o: OperacaoPendente): boolean {
-  return o.valor > LIMITE_SELFIE;
+/**
+ * TOTP na repetição: o servidor pede acima do limite somando só os salários que
+ * faltam; a tela não tem o valor de cada um, então usa o da folha (conservador).
+ * Senha: sempre.
+ */
+export function repeticaoPedeTotp(o: OperacaoPendente): boolean {
+  return pedeTotp(o.valor);
 }
 
 export async function repetirPendente(
   id: number,
-  biometria?: ProvaBiometrica,
+  confirmacao?: ConfirmacaoPagamento,
 ): Promise<OperacaoPendente> {
   if (!MODO_API)
     throw new ApiError("A repetição da folha só existe com o servidor (fora da demonstração).");
   return mapPendente(
-    await post<PendenteApi>(`/pagamentos/pendentes/${id}/repetir`, biometria ? { biometria } : {}),
+    await post<PendenteApi>(`/pagamentos/pendentes/${id}/repetir`, corpoConfirmacao(confirmacao)),
   );
+}
+
+// =============================================================================
+// Confirmação de pagamento: senha (sempre) + 2º fator TOTP acima do limite
+// =============================================================================
+
+/**
+ * Modo demonstração: o segredo TOTP fica só NESTE aparelho (nunca vai para o banco
+ * compartilhado). `passo_usado` nulo = ativação começada, mas não confirmada — como
+ * `totp_passo_usado` no backend.
+ */
+const TOTP_KEY = "astro-demo-totp";
+interface TotpDemo {
+  segredo: string;
+  passo_usado: number | null;
+}
+
+function totpsDemo(): Record<string, TotpDemo> {
+  try {
+    return JSON.parse(window.localStorage.getItem(TOTP_KEY) ?? "{}") as Record<string, TotpDemo>;
+  } catch {
+    return {};
+  }
+}
+
+function guardarTotpDemo(email: string, t: TotpDemo) {
+  try {
+    window.localStorage.setItem(TOTP_KEY, JSON.stringify({ ...totpsDemo(), [email]: t }));
+  } catch {
+    /* sem storage: o 2º fator não fica ativo */
+  }
+}
+
+/** Quem opera na demonstração: a dona da conta em uso; senão, a pessoa do roteiro. */
+const pessoaDemo = (): PessoaDemo => donoDaConta(sessao.conta.carteira_id) ?? MARINA;
+
+/** O 2º fator (TOTP) da pessoa logada está ativo? (`tem_totp` de /auth/eu) */
+export async function temTotp(): Promise<boolean> {
+  if (MODO_API) return Boolean((await get<{ tem_totp?: boolean }>("/auth/eu")).tem_totp);
+  await sincronizar();
+  return totpsDemo()[pessoaDemo().email]?.passo_usado != null;
+}
+
+export interface AtivacaoTotp {
+  /** Segredo base32, para digitar no app autenticador. */
+  segredo: string;
+  /** otpauth://, para o QR Code. */
+  uri: string;
+}
+
+/**
+ * Começa a ativação do 2º fator: segredo novo para o app autenticador. Como no
+ * servidor, ele só vale depois de confirmar um código (e substitui um TOTP anterior).
+ */
+export async function iniciarTotp(): Promise<AtivacaoTotp> {
+  if (MODO_API) return post<AtivacaoTotp>("/auth/totp");
+  await delay(300);
+  await sincronizar();
+  const p = pessoaDemo();
+  const segredo = gerarSegredo();
+  guardarTotpDemo(p.email, { segredo, passo_usado: null });
+  return { segredo, uri: uriOtpauth(segredo, p.email) };
+}
+
+/** Confere o primeiro código do app autenticador e ATIVA o 2º fator. */
+export async function confirmarTotp(codigo: string): Promise<void> {
+  const c = codigo.replace(/\s/g, "");
+  if (!/^\d{6}$/.test(c)) throw new ApiError("Digite os 6 dígitos do app autenticador.", 400);
+  if (MODO_API) {
+    await post<null>("/auth/totp/confirmar", { codigo: c });
+    return;
+  }
+  await delay(300);
+  const p = pessoaDemo();
+  const t = totpsDemo()[p.email];
+  const passo = t ? await passoDoCodigo(t.segredo, c) : null;
+  if (!t || passo == null)
+    throw new ApiError("Código inválido. Confira o horário do aparelho e tente de novo.", 400);
+  guardarTotpDemo(p.email, { ...t, passo_usado: passo });
+}
+
+/**
+ * Modo demonstração, espelho de seguranca_service.reautenticar_senha + exigir_totp:
+ * senha da conta sempre; acima do limite (ou quando `sempreTotp`), o código TOTP,
+ * de uso único (anti-replay por passo).
+ */
+async function confirmarPagamentoDemo(
+  valor: number,
+  c: ConfirmacaoPagamento | null | undefined,
+  sempreTotp = false,
+): Promise<void> {
+  const p = pessoaDemo();
+  if (!c?.senha || !(await senhaConfere(p, c.senha))) throw new ApiError("Senha incorreta.", 401);
+  if (!sempreTotp && !pedeTotp(valor)) return;
+  const t = totpsDemo()[p.email];
+  if (!t || t.passo_usado == null)
+    throw new ApiError(
+      "Ative a verificação em duas etapas (TOTP) para pagamentos acima do limite.",
+      403,
+    );
+  const passo = await passoDoCodigo(t.segredo, (c.codigo_totp ?? "").trim());
+  if (passo == null || passo <= t.passo_usado)
+    throw new ApiError("Código de verificação inválido ou já utilizado.", 401);
+  guardarTotpDemo(p.email, { ...t, passo_usado: passo });
 }
 
 export { VIGENCIA_ATUAL };
@@ -2446,7 +2575,7 @@ export async function removerFuncionario(id: number): Promise<void> {
 export async function pagarFolha(
   itens: FolhaItem[],
   descricao?: string,
-  biometria?: ProvaBiometrica,
+  confirmacao?: ConfirmacaoPagamento,
   idempotency_key?: string,
 ): Promise<ResultadoFolha> {
   // Reconstruir os itens impede campos extras, inclusive destino, no pedido.
@@ -2456,7 +2585,7 @@ export async function pagarFolha(
       ...(i.valor?.trim() ? { valor: i.valor } : {}),
     })),
     ...(descricao ? { descricao } : {}),
-    ...(biometria ? { biometria } : {}),
+    ...corpoConfirmacao(confirmacao),
     ...(idempotency_key ? { idempotency_key } : {}),
   };
   if (MODO_API) return post("/empresas/atual/folha/pagar", pedido);
@@ -2507,7 +2636,7 @@ export async function pagarFolha(
     pendentesFolhaDemo.set(sessao.conta.carteira_id, lista);
     return { pendente: { id, valor: decimalFolha(total), aprovacoes_necessarias: assinaturas } };
   }
-  if (total > 50000n && !biometria) throw new ApiError("Confirme o pagamento com seu rosto.");
+  await confirmarPagamentoDemo(Number(total) / 100, confirmacao);
   await sincronizar();
   const saldo = centavosFolha(sessao.conta.saldo.toFixed(2));
   const pagamentos = pedido.itens.map((item) => {
@@ -2534,7 +2663,7 @@ export async function pagarFolha(
       ibs: 0,
       aplicou_split: false,
       tipo_destino: "PF",
-      auth_metodo: biometria ? "selfie" : "senha",
+      auth_metodo: "senha",
       status: "concluida",
       categoria: "transferencia",
       descricao: `${descricao || "Folha de pagamento"} · ${f.nome}`,

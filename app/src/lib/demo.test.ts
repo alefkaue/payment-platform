@@ -79,7 +79,12 @@ describe("modo demonstração", () => {
     ]) {
       const d = await consultarDestino(chave);
       expect(d.nome).toBe("Beatriz Lima");
-      await transferir({ destino: d.destino!, valor: 10, descricao: "" });
+      await transferir({
+        destino: d.destino!,
+        valor: 10,
+        descricao: "",
+        confirmacao: { senha: SENHA },
+      });
     }
     expect((await minhaConta()).saldo).toBe(60);
     expect(ana.conta.nome).toBe("Ana Souza");
