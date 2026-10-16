@@ -32,7 +32,7 @@ from fastapi import HTTPException
 from app.core import arquivos, tempo, imagens as imagens_seguras
 from app.core.config import get_settings
 from app.core.documentos import mascarar_cpf, mascarar_nome, somente_digitos
-from app.services import ocr_service
+from app.services import documento_forma, ocr_service
 
 logger = logging.getLogger("payflow.kyc")
 
@@ -70,16 +70,20 @@ def analisar_documento_pessoa(*, tipo: str, frente_b64: str, verso_b64: str | No
         sha = f"{sha}:{sha_v}"
 
     cpf = somente_digitos(cpf)
+    prov = ocr_service.provedor()
+    # Precisa SER um documento de identidade (foto vazia ou qualquer outra imagem é
+    # recusada), mesmo quando a identidade da pessoa não é conferida.
+    forma = documento_forma.conferir(imagens, prov)
     if not s.documento_verificar_identidade:
         # Coleta acadêmica: arquivos continuam validados; documento não autentica
         # a pessoa, não gera template e não recebe aprovação de identidade.
         return {"tipo": tipo, "status": "em_analise", "provedor": "coleta_academica", "sha256": sha,
                 "campos": {"nome": mascarar_nome(nome), "cpf": mascarar_cpf(cpf)},
-                "verificacoes": {"identidade": "nao_verificada", "rosto": "nao_comparado"},
+                "verificacoes": {"identidade": "nao_verificada", "rosto": "nao_comparado",
+                                 "documento": forma.resumo()},
                 "motivos": ["Documento recebido para o trabalho acadêmico; identidade documental não verificada."],
                 "nivel_risco": "medio"}
-    prov = ocr_service.provedor()
-    v: dict = {}
+    v: dict = {"documento": forma.resumo()}
     motivos: list[str] = []
     campos: dict = {"nome": mascarar_nome(nome), "cpf": mascarar_cpf(cpf)}
 
@@ -90,7 +94,7 @@ def analisar_documento_pessoa(*, tipo: str, frente_b64: str, verso_b64: str | No
         v.update({"cpf": None, "nome": None, "nascimento": None, "texto": "nao_conferido"})
         motivos.append("Texto do documento não conferido automaticamente (sem OCR): análise humana.")
     else:
-        texto = "\n".join(ocr_service.extrair_texto(img) for img in imagens)
+        texto = forma.texto if forma.texto is not None else "\n".join(ocr_service.extrair_texto(img) for img in imagens)
         cpfs = ocr_service.encontrar_cpfs(texto)
         datas = ocr_service.encontrar_datas(texto)
         v["cpf"] = (cpf in cpfs) if cpfs else None

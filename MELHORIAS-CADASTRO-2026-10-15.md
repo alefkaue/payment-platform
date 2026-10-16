@@ -71,3 +71,31 @@ piscadas falsas, que podiam cair em "Pisque só quantas vezes foi pedido".
    só para documentos analisados antes desta mudança. Podem sair depois.
 5. Formatação (prettier) já pendente na `main`, em `liveness.tsx` linha ~593. Não vem
    desta mudança.
+
+## Atualização (15/10, noite): o documento precisa ser um documento
+
+Antes, na coleta acadêmica (`DOCUMENTO_VERIFICAR_IDENTIDADE=0`, o modo do Azure), qualquer
+imagem válida passava, inclusive uma foto sem conteúdo. Agora `backend/app/services/documento_forma.py`
+confere se a imagem **é um documento de identidade**, sem conferir **quem** é a pessoa:
+
+- Cada foto (frente e verso) precisa ter conteúdo. Foto lisa, preta, branca ou só
+  desfoque é recusada pela variação de tons e pela densidade de bordas.
+- O conjunto precisa ter sinais de documento:
+  - termos impressos lidos pelo OCR (Tesseract, já presente na imagem de produção). Os
+    fortes, como "REPÚBLICA FEDERATIVA", "CARTEIRA DE IDENTIDADE", "REGISTRO GERAL",
+    "HABILITAÇÃO", "DETRAN", "FILIAÇÃO" e "PASSAPORTE", valem 2 pontos. Os fracos, como
+    "NOME", "VALIDADE", "CPF" e formato de CPF/data, valem 1;
+  - passa com 3 pontos, ou com 2 pontos e uma foto 3x4 detectada no documento;
+  - QR code ou MRZ bastam sozinhos;
+  - sem OCR, exige a foto 3x4.
+- A foto 3x4 é só **detectada**: nada é comparado com a selfie. CPF e nome também não são
+  conferidos na coleta acadêmica.
+- A recusa é um HTTP 400 com orientação ("Envie a frente e o verso do RG, CNH, CIN ou
+  passaporte, inteiros, nítidos e sem reflexo"). O app volta para a etapa do documento.
+- Testes: `backend/tests/test_documento_forma.py`, com 12 casos: foto vazia, verso vazio,
+  imagem qualquer, selfie, RG com texto, OCR parcial com 3x4, QR, sem OCR e OCR com falha.
+
+**Falta:** calibrar com fotos reais de RG/CNH tiradas pelo celular. Os testes simulam o
+OCR, porque o Tesseract não está instalado neste PC. Se documentos verdadeiros forem
+recusados, baixar `PONTOS_SO_TEXTO` ou acrescentar termos em `TERMOS_FORTES`. O log
+`Documento recusado por não parecer identidade` mostra os pontos e os termos lidos.
