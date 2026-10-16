@@ -40,6 +40,6 @@ def test_header_vale_na_folha(cliente):
                        json={"nome": "Func Silva", "cpf": func.cpf, "salario": "100.00"}).json()["id"]
     for descricao in ("Salário A", "Salário B"):  # descrições diferentes: só o header segura a repetição
         r = cliente.post("/empresas/atual/folha/pagar", headers={**dono.h(n), "Idempotency-Key": "folha-hdr-1"},
-                         json={"itens": [{"funcionario_id": fid}], "descricao": descricao})
+                         json={"senha": SENHA, "itens": [{"funcionario_id": fid}], "descricao": descricao})
         assert r.status_code == 200, r.text
     assert func.saldo() == "100.00"

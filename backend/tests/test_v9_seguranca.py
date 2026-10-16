@@ -202,10 +202,12 @@ def test_grande_quatro_olhos_na_gestao_de_acesso(cliente):
     vid = r.json()["id"]
     assert _aceitar(cliente, nova, vid).status_code == 404  # ainda não pode aceitar
     [op] = [p for p in cliente.get("/empresas/atual/pendentes", headers=socio.h(n)).json() if p["tipo"] == "acesso"]
+    socio.ativar_totp()  # gestão de acesso exige 2º fator (TOTP) de quem aprova
     # quem pediu não aprova a si mesmo
-    assert cliente.post(f"/pagamentos/pendentes/{op['id']}/decidir", json={"aprovar": True, "biometria": dono.prova()},
+    assert cliente.post(f"/pagamentos/pendentes/{op['id']}/decidir", json={"senha": SENHA, "aprovar": True},
                         headers=dono.h(n)).status_code == 403
-    r = cliente.post(f"/pagamentos/pendentes/{op['id']}/decidir", json={"aprovar": True, "biometria": socio.prova()},
+    r = cliente.post(f"/pagamentos/pendentes/{op['id']}/decidir",
+                     json={"senha": SENHA, "codigo_totp": socio.codigo_totp(), "aprovar": True},
                      headers=socio.h(n))
     assert r.status_code == 200 and r.json()["status"] == "aprovada", r.text
     # aprovado pelo outro admin, o convite libera e a pessoa aceita
@@ -232,13 +234,17 @@ def test_grande_duas_aprovacoes_acima_do_limite(cliente, monkeypatch):
     r = op.transferir(conta_ref(forn.numero), 6000, conta=n)
     assert r.status_code == 202, r.text
     oid = r.json()["operacao_id"]
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"aprovar": True, "biometria": apr.prova()}, headers=apr.h(n))
+    apr.ativar_totp()  # acima do limite de dupla aprovação, quem aprova usa 2º fator (TOTP)
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir",
+                     json={"senha": SENHA, "codigo_totp": apr.codigo_totp(), "aprovar": True}, headers=apr.h(n))
     assert r.status_code == 200 and r.json()["status"] == "pendente", r.text
     assert dono.saldo(n) == "50000.00"
     # a mesma pessoa não conta duas vezes
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"aprovar": True, "biometria": apr.prova()}, headers=apr.h(n))
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"senha": SENHA, "aprovar": True, "biometria": apr.prova()}, headers=apr.h(n))
     assert r.status_code == 409
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"aprovar": True, "biometria": dono.prova()}, headers=dono.h(n))
+    dono.ativar_totp()  # segundo aprovador acima do limite também usa 2º fator (TOTP)
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir",
+                     json={"senha": SENHA, "codigo_totp": dono.codigo_totp(), "aprovar": True}, headers=dono.h(n))
     assert r.status_code == 200 and r.json()["status"] == "aprovada", r.text
     assert dono.saldo(n) == "44000.00"
 
@@ -256,16 +262,16 @@ def test_folha_so_paga_funcionario_com_conta_pf(cliente):
     fid = r.json()["id"]
     sem_conta = cliente.post("/empresas/atual/funcionarios", json={"nome": "Sem Conta", "cpf": gerar_cpf()},
                              headers=dono.h(n)).json()["id"]
-    r = cliente.post("/empresas/atual/folha/pagar", json={"itens": [{"funcionario_id": fid}]}, headers=dono.h(n))
+    r = cliente.post("/empresas/atual/folha/pagar", json={"senha": SENHA, "itens": [{"funcionario_id": fid}]}, headers=dono.h(n))
     assert r.status_code == 200, r.text
     assert r.json()["resultados"][0]["situacao"] == "pago"
     assert func.saldo() == "300.00"
     # sem conta PF na Astro: recusado
-    r = cliente.post("/empresas/atual/folha/pagar", json={"itens": [{"funcionario_id": sem_conta, "valor": "10"}]},
+    r = cliente.post("/empresas/atual/folha/pagar", json={"senha": SENHA, "itens": [{"funcionario_id": sem_conta, "valor": "10"}]},
                      headers=dono.h(n))
     assert r.status_code == 409
     # funcionário de outra empresa / inexistente: 404
-    r = cliente.post("/empresas/atual/folha/pagar", json={"itens": [{"funcionario_id": 99999, "valor": "10"}]},
+    r = cliente.post("/empresas/atual/folha/pagar", json={"senha": SENHA, "itens": [{"funcionario_id": 99999, "valor": "10"}]},
                      headers=dono.h(n))
     assert r.status_code == 404
 

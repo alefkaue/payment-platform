@@ -45,10 +45,6 @@ logger = logging.getLogger("payflow.pagamento")
 PODE_MOVIMENTAR = (PapelVinculo.ADMIN, PapelVinculo.APROVADOR, PapelVinculo.OPERADOR)
 
 
-def _limite_facial() -> Decimal:
-    return Decimal(str(get_settings().limite_facial_reais))
-
-
 def _limite_autenticacao_adicional() -> Decimal:
     """Acima deste valor o pagamento exige 2º fator (TOTP) além da senha."""
     return get_settings().limite_autenticacao_adicional
@@ -182,7 +178,6 @@ def transferir(
     destino: dict,
     valor: Decimal,
     descricao: str | None,
-    biometria=None,
     senha: str | None = None,
     codigo_totp: str | None = None,
     idempotency_key: str | None = None,
@@ -383,7 +378,7 @@ def conciliar_executando(repo: Repositorio) -> dict:
 
 
 def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, operacao_id: int,
-                     aprovar: bool, biometria, ip: str | None) -> dict:
+                     aprovar: bool, senha: str | None = None, codigo_totp: str | None = None, ip: str | None = None) -> dict:
     """Maker-checker com N aprovadores. Regras:
     - quem lançou NUNCA aprova (segregação de funções);
     - cada pessoa aprova uma vez; a operação só executa quando atinge
@@ -438,8 +433,10 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
 
     seguranca_service.exigir_dispositivo(dispositivo)
     verificacao = None
-    if p["tipo"] == "acesso" or p["valor"] > _limite_facial():
-        verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="aprovacao")
+    # Aprovação confirma por SENHA (reautenticação do aprovador); +TOTP em acesso ou acima do limite.
+    seguranca_service.reautenticar_senha(usuario=usuario, senha=senha)
+    if p["tipo"] == "acesso" or p["valor"] > _limite_autenticacao_adicional():
+        seguranca_service.exigir_totp(repo, usuario=usuario, codigo=codigo_totp)
     situacao = repo.registrar_aprovacao(operacao_id, usuario["id"], usuario["nome"])
     if situacao is None:
         raise HTTPException(status_code=409, detail="Operação já foi decidida.")
@@ -460,7 +457,7 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
             resultado = {"transacao_id": r["transacao"]["id"]}
         elif p["tipo"] == "pagamento_cobranca":
             transacao = cobranca_service.pagar(
-                repo, usuario=usuario, conta=conta, dispositivo=dispositivo, txid=payload["txid"], biometria=None,
+                repo, usuario=usuario, conta=conta, dispositivo=dispositivo, txid=payload["txid"],
                 idempotency_key=f"pendente-{operacao_id}", ip=ip, mfa_resolvido=True,
                 verificacao_previa=verificacao, pular_alcada=True, auth_metodo=AuthMetodo.APROVACAO,
             )["transacao"]
@@ -474,7 +471,7 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
         elif p["tipo"] == "devolucao":
             r = devolver_pix(
                 repo, usuario=usuario, conta=conta, dispositivo=dispositivo, transacao_id=payload["transacao_id"],
-                valor=Decimal(payload["valor"]) if payload.get("valor") is not None else None, biometria=None,
+                valor=Decimal(payload["valor"]) if payload.get("valor") is not None else None,
                 idempotency_key=f"pendente-{operacao_id}", ip=ip, pular_alcada=True, verificacao_previa=verificacao,
                 auth_metodo=AuthMetodo.APROVACAO,
             )
@@ -496,7 +493,7 @@ def decidir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
 
 
 def repetir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, operacao_id: int,
-                     biometria, ip: str | None) -> dict:
+                     senha: str | None = None, codigo_totp: str | None = None, ip: str | None = None) -> dict:
     """R04: repete só os salários que não saíram de uma folha já aprovada (ex.: faltou
     saldo). Mesmas chaves "pendente-{id}-f{funcionario}" da execução original: o que já
     foi pago não paga de novo. Mesmas regras de quem aprova (outra pessoa, papel, alçada,
@@ -525,8 +522,10 @@ def repetir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
         raise HTTPException(status_code=409, detail="Todos os salários desta folha já foram pagos.")
     seguranca_service.exigir_dispositivo(dispositivo)
     verificacao = None
-    if sum((Decimal(it["valor"]) for it in faltam), Decimal("0")) > _limite_facial():
-        verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="aprovacao")
+    # Repetição de folha confirma por SENHA (reautenticação do aprovador); +TOTP acima do limite.
+    seguranca_service.reautenticar_senha(usuario=usuario, senha=senha)
+    if sum((Decimal(it["valor"]) for it in faltam), Decimal("0")) > _limite_autenticacao_adicional():
+        seguranca_service.exigir_totp(repo, usuario=usuario, codigo=codigo_totp)
     # Uma repetição por vez; se o processo cair no meio, o job de conciliação fecha a operação.
     if not repo.mudar_status_pendente(operacao_id, p["status"], "executando"):
         raise HTTPException(status_code=409, detail="A operação mudou enquanto você decidia. Atualize a lista.")
@@ -553,7 +552,8 @@ def repetir_pendente(repo: Repositorio, *, usuario: dict, conta: dict, dispositi
 
 
 def devolver_pix(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, transacao_id: int,
-                 valor: Decimal | None, biometria, idempotency_key: str | None, ip: str | None,
+                 valor: Decimal | None, senha: str | None = None, codigo_totp: str | None = None,
+                 idempotency_key: str | None, ip: str | None,
                  pular_alcada: bool = False, verificacao_previa: dict | None = None,
                  auth_metodo: AuthMetodo | None = None) -> dict:
     """Devolução voluntária: quem recebeu um Pix devolve tudo ou parte (R1-13). Não é MED:
@@ -596,9 +596,12 @@ def devolver_pix(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: 
 
     verificacao = verificacao_previa
     metodo = auth_metodo or (AuthMetodo.SELFIE if verificacao else AuthMetodo.SENHA)
-    if verificacao is None and not pular_alcada and teto > _limite_facial():
-        verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="devolucao")
-        metodo = auth_metodo or AuthMetodo.SELFIE
+    if verificacao is None and not pular_alcada:
+        # Devolução confirma por SENHA (reautenticação); +TOTP acima do limite.
+        seguranca_service.reautenticar_senha(usuario=usuario, senha=senha)
+        if teto > _limite_autenticacao_adicional():
+            seguranca_service.exigir_totp(repo, usuario=usuario, codigo=codigo_totp)
+        metodo = auth_metodo or AuthMetodo.SENHA
     try:
         dev = repo.devolver_voluntario(
             transacao_id=transacao_id, recebedor_carteira_id=conta["carteira_id"],

@@ -98,7 +98,8 @@ def devolver(
     PJ: acima da alçada de quem devolve, vira operação pendente (202)."""
     r = pagamento_service.devolver_pix(
         repo, usuario=usuario, conta=conta, dispositivo=dispositivo, transacao_id=transacao_id, valor=dados.valor,
-        biometria=dados.biometria, idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip)
+        senha=dados.senha, codigo_totp=dados.codigo_totp,
+        idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip)
     return resposta_pendente(r["pendente"]) if "pendente" in r else r["transacao"]
 
 
@@ -128,7 +129,7 @@ def decidir_pendente(
     """PJ: aprova ou rejeita uma operação acima da alçada (precisa ser outra pessoa)."""
     return pagamento_service.decidir_pendente(repo, usuario=usuario, conta=conta, dispositivo=dispositivo,
                                               operacao_id=operacao_id, aprovar=dados.aprovar,
-                                              biometria=dados.biometria, ip=ip)
+                                              senha=dados.senha, codigo_totp=dados.codigo_totp, ip=ip)
 
 
 @router.post("/pendentes/{operacao_id}/repetir")
@@ -143,7 +144,7 @@ def repetir_pendente(
 ):
     """PJ: paga os salários que não saíram de uma folha aprovada, sem repetir os já pagos."""
     return pagamento_service.repetir_pendente(repo, usuario=usuario, conta=conta, dispositivo=dispositivo,
-                                              operacao_id=operacao_id, biometria=dados.biometria, ip=ip)
+                                              operacao_id=operacao_id, senha=dados.senha, codigo_totp=dados.codigo_totp, ip=ip)
 
 
 @router.get("/split/simular")

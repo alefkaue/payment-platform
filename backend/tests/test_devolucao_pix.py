@@ -3,7 +3,7 @@ do recebido -- nem somando com a devolução do MED."""
 
 from datetime import datetime, timedelta, timezone
 
-from tests.helpers import Pessoa, admin_h, conta_ref, depositar
+from tests.helpers import SENHA, Pessoa, admin_h, conta_ref, depositar
 
 
 def _pix(cliente, valor="100.00"):
@@ -15,7 +15,7 @@ def _pix(cliente, valor="100.00"):
 
 
 def _devolver(cliente, quem, tid, **corpo):
-    return cliente.post(f"/pagamentos/transacoes/{tid}/devolver", json=corpo, headers=quem.h())
+    return cliente.post(f"/pagamentos/transacoes/{tid}/devolver", json={"senha": SENHA, **corpo}, headers=quem.h())
 
 
 def test_devolucao_parcial_depois_o_resto_e_mais_nada(cliente):

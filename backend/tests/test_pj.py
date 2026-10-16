@@ -1,4 +1,4 @@
-from tests.helpers import Pessoa, conta_ref, depositar
+from tests.helpers import SENHA, conta_ref, depositar, Pessoa
 
 
 def _vincular(cliente, admin: Pessoa, numero_pj: str, pessoa: Pessoa, papel: str, alcada=None):
@@ -78,14 +78,14 @@ def test_alcada_e_dupla_aprovacao(cliente):
     oid = r.json()["operacao_id"]
     assert dono.saldo(n) == "9200.00"
     # quem lançou não aprova
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"aprovar": True, "biometria": op.prova()}, headers=op.h(n))
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"senha": SENHA, "aprovar": True, "biometria": op.prova()}, headers=op.h(n))
     assert r.status_code == 403
     # aprovador aprova (com biometria, valor > limite facial) e executa
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"aprovar": True, "biometria": aprov.prova()}, headers=aprov.h(n))
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"senha": SENHA, "aprovar": True, "biometria": aprov.prova()}, headers=aprov.h(n))
     assert r.status_code == 200 and r.json()["status"] == "aprovada", r.text
     assert dono.saldo(n) == "6200.00"
     # não dá para aprovar duas vezes
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"aprovar": True, "biometria": aprov.prova()}, headers=aprov.h(n))
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"senha": SENHA, "aprovar": True, "biometria": aprov.prova()}, headers=aprov.h(n))
     assert r.status_code == 409
 
 
@@ -97,9 +97,9 @@ def test_aprovador_nao_aprova_acima_da_propria_alcada(cliente):
     _vincular(cliente, dono, n, op, "operador", alcada=100)
     _vincular(cliente, dono, n, aprov, "aprovador", alcada=1000)
     oid = op.transferir(conta_ref(forn.numero), 2000, conta=n).json()["operacao_id"]
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"aprovar": True, "biometria": aprov.prova()}, headers=aprov.h(n))
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"senha": SENHA, "aprovar": True, "biometria": aprov.prova()}, headers=aprov.h(n))
     assert r.status_code == 403
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"aprovar": True, "biometria": dono.prova()}, headers=dono.h(n))
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json={"senha": SENHA, "aprovar": True, "biometria": dono.prova()}, headers=dono.h(n))
     assert r.status_code == 200
 
 

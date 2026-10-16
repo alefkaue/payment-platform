@@ -81,7 +81,8 @@ def pagar_cobranca(
     chave_header: str | None = Depends(chave_idempotencia),
 ):
     r = cobranca_service.pagar(repo, usuario=usuario, conta=conta, dispositivo=dispositivo, txid=txid,
-                               biometria=dados.biometria, idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip)
+                               senha=dados.senha, codigo_totp=dados.codigo_totp,
+                               idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip)
     return resposta_pendente(r["pendente"]) if "pendente" in r else r["transacao"]
 
 

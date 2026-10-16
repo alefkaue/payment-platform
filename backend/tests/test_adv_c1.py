@@ -168,7 +168,7 @@ def test_adv_folha_funcionario_de_outra_empresa(cliente):
     pa, pb = a.abrir_empresa()["numero"], b.abrir_empresa()["numero"]
     depositar(cliente, pa, 100)
     fid = cliente.post("/empresas/atual/funcionarios", json={"nome": "Pessoa", "cpf": f.cpf, "salario": "10"}, headers=b.h(pb)).json()["id"]
-    r = cliente.post("/empresas/atual/folha/pagar", json={"itens": [{"funcionario_id": fid, "valor": "10"}]}, headers=a.h(pa))
+    r = cliente.post("/empresas/atual/folha/pagar", json={"senha": SENHA, "itens": [{"funcionario_id": fid, "valor": "10"}]}, headers=a.h(pa))
     assert r.status_code in (400, 404) or (r.status_code == 200 and all(i["situacao"] == "erro" for i in r.json()["resultados"])), r.text
     assert a.saldo(pa) == "100.00" and f.saldo() == "0.00"
 
@@ -183,10 +183,10 @@ def test_adv_cobranca_cancelada_paga_e_estorno_repetido(cliente):
         return r.json()[0]["txid"]
     cancelada = criar()
     assert cliente.post(f"/cobrancas/{cancelada}/cancelar", headers=dono.h(pj)).status_code == 204
-    assert cliente.post(f"/cobrancas/{cancelada}/pagar", json={}, headers=pagador.h()).status_code in (400, 409)
+    assert cliente.post(f"/cobrancas/{cancelada}/pagar", json={"senha": SENHA}, headers=pagador.h()).status_code in (400, 409)
     paga = criar()
-    assert cliente.post(f"/cobrancas/{paga}/pagar", json={}, headers=pagador.h()).status_code == 200
-    assert cliente.post(f"/cobrancas/{paga}/pagar", json={}, headers=pagador.h()).status_code in (400, 409)
+    assert cliente.post(f"/cobrancas/{paga}/pagar", json={"senha": SENHA}, headers=pagador.h()).status_code == 200
+    assert cliente.post(f"/cobrancas/{paga}/pagar", json={"senha": SENHA}, headers=pagador.h()).status_code in (400, 409)
     assert cliente.post(f"/cobrancas/{paga}/estornar", json={}, headers=dono.h(pj)).status_code == 200
     assert cliente.post(f"/cobrancas/{paga}/estornar", json={}, headers=dono.h(pj)).status_code in (400, 409)
     assert pagador.saldo() == "100.00" and dono.saldo(pj) == "0.00"
@@ -259,7 +259,7 @@ def test_adv_mass_assignment_cobranca_recorrencia_folha_pix_e_webhook(cliente):
     func = cliente.post("/empresas/atual/funcionarios", headers=dono.h(pj), json={**extras, "nome": "Pessoa Teste", "cpf": f.cpf,
         "salario": "10", "ativo": False, "usuario_id": 999999}).json()
     assert func["ativo"] and func["id"] != 999999
-    folha = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(pj), json={**extras, "itens": [{"funcionario_id": func["id"],
+    folha = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(pj), json={**extras, "senha": SENHA, "itens": [{"funcionario_id": func["id"],
         "valor": "10", "destino": conta_ref(terceiro.numero), "destino_carteira_id": terceiro.conta["carteira_id"]}]} )
     assert folha.status_code == 200, folha.text
     assert f.saldo() == "10.00" and terceiro.saldo() == "0.00"

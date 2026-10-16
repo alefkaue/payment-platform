@@ -48,7 +48,7 @@ from app.services.pagamento_service import (
     PODE_MOVIMENTAR,
     AlcadaDiariaExcedida,
     _checar_alcada_diaria,
-    _limite_facial,
+    _limite_autenticacao_adicional,
     chave_idempotencia,
     criar_pendente,
     motivo_aprovacao,
@@ -160,7 +160,8 @@ def pagar(
     conta: dict,
     dispositivo: dict | None,
     txid: str,
-    biometria=None,
+    senha: str | None = None,
+    codigo_totp: str | None = None,
     idempotency_key: str | None = None,
     ip: str | None = None,
     mfa_resolvido: bool = False,
@@ -197,9 +198,12 @@ def pagar(
 
     verificacao = verificacao_previa
     metodo = auth_metodo or (AuthMetodo.AUTOMATICO if automatico else AuthMetodo.SELFIE if verificacao else AuthMetodo.SENHA)
-    if not automatico and not mfa_resolvido and verificacao is None and valor > _limite_facial():
-        verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="pagamento_cobranca")
-        metodo = auth_metodo or AuthMetodo.SELFIE
+    if not automatico and not mfa_resolvido and verificacao is None:
+        # Pagamento de cobrança confirma por SENHA (reautenticação); +TOTP acima do limite.
+        seguranca_service.reautenticar_senha(usuario=usuario, senha=senha)
+        if valor > _limite_autenticacao_adicional():
+            seguranca_service.exigir_totp(repo, usuario=usuario, codigo=codigo_totp)
+        metodo = auth_metodo or AuthMetodo.SENHA
 
     split = split_da_nota(valor, cob["cbs"], cob["ibs"]) if vai_reter(cob) else sem_split(valor)
     # Débito automático também respeita os limites de valor do pagador (por transação,

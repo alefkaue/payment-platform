@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-from app.schemas.comum import Destino, Dinheiro, ProvaBiometrica
+from app.schemas.comum import Destino, Dinheiro
 
 
 class TransferenciaCreate(BaseModel):
@@ -13,7 +13,6 @@ class TransferenciaCreate(BaseModel):
     # Confirmação do pagamento: SENHA da conta e, acima do limite, código TOTP.
     senha: str | None = Field(default=None, max_length=128)
     codigo_totp: str | None = Field(default=None, max_length=10)
-    biometria: ProvaBiometrica | None = None
     idempotency_key: str | None = Field(default=None, max_length=80)
 
 
@@ -29,7 +28,6 @@ class LoteCreate(BaseModel):
     # Uma confirmação para o lote inteiro: senha e, se o TOTAL passar do limite, código TOTP.
     senha: str | None = Field(default=None, max_length=128)
     codigo_totp: str | None = Field(default=None, max_length=10)
-    biometria: ProvaBiometrica | None = None
 
 
 class LoteItemResultado(BaseModel):
@@ -49,7 +47,8 @@ class DevolucaoCreate(BaseModel):
     """Quem recebeu um Pix devolve tudo (valor vazio) ou parte dele ao pagador."""
 
     valor: Dinheiro | None = None
-    biometria: ProvaBiometrica | None = None
+    senha: str | None = Field(default=None, max_length=128)
+    codigo_totp: str | None = Field(default=None, max_length=10)
     idempotency_key: str | None = Field(default=None, max_length=80)
 
 
@@ -63,13 +62,15 @@ class DecisaoContestacao(BaseModel):
 
 class DecisaoPendente(BaseModel):
     aprovar: bool
-    biometria: ProvaBiometrica | None = None
+    senha: str | None = Field(default=None, max_length=128)
+    codigo_totp: str | None = Field(default=None, max_length=10)
 
 
 class RepeticaoPendente(BaseModel):
-    """Repetir os salários que não saíram de uma folha aprovada (rosto acima do limite facial)."""
+    """Repetir os salários que não saíram de uma folha aprovada (senha; +TOTP acima do limite)."""
 
-    biometria: ProvaBiometrica | None = None
+    senha: str | None = Field(default=None, max_length=128)
+    codigo_totp: str | None = Field(default=None, max_length=10)
 
 
 class NotaFiscal(BaseModel):
@@ -115,7 +116,8 @@ class CobrancaResponse(BaseModel):
 
 
 class PagarCobranca(BaseModel):
-    biometria: ProvaBiometrica | None = None
+    senha: str | None = Field(default=None, max_length=128)
+    codigo_totp: str | None = Field(default=None, max_length=10)
     idempotency_key: str | None = Field(default=None, max_length=80)
 
 

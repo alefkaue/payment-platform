@@ -63,7 +63,7 @@ def test_r01_reenvio_de_folha_paga_na_hora_nao_gera_pendencia(cliente):
     dono, n, eq = _empresa(cliente, "PME", [("op", "operador", 100, {})], saldo=1000)
     op, func = eq["op"][0], Pessoa(cliente, "func@ex.com")
     fid = _cadastrar_funcionario(cliente, dono, n, func, "60.00")
-    corpo = {"itens": [{"funcionario_id": fid}], "descricao": "Salário 10/2026"}
+    corpo = {"itens": [{"funcionario_id": fid}], "descricao": "Salário 10/2026", "senha": SENHA}
     r1 = cliente.post("/empresas/atual/folha/pagar", json=corpo, headers=op.h(n))
     assert r1.status_code == 200 and r1.json()["resultados"][0]["situacao"] == "pago", r1.text
     r2 = cliente.post("/empresas/atual/folha/pagar", json=corpo, headers=op.h(n))
@@ -108,8 +108,8 @@ def test_r02_devolucoes_somam_na_alcada_diaria(cliente):
     op = eq["op"][0]
     _, t1 = _pix_para_empresa(cliente, n, "6.00")
     _, t2 = _pix_para_empresa(cliente, n, "7.00")
-    assert cliente.post(f"/pagamentos/transacoes/{t1}/devolver", json={}, headers=op.h(n)).status_code == 201
-    r = cliente.post(f"/pagamentos/transacoes/{t2}/devolver", json={}, headers=op.h(n))
+    assert cliente.post(f"/pagamentos/transacoes/{t1}/devolver", json={"senha": SENHA}, headers=op.h(n)).status_code == 201
+    r = cliente.post(f"/pagamentos/transacoes/{t2}/devolver", json={"senha": SENHA}, headers=op.h(n))
     assert r.status_code == 202, r.text  # 6 + 7 > 10 no dia
     assert dono.saldo(n) == "8.00"
 
@@ -117,7 +117,7 @@ def test_r02_devolucoes_somam_na_alcada_diaria(cliente):
 def test_r02_devolucao_dentro_da_alcada_e_da_pf_continua_direta(cliente):
     dono, n, eq = _empresa(cliente, "PME", [("op", "operador", 50, {})], saldo=1)
     _, tid = _pix_para_empresa(cliente, n, "20.00")
-    r = cliente.post(f"/pagamentos/transacoes/{tid}/devolver", json={"valor": "20.00"}, headers=eq["op"][0].h(n))
+    r = cliente.post(f"/pagamentos/transacoes/{tid}/devolver", json={"valor": "20.00", "senha": SENHA}, headers=eq["op"][0].h(n))
     assert r.status_code == 201 and r.json()["tipo"] == "devolucao", r.text
 
 
@@ -153,7 +153,7 @@ def _folha_pendente(cliente, saldo, salarios):
     op = eq["op"][0]
     funcs = [Pessoa(cliente, f"func{i}@ex.com") for i in range(len(salarios))]
     fids = [_cadastrar_funcionario(cliente, dono, n, f, s) for f, s in zip(funcs, salarios)]
-    r = cliente.post("/empresas/atual/folha/pagar", json={"itens": [{"funcionario_id": f} for f in fids]},
+    r = cliente.post("/empresas/atual/folha/pagar", json={"senha": SENHA, "itens": [{"funcionario_id": f} for f in fids]},
                      headers=op.h(n))
     assert r.status_code == 200 and "pendente" in r.json(), r.text
     return dono, n, op, funcs, fids, r.json()["pendente"]["id"]
@@ -170,7 +170,7 @@ def test_r04_folha_aprovada_sem_saldo_fica_como_falhou_com_os_itens(cliente):
     assert func.saldo() == "0.00"
     # Repetir depois de completar o saldo paga só o que faltou.
     depositar(cliente, n, 100)
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={}, headers=dono.h(n))
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={"senha": SENHA}, headers=dono.h(n))
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "aprovada" and r.json()["resultado"]["executados"] == 1
     assert func.saldo() == "100.00"
@@ -184,13 +184,13 @@ def test_r04_folha_parcial_mostra_quem_recebeu_e_repetir_nao_paga_de_novo(client
     assert (res["parcial"], res["executados"], res["itens"]) == (True, 1, 2)
     assert sorted(i["situacao"] for i in res["resultados"]) == ["erro", "pago"]
     # quem lançou não repete (não tem poder de aprovar este valor)
-    assert cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={}, headers=op.h(n)).status_code == 403
+    assert cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={"senha": SENHA}, headers=op.h(n)).status_code == 403
     depositar(cliente, n, 100)
-    r = cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={}, headers=dono.h(n))
+    r = cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={"senha": SENHA}, headers=dono.h(n))
     assert r.status_code == 200 and r.json()["resultado"]["parcial"] is False, r.text
     assert (f1.saldo(), f2.saldo(), dono.saldo(n)) == ("60.00", "60.00", "80.00")
     # Nada mais a repetir.
-    assert cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={}, headers=dono.h(n)).status_code == 409
+    assert cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={"senha": SENHA}, headers=dono.h(n)).status_code == 409
     assert (f1.saldo(), f2.saldo()) == ("60.00", "60.00")
 
 
@@ -204,7 +204,7 @@ def test_r05_funcionario_desligado_nao_recebe_folha_que_aguardava_aprovacao(clie
     assert item["situacao"] == "erro" and "desligado" in item["erro"]
     assert func.saldo() == "0.00"
     # O desligamento também vale para a repetição.
-    assert cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={}, headers=dono.h(n)).status_code == 200
+    assert cliente.post(f"/pagamentos/pendentes/{oid}/repetir", json={"senha": SENHA}, headers=dono.h(n)).status_code == 200
     assert func.saldo() == "0.00"
 
 

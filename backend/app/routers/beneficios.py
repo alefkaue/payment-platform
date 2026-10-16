@@ -6,12 +6,12 @@ As telas estão arquivadas em app/src/_arquivado/beneficios (ver o README de lá
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.deps import conta_atual, dispositivo_atual, get_repo, ip_cliente, usuario_atual
 from app.repositories.repository import Repositorio
-from app.schemas.comum import ProvaBiometrica, TransacaoResponse
+from app.schemas.comum import TransacaoResponse
 from app.services import beneficios_service
 
 def _beneficios_ligados() -> None:
@@ -51,7 +51,8 @@ class Voo(BaseModel):
 
 
 class Compra(BaseModel):
-    biometria: ProvaBiometrica | None = None
+    senha: str | None = Field(default=None, max_length=128)
+    codigo_totp: str | None = Field(default=None, max_length=10)
 
 
 class CompraResponse(BaseModel):
@@ -86,7 +87,7 @@ def comprar_produto(produto_id: int, dados: Compra, usuario: dict = Depends(usua
                     repo: Repositorio = Depends(get_repo), ip: str | None = Depends(ip_cliente)):
     """Compra com o saldo. O lojista emite a nota: o imposto dela é separado no ato. Rende 1 ponto por real."""
     return beneficios_service.comprar_produto(repo, usuario=usuario, conta=conta, dispositivo=dispositivo,
-                                              produto_id=produto_id, biometria=dados.biometria, ip=ip)
+                                              produto_id=produto_id, senha=dados.senha, codigo_totp=dados.codigo_totp, ip=ip)
 
 
 @router.get("/viagens/voos", response_model=list[Voo])
@@ -109,7 +110,7 @@ def comprar_voo(voo_id: int, dados: Compra, usuario: dict = Depends(usuario_atua
                 repo: Repositorio = Depends(get_repo), ip: str | None = Depends(ip_cliente)):
     """Passagem paga em reais (rende 1 ponto por real)."""
     return beneficios_service.comprar_voo(repo, usuario=usuario, conta=conta, dispositivo=dispositivo,
-                                          voo_id=voo_id, biometria=dados.biometria, ip=ip)
+                                          voo_id=voo_id, senha=dados.senha, codigo_totp=dados.codigo_totp, ip=ip)
 
 
 @router.post("/viagens/voos/{voo_id}/resgatar", response_model=ResgateResponse)

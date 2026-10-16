@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 
 from app.core import config
-from tests.helpers import Pessoa, depositar, gerar_chave_nfe
+from tests.helpers import SENHA, depositar, gerar_chave_nfe, Pessoa
 from tests.test_cobrancas import _cobrar, _empresa
 
 
@@ -23,7 +23,7 @@ def test_em_2026_mostra_o_imposto_mas_nao_retem(cliente, monkeypatch):
     monkeypatch.setattr(config.get_settings(), "split_retencao_desde", date(2027, 1, 1))
     dono, n, pf, c = _venda(cliente)
     assert c["split_fase"] == "informativo" and c["vai_reter_imposto"] is False
-    t = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h()).json()
+    t = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h()).json()
     assert (t["liquido"], t["cbs"], t["ibs"]) == ("400.00", "0.00", "0.00")
     assert dono.saldo(n) == "400.00"  # a empresa recebe o valor inteiro
     r = cliente.get("/empresas/atual/tributos", headers=dono.h(n)).json()
@@ -35,7 +35,7 @@ def test_a_partir_de_2027_retem(cliente, monkeypatch):
     monkeypatch.setattr(config.get_settings(), "split_retencao_desde", date(2026, 10, 1))
     dono, n, pf, c = _venda(cliente)
     assert c["split_fase"] == "retencao"
-    t = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h()).json()
+    t = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h()).json()
     assert (t["liquido"], t["cbs"], t["ibs"]) == ("396.00", "3.60", "0.40")
 
 
@@ -44,7 +44,7 @@ def test_modo_demonstracao_retem_e_se_identifica(cliente, monkeypatch):
     monkeypatch.setattr(config.get_settings(), "split_demonstracao", True)
     dono, n, pf, c = _venda(cliente)
     assert c["split_fase"] == "demonstracao" and c["vai_reter_imposto"] is True
-    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h())
+    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h())
     r = cliente.get("/empresas/atual/tributos", headers=dono.h(n)).json()
     assert r["split_fase"] == "demonstracao" and "Simulação" in r["observacao"]
 
@@ -71,6 +71,6 @@ def test_demonstracao_proibida_em_producao(monkeypatch):
 def test_comprovante_mostra_o_imposto_da_nota_mesmo_sem_reter(cliente, monkeypatch):
     monkeypatch.setattr(config.get_settings(), "split_retencao_desde", date(2027, 1, 1))
     dono, n, pf, c = _venda(cliente)
-    t = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h()).json()
+    t = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h()).json()
     comp = cliente.get(f"/pagamentos/transacoes/{t['id']}", headers=pf.h()).json()
     assert comp["cbs"] == "0.00" and (comp["nota"]["cbs"], comp["nota"]["ibs"]) == ("3.60", "0.40")

@@ -91,7 +91,8 @@ def _nota_da_venda(repo: Repositorio, parceiro_carteira_id: int, valor: Decimal)
 
 
 def _vender(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, parceiro_carteira_id: int,
-            valor: Decimal, descricao: str, motivo_pontos: str, biometria, ip: str | None) -> dict:
+            valor: Decimal, descricao: str, motivo_pontos: str, senha: str | None = None,
+            codigo_totp: str | None = None, ip: str | None = None) -> dict:
     _exigir_pf(conta)
     chave, cbs, ibs = _nota_da_venda(repo, parceiro_carteira_id, valor)
     [cob] = repo.criar_cobrancas([{
@@ -101,7 +102,7 @@ def _vender(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict 
     }])
     try:
         r = cobranca_service.pagar(repo, usuario=usuario, conta=conta, dispositivo=dispositivo, txid=cob["txid"],
-                                   biometria=biometria, ip=ip)
+                                   senha=senha, codigo_totp=codigo_totp, ip=ip)
     except HTTPException:
         repo.cancelar_cobranca(cob["id"])
         raise
@@ -113,25 +114,25 @@ def _vender(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict 
 
 
 def comprar_produto(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, produto_id: int,
-                    biometria, ip: str | None) -> dict:
+                    senha: str | None = None, codigo_totp: str | None = None, ip: str | None = None) -> dict:
     p = repo.obter_produto(produto_id)
     if not p:
         raise HTTPException(status_code=404, detail="Produto não encontrado.")
     return _vender(repo, usuario=usuario, conta=conta, dispositivo=dispositivo,
                    parceiro_carteira_id=p["merchant_carteira_id"], valor=p["preco"],
                    descricao=f"{p['merchant_nome']} · {p['nome']}", motivo_pontos="compra_loja",
-                   biometria=biometria, ip=ip)
+                   senha=senha, codigo_totp=codigo_totp, ip=ip)
 
 
 def comprar_voo(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, voo_id: int,
-                biometria, ip: str | None) -> dict:
+                senha: str | None = None, codigo_totp: str | None = None, ip: str | None = None) -> dict:
     v = repo.obter_voo(voo_id)
     if not v:
         raise HTTPException(status_code=404, detail="Voo não encontrado.")
     return _vender(repo, usuario=usuario, conta=conta, dispositivo=dispositivo,
                    parceiro_carteira_id=v["merchant_carteira_id"], valor=v["preco"],
                    descricao=f"Voo {v['origem']} → {v['destino']} · {v['companhia']}", motivo_pontos="compra_voo",
-                   biometria=biometria, ip=ip)
+                   senha=senha, codigo_totp=codigo_totp, ip=ip)
 
 
 def resgatar_voo(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, voo_id: int,

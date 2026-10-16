@@ -3,7 +3,7 @@ import hmac
 import json
 from datetime import datetime, timedelta, timezone
 
-from tests.helpers import Pessoa, admin_h, depositar, gerar_chave_nfe
+from tests.helpers import SENHA, admin_h, depositar, gerar_chave_nfe, Pessoa
 
 
 def _empresa(cliente, regime="regular"):
@@ -28,14 +28,14 @@ def test_cobranca_com_nota_retem_cbs_e_ibs_da_nota(cliente):
 
     vista = cliente.get(f"/cobrancas/{c['txid']}", headers=cliente_pf.h()).json()
     assert vista["recebedor_nome"] == "Autopeças Teste"
-    r = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=cliente_pf.h())
+    r = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=cliente_pf.h())
     t = r.json()
     assert (t["cbs"], t["ibs"], t["liquido"], t["aplicou_split"]) == ("3.60", "0.40", "396.00", True)
     assert dono.saldo(n) == "396.00"
     trib = cliente.get("/empresas/atual/tributos", headers=dono.h(n)).json()
     assert trib["a_repassar"] == "4.00"
     # pagar de novo não duplica
-    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=cliente_pf.h()).status_code == 409
+    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=cliente_pf.h()).status_code == 409
 
 
 def test_cobranca_sem_nota_ou_simples_nao_retem(cliente):
@@ -44,7 +44,7 @@ def test_cobranca_sem_nota_ou_simples_nao_retem(cliente):
     depositar(cliente, pf.numero, 500)
     [c] = _cobrar(cliente, dono, n, valor="100.00", nota_fiscal={"chave": gerar_chave_nfe(cnpj), "cbs": "0.90", "ibs": "0.10"})
     assert c["vai_reter_imposto"] is False
-    t = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h()).json()
+    t = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h()).json()
     assert t["aplicou_split"] is False and t["liquido"] == "100.00"
 
 
@@ -67,7 +67,7 @@ def test_cobranca_para_pagador_especifico(cliente):
     certo, errado = Pessoa(cliente, "certo@ex.com"), Pessoa(cliente, "errado@ex.com")
     depositar(cliente, errado.numero, 100)
     [c] = _cobrar(cliente, dono, n, valor="10.00", pagador_documento=certo.cpf)
-    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=errado.h()).status_code == 403
+    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=errado.h()).status_code == 403
 
 
 def test_parcelamento_divide_valor_e_imposto(cliente):
@@ -86,7 +86,7 @@ def test_estorno_antes_do_repasse_devolve_tudo(cliente):
     depositar(cliente, pf.numero, 1000)
     depositar(cliente, n, 50)
     [c] = _cobrar(cliente, dono, n, valor="200.00", nota_fiscal={"chave": gerar_chave_nfe(cnpj), "cbs": "17.60", "ibs": "0.20"})
-    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h())
+    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h())
     r = cliente.post(f"/cobrancas/{c['txid']}/estornar", headers=dono.h(n))
     assert r.status_code == 200, r.text
     assert pf.saldo() == "1000.00" and dono.saldo(n) == "50.00"
@@ -101,7 +101,7 @@ def test_repasse_d_mais_1_e_estorno_depois_vira_credito(cliente, relogio):
     dia1 = datetime(2026, 10, 7, 15, 0, tzinfo=timezone.utc)
     relogio.definir(dia1)
     [c] = _cobrar(cliente, dono, n, valor="200.00", nota_fiscal={"chave": gerar_chave_nfe(cnpj), "cbs": "17.60", "ibs": "0.20"})
-    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h())
+    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h())
     adm = admin_h(cliente)
     # no mesmo dia nada é repassado (D+1)
     assert cliente.post("/admin/tributos/repassar", headers=adm).json()["total"] == "0.00"
@@ -124,7 +124,7 @@ def test_credito_declarado_entra_na_restituicao_prevista(cliente):
     pf = Pessoa(cliente, "c@ex.com")
     depositar(cliente, pf.numero, 1000)
     [c] = _cobrar(cliente, dono, n, valor="500.00", nota_fiscal={"chave": gerar_chave_nfe(cnpj), "cbs": "44.00", "ibs": "0.50"})
-    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"biometria": pf.prova()}, headers=pf.h())
+    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA, "biometria": pf.prova()}, headers=pf.h())
     cliente.post("/empresas/atual/creditos", json={"tributo": "CBS", "valor": "30.00"}, headers=dono.h(n))
     t = cliente.get("/empresas/atual/tributos", headers=dono.h(n)).json()
     assert t["restituicao_prevista"] == "30.00" and t["modo_split"] == "inteligente"
@@ -180,7 +180,7 @@ def test_webhook_assinado(cliente, monkeypatch):
     pf = Pessoa(cliente, "c@ex.com")
     depositar(cliente, pf.numero, 100)
     [c] = _cobrar(cliente, dono, n, valor="10.00")
-    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h())
+    cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h())
     assert cliente.post("/admin/jobs/webhooks", headers=admin_h(cliente)).json()["processadas"] == 1
     url, corpo, headers = enviados[0]
     esperado = "sha256=" + hmac.new(w["segredo"].encode(), corpo, hashlib.sha256).hexdigest()
@@ -262,7 +262,7 @@ def test_apuracao_e_do_mes_e_o_faturamento_vem_do_servidor(cliente):
     pf = Pessoa(cliente, "apuracao@ex.com")
     depositar(cliente, pf.numero, 1000)
     [c] = _cobrar(cliente, dono, n, valor="400.00", nota_fiscal={"chave": gerar_chave_nfe(cnpj), "cbs": "3.60", "ibs": "0.40"})
-    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h()).status_code == 200
+    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h()).status_code == 200
     out = cliente.get("/empresas/atual/tributos", headers=dono.h(n)).json()
     assert (out["periodo"], out["faturamento"], out["cbs_retido"]) == ("2026-10", "400.00", "3.60")
     set_ = cliente.get("/empresas/atual/tributos?mes=2026-09", headers=dono.h(n)).json()

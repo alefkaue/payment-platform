@@ -66,10 +66,10 @@ def test_chave_81_caracteres_recusada(cliente, lote, canal):
 def test_folha_chave_cliente_nao_colide_com_derivada(cliente, folha):
     dono, n, f, _, (fid, _) = folha
     itens = [{"funcionario_id": fid}]
-    r = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(n), json={"itens": itens})
+    r = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(n), json={"senha": SENHA, "itens": itens})
     assert r.status_code == 200
     derivada = _chaves()[0].split(":", 1)[1].removeprefix("folha-").split("-f")[0]
-    r = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(n), json={"itens": itens, "idempotency_key": derivada})
+    r = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(n), json={"senha": SENHA, "itens": itens, "idempotency_key": derivada})
     assert r.status_code == 200
     assert len(set(_chaves())) == 2 and f.saldo() == "600.00"
 
@@ -98,7 +98,7 @@ def test_pendente_mesma_chave_outro_pedido_conflita(cliente, pendente, tipo, mud
         if tipo == "folha":
             return cliente.post("/empresas/atual/folha/pagar", headers=op.h(n), json={
                 "itens": [{"funcionario_id": ids[destino], "valor": valor}], "idempotency_key": "c3-intencao"})
-        return cliente.post(f"/cobrancas/{cobs[int(segundo)]['txid']}/pagar", headers=op.h(n), json={"idempotency_key": "c3-intencao"})
+        return cliente.post(f"/cobrancas/{cobs[int(segundo)]['txid']}/pagar", headers=op.h(n), json={"senha": SENHA, "idempotency_key": "c3-intencao"})
     primeira = enviar(False)
     assert primeira.status_code == (200 if tipo == "folha" else 202), primeira.text
     segunda = enviar(True)
@@ -131,7 +131,7 @@ def test_cobranca_reenvio_outra_conta_nao_revela(cliente, loja, origem):
     depositar(cliente, a.numero, 100)
     [c] = _cobrar(cliente, dono, n, valor="10")
     caminho = f"/cobrancas/{c['txid']}/pagar"
-    assert cliente.post(caminho, headers=a.h(), json={"idempotency_key": "c3-recibo"}).status_code == 200
+    assert cliente.post(caminho, headers=a.h(), json={"senha": SENHA, "idempotency_key": "c3-recibo"}).status_code == 200
     h = b.h() if origem == "pessoa" else (a if origem == "pj" else b).h((a if origem == "pj" else b).abrir_empresa()["numero"])
     r = cliente.post(caminho, headers=h, json={"idempotency_key": "c3-recibo"})
     assert r.status_code == 409 and "origem" not in r.json(), r.text
@@ -143,9 +143,9 @@ def test_cobranca_estornada_nao_recupera_pagamento_como_novo(cliente, loja):
     depositar(cliente, a.numero, 100)
     [c] = _cobrar(cliente, dono, n, valor="10")
     caminho = f"/cobrancas/{c['txid']}"
-    assert cliente.post(caminho + "/pagar", headers=a.h(), json={"idempotency_key": "c3-estorno"}).status_code == 200
+    assert cliente.post(caminho + "/pagar", headers=a.h(), json={"senha": SENHA, "idempotency_key": "c3-estorno"}).status_code == 200
     assert cliente.post(caminho + "/estornar", headers=dono.h(n), json={}).status_code == 200
-    assert cliente.post(caminho + "/pagar", headers=a.h(), json={"idempotency_key": "c3-estorno"}).status_code == 409
+    assert cliente.post(caminho + "/pagar", headers=a.h(), json={"senha": SENHA, "idempotency_key": "c3-estorno"}).status_code == 409
     assert a.saldo() == "100.00"
 
 
@@ -178,7 +178,7 @@ def test_conciliar_folha_centavos_e_cadastro_alterado(cliente, pendente, relogio
         r = cliente.post("/empresas/atual/funcionarios", headers=dono.h(n), json={"nome": "Funcionario Silva", "cpf": f.cpf, "salario": "1500.01"})
         assert r.status_code == 201
         ids.append(r.json()["id"])
-    r = cliente.post("/empresas/atual/folha/pagar", headers=op.h(n), json={"itens": [{"funcionario_id": i} for i in ids]})
+    r = cliente.post("/empresas/atual/folha/pagar", headers=op.h(n), json={"senha": SENHA, "itens": [{"funcionario_id": i} for i in ids]})
     oid = r.json()["pendente"]["id"]
     original = pagamento_service.transferir
     chamadas = []

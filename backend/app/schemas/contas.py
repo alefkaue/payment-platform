@@ -146,7 +146,8 @@ class FolhaPagar(BaseModel):
 
     itens: list[FolhaItem] = Field(..., min_length=1, max_length=500)
     descricao: str | None = Field(default=None, max_length=100)
-    biometria: ProvaBiometrica | None = None
+    senha: str | None = Field(default=None, max_length=128)
+    codigo_totp: str | None = Field(default=None, max_length=10)
     # Mesmo contrato do Pix. Sem ela, a chave sai da competência (descrição) + funcionário + valor:
     # o mesmo salário da mesma competência não é pago duas vezes por um reenvio.
     idempotency_key: str | None = Field(default=None, min_length=8, max_length=64)

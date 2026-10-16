@@ -13,7 +13,7 @@ def test_catalogo_da_loja_e_dos_voos(cliente):
 def test_compra_na_loja_tem_split_da_nota_e_rende_pontos(cliente):
     p = Pessoa(cliente, "p@ex.com")
     depositar(cliente, p.numero, 500)
-    r = cliente.post("/loja/produtos/2/comprar", json={}, headers=p.h())  # Tênis, R$ 299,00
+    r = cliente.post("/loja/produtos/2/comprar", json={"senha": SENHA}, headers=p.h())  # Tênis, R$ 299,00
     assert r.status_code == 200, r.text
     c = r.json()
     t = c["transacao"]
@@ -24,13 +24,13 @@ def test_compra_na_loja_tem_split_da_nota_e_rende_pontos(cliente):
     assert cliente.get("/pontos", headers=p.h()).json()["movimentos"][0]["motivo"] == "compra_loja"
 
 
-def test_compra_acima_de_500_pede_biometria(cliente):
+def test_compra_confirma_por_senha(cliente):
     p = Pessoa(cliente, "p@ex.com")
     depositar(cliente, p.numero, 1000)
-    r = cliente.post("/loja/produtos/6/comprar", json={}, headers=p.h())  # Smartwatch R$ 629
-    assert r.status_code == 400
-    r = cliente.post("/loja/produtos/6/comprar", json={"biometria": p.prova()}, headers=p.h())
-    assert r.status_code == 200 and r.json()["transacao"]["auth_metodo"] == "selfie"
+    r = cliente.post("/loja/produtos/6/comprar", json={}, headers=p.h())  # Smartwatch R$ 629, sem senha
+    assert r.status_code == 401
+    r = cliente.post("/loja/produtos/6/comprar", json={"senha": SENHA}, headers=p.h())
+    assert r.status_code == 200 and r.json()["transacao"]["auth_metodo"] == "senha"
 
 
 def test_passagem_em_reais_e_resgate_com_pontos(cliente):
@@ -38,7 +38,7 @@ def test_passagem_em_reais_e_resgate_com_pontos(cliente):
 
     p = Pessoa(cliente, "p@ex.com")
     depositar(cliente, p.numero, 400)
-    r = cliente.post("/viagens/voos/2/comprar", json={}, headers=p.h())  # LATAM R$ 289
+    r = cliente.post("/viagens/voos/2/comprar", json={"senha": SENHA}, headers=p.h())  # LATAM R$ 289
     assert r.status_code == 200 and r.json()["pontos_ganhos"] == 289
     # 289 pontos não pagam um voo de 8.000 pontos
     r = cliente.post("/viagens/voos/2/resgatar", headers=p.h())

@@ -6,7 +6,7 @@ import pytest
 
 from app.db.models import AuthMetodo
 from app.services.split_service import sem_split
-from tests.helpers import Pessoa, admin_h, conta_ref, depositar
+from tests.helpers import SENHA, admin_h, conta_ref, depositar, Pessoa
 from tests.test_cobrancas import _cobrar, _empresa
 
 
@@ -34,8 +34,8 @@ def test_pagamento_grava_o_evento_junto_e_repetir_nao_duplica(cliente, loja):
     depositar(cliente, pf.numero, 100)
     [c] = _cobrar(cliente, dono, n, valor="10.00")
     h = {**pf.h(), "Idempotency-Key": "pagar-uma-vez"}
-    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=h).status_code == 200
-    reenvio = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=h)  # devolve o original (C2-04)
+    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=h).status_code == 200
+    reenvio = cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=h)  # devolve o original (C2-04)
     assert reenvio.status_code == 200
     assert [e["evento"] for e in _entregas(cliente, dono, n)] == ["cobranca.paga"]
     assert cliente.post("/admin/jobs/webhooks", headers=admin_h(cliente)).json()["processadas"] == 1
@@ -61,7 +61,7 @@ def test_estorno_e_pendencia_tambem_vao_pelo_outbox(cliente, loja):
     pf = Pessoa(cliente, "estorno.outbox@ex.com")
     depositar(cliente, pf.numero, 100)
     [c] = _cobrar(cliente, dono, n, valor="10.00")
-    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={}, headers=pf.h()).status_code == 200
+    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", json={"senha": SENHA}, headers=pf.h()).status_code == 200
     r = cliente.post(f"/cobrancas/{c['txid']}/estornar", json={}, headers=dono.h(n))
     assert r.status_code == 200, r.text
     assert "_entregas" not in r.json()  # detalhe interno não vaza na resposta

@@ -29,7 +29,6 @@ from decimal import Decimal
 from fastapi import HTTPException
 
 from app.core import tempo
-from app.core.config import get_settings
 from app.core.documentos import cpf_valido, mascarar_cpf, somente_digitos
 from app.db.models import AuthMetodo, PapelVinculo
 from app.deps import exigir_papel, exigir_pj
@@ -144,7 +143,8 @@ def _chave_da_folha(conta: dict, rotulo: str, resolvidos: list[dict], informada:
 
 
 def pagar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, itens: list,
-          descricao: str | None, biometria, ip: str | None, idempotency_key: str | None = None) -> dict:
+          descricao: str | None, senha: str | None = None, codigo_totp: str | None = None,
+          ip: str | None = None, idempotency_key: str | None = None) -> dict:
     exigir_pj(conta)
     exigir_papel(conta, *pagamento_service.PODE_MOVIMENTAR)
     seguranca_service.exigir_dispositivo(dispositivo)
@@ -181,10 +181,13 @@ def pagar(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | 
         return pendente(motivo)
 
     verificacao = None
-    if restante > Decimal(str(get_settings().limite_facial_reais)):
-        verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="folha")
+    # Folha confirma por SENHA (reautenticação); +TOTP quando o restante passa do limite.
+    if restante > 0:
+        seguranca_service.reautenticar_senha(usuario=usuario, senha=senha)
+        if restante > pagamento_service._limite_autenticacao_adicional():
+            seguranca_service.exigir_totp(repo, usuario=usuario, codigo=codigo_totp)
     return {"resultados": executar(repo, usuario=usuario, conta=conta, dispositivo=dispositivo, itens=resolvidos,
-                                   descricao=rotulo, ip=ip, verificacao=verificacao,
+                                   descricao=rotulo, ip=ip, verificacao=verificacao, auth_metodo=AuthMetodo.SENHA,
                                    chave_base=chave)}
 
 

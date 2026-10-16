@@ -2,7 +2,7 @@
 
 import pytest
 
-from tests.helpers import Pessoa, depositar
+from tests.helpers import SENHA, Pessoa, depositar
 
 
 @pytest.fixture
@@ -21,7 +21,7 @@ def folha(cliente):
 
 
 def _pagar(cliente, dono, n, itens, **extra):
-    r = cliente.post("/empresas/atual/folha/pagar", json={"itens": itens, **extra}, headers=dono.h(n))
+    r = cliente.post("/empresas/atual/folha/pagar", json={"itens": itens, "senha": SENHA, **extra}, headers=dono.h(n))
     assert r.status_code == 200, r.text
     return r.json()["resultados"]
 

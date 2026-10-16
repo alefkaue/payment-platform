@@ -1,7 +1,7 @@
 """Revisão independente C2: não altera a implementação do Claude."""
 import pytest
 
-from tests.helpers import Pessoa, conta_ref, depositar, gerar_chave_nfe, desconfiar_aparelho
+from tests.helpers import SENHA, conta_ref, depositar, desconfiar_aparelho, gerar_chave_nfe, Pessoa
 from tests.test_folha_idempotencia import folha  # noqa: F401
 from tests.test_pj_regras_bancarias import pendente  # noqa: F401
 from tests.test_conciliar_pendentes import AGORA, _rodar_job, _status, _cai_antes_do_movimento
@@ -15,7 +15,7 @@ from tests.helpers import admin_h
 def test_folha_valor_equivalente_nao_repete(cliente, folha, valor):
     dono, n, f, _, (fid, _) = folha
     for item in ({"funcionario_id": fid}, {"funcionario_id": fid, "valor": valor}):
-        r = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(n), json={"itens": [item]})
+        r = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(n), json={"senha": SENHA, "itens": [item]})
         assert r.status_code == 200, r.text
     assert f.saldo() == "300.00"
 
@@ -28,7 +28,7 @@ def test_folha_mesma_chave_outra_empresa_nao_colide(cliente, folha):
                         json={"nome": "Funcionário Silva", "cpf": f.cpf, "salario": "300.00"}).json()["id"]
     for conta, id in ((n, fid), (outra, novo)):
         r = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(conta),
-                         json={"itens": [{"funcionario_id": id}], "idempotency_key": "igual-c2-empresas"})
+                         json={"senha": SENHA, "itens": [{"funcionario_id": id}], "idempotency_key": "igual-c2-empresas"})
         assert r.status_code == 200, r.text
     assert f.saldo() == "600.00"
 
@@ -37,7 +37,7 @@ def test_folha_alterar_espacos_rotulo_nao_repete(cliente, folha):
     dono, n, f, _, (fid, _) = folha
     for descricao in ("Salário outubro", " Salário outubro "):
         r = cliente.post("/empresas/atual/folha/pagar", headers=dono.h(n),
-                         json={"itens": [{"funcionario_id": fid}], "descricao": descricao})
+                         json={"senha": SENHA, "itens": [{"funcionario_id": fid}], "descricao": descricao})
         assert r.status_code == 200, r.text
     assert f.saldo() == "300.00"
 
@@ -94,8 +94,8 @@ def test_cobranca_reenvio_header_retorna_mesmo_pagamento(cliente, loja):
     depositar(cliente, pf.numero, 100)
     [c] = _cobrar(cliente, dono, n, valor="10.00")
     h = {**pf.h(), "Idempotency-Key": "c2-cob-unica"}
-    primeira = cliente.post(f"/cobrancas/{c['txid']}/pagar", headers=h, json={})
-    segunda = cliente.post(f"/cobrancas/{c['txid']}/pagar", headers=h, json={})
+    primeira = cliente.post(f"/cobrancas/{c['txid']}/pagar", headers=h, json={"senha": SENHA})
+    segunda = cliente.post(f"/cobrancas/{c['txid']}/pagar", headers=h, json={"senha": SENHA})
     assert primeira.status_code == segunda.status_code == 200
     assert primeira.json()["id"] == segunda.json()["id"]
     assert pf.saldo() == "90.00" and len(_entregas(cliente, dono, n)) == 1
@@ -155,7 +155,7 @@ def test_reenvio_pendente_mesma_chave_nao_duplica(cliente, pendente, tipo):
         if tipo == "pix":
             r = op.transferir(conta_ref(forn.numero), 3000, conta=n, idempotency_key="c2-pendente-unica")
         elif tipo == "cobranca":
-            r = cliente.post(f"/cobrancas/{cob['txid']}/pagar", headers=op.h(n), json={"idempotency_key": "c2-pendente-unica"})
+            r = cliente.post(f"/cobrancas/{cob['txid']}/pagar", headers=op.h(n), json={"senha": SENHA, "idempotency_key": "c2-pendente-unica"})
         else:
             r = cliente.post("/empresas/atual/folha/pagar", headers=op.h(n),
                              json={"itens": [{"funcionario_id": fid}], "idempotency_key": "c2-pendente-unica"})
@@ -246,7 +246,7 @@ def test_outbox_estorno_e_pendencia_rollback(cliente, loja, monkeypatch, tipo):
     pf = Pessoa(cliente, "c2.atomicidade@ex.com")
     depositar(cliente, pf.numero, 100)
     [c] = _cobrar(cliente, dono, n, valor="10.00")
-    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", headers=pf.h(), json={}).status_code == 200
+    assert cliente.post(f"/cobrancas/{c['txid']}/pagar", headers=pf.h(), json={"senha": SENHA}).status_code == 200
     def quebra(*args, **kwargs):
         raise RuntimeError("c2 falha atomica")
     monkeypatch.setattr(Repositorio, "_enfileirar_webhooks", quebra)

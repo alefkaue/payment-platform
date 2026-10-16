@@ -28,10 +28,11 @@ def _empresa(cliente, porte, papeis, saldo=200000):
     return dono, n, eq
 
 
-def _decidir(cliente, pessoa, n, oid, aprovar=True):
+def _decidir(cliente, pessoa, n, oid, aprovar=True, **extra):
     corpo = {"aprovar": aprovar}
     if aprovar:
-        corpo["biometria"] = pessoa.prova()
+        corpo["senha"] = SENHA  # aprovação reautentica por senha (+TOTP acima do limite, via extra)
+    corpo.update(extra)
     return cliente.post(f"/pagamentos/pendentes/{oid}/decidir", json=corpo, headers=pessoa.h(n))
 
 
@@ -54,7 +55,8 @@ def test_admin_da_grande_nao_paga_sozinho_acima_do_limite(cliente, monkeypatch):
     assert p["aprovacoes_necessarias"] == 1
     assert dono.saldo(n) == "196000.00"
     apr = eq["apr"][0]
-    r = _decidir(cliente, apr, n, oid)
+    apr.ativar_totp()  # pendência de 6000 (> limite): quem aprova usa 2º fator (TOTP)
+    r = _decidir(cliente, apr, n, oid, codigo_totp=apr.codigo_totp())
     assert r.status_code == 200 and r.json()["status"] == "aprovada", r.text
     assert dono.saldo(n) == "190000.00"
 
