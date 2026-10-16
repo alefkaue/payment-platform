@@ -49,6 +49,11 @@ def _limite_facial() -> Decimal:
     return Decimal(str(get_settings().limite_facial_reais))
 
 
+def _limite_autenticacao_adicional() -> Decimal:
+    """Acima deste valor o pagamento exige 2º fator (TOTP) além da senha."""
+    return get_settings().limite_autenticacao_adicional
+
+
 def chave_idempotencia(conta: dict, chave: str | None) -> str | None:
     return f"{conta['carteira_id']}:{chave}" if chave else None
 
@@ -178,6 +183,8 @@ def transferir(
     valor: Decimal,
     descricao: str | None,
     biometria=None,
+    senha: str | None = None,
+    codigo_totp: str | None = None,
     idempotency_key: str | None = None,
     ip: str | None = None,
     mfa_resolvido: bool = False,
@@ -220,9 +227,13 @@ def transferir(
 
     verificacao = verificacao_previa
     metodo = auth_metodo or (AuthMetodo.SELFIE if verificacao else AuthMetodo.SENHA)
-    if not mfa_resolvido and verificacao is None and valor > _limite_facial():
-        verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="transferencia")
-        metodo = auth_metodo or AuthMetodo.SELFIE
+    if not mfa_resolvido and verificacao is None:
+        # Pagamento confirma por SENHA (reautenticação no backend; substitui o facial).
+        # Acima de LIMITE_AUTENTICACAO_ADICIONAL exige também um 2º fator (TOTP).
+        seguranca_service.reautenticar_senha(usuario=usuario, senha=senha)
+        if valor > _limite_autenticacao_adicional():
+            seguranca_service.exigir_totp(repo, usuario=usuario, codigo=codigo_totp)
+        metodo = auth_metodo or AuthMetodo.SENHA
 
     bloqueio = None if sem_bloqueio_cautelar else seguranca_service.bloqueio_cautelar(
         repo, origem_id=conta["carteira_id"], destino=destino, valor=valor)
@@ -258,13 +269,16 @@ def transferir(
     return {"transacao": t}
 
 
-def transferir_lote(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, itens: list, biometria, ip: str | None) -> list[dict]:
+def transferir_lote(repo: Repositorio, *, usuario: dict, conta: dict, dispositivo: dict | None, itens: list,
+                    senha: str | None, codigo_totp: str | None, ip: str | None) -> list[dict]:
     exigir_papel(conta, *PODE_MOVIMENTAR)
     seguranca_service.exigir_dispositivo(dispositivo)
     total = sum((Decimal(i.valor) for i in itens), Decimal("0"))
+    # Uma confirmação (senha + TOTP se o total passar do limite) para o lote inteiro.
+    seguranca_service.reautenticar_senha(usuario=usuario, senha=senha)
+    if total > _limite_autenticacao_adicional():
+        seguranca_service.exigir_totp(repo, usuario=usuario, codigo=codigo_totp)
     verificacao = None
-    if total > _limite_facial():
-        verificacao = seguranca_service.verificar_rosto(repo, usuario=usuario, prova=biometria, ip=ip, tipo="lote")
 
     # Remessa duplicada: o mesmo lote (mesmos itens, na mesma ordem) reenviado no mesmo dia
     # devolve os mesmos pagamentos em vez de pagar de novo -- como os bancos fazem com

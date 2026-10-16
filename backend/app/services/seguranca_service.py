@@ -151,3 +151,22 @@ def verificar_rosto(repo: Repositorio, *, usuario: dict, prova, ip: str | None, 
 def exigir_dispositivo(dispositivo: dict | None) -> None:
     if dispositivo is None:
         raise HTTPException(status_code=400, detail="Envie o header X-Dispositivo-Id (identificador do aparelho) para movimentar dinheiro.")
+
+
+def reautenticar_senha(*, usuario: dict, senha: str | None) -> None:
+    """Reautenticação por SENHA da conta para confirmar o pagamento (não é só o JWT).
+    A validação é no backend; nunca confie só na interface."""
+    if not senha or not security.verificar_senha(senha, usuario.get("senha_hash") or ""):
+        raise HTTPException(status_code=401, detail="Senha incorreta.")
+
+
+def exigir_totp(repo: Repositorio, *, usuario: dict, codigo: str | None) -> None:
+    """2º fator (TOTP) para pagamentos acima de LIMITE_AUTENTICACAO_ADICIONAL. Validade
+    curta (passo de 30s), anti-replay (passo já usado é recusado). Se o usuário não tiver
+    TOTP ativo, o pagamento NÃO é liberado -- ele precisa ativar antes."""
+    resultado = repo.verificar_consumir_totp(usuario["id"], (codigo or "").strip())
+    if resultado == "nao_ativo":
+        raise HTTPException(status_code=403,
+                            detail="Ative a verificação em duas etapas (TOTP) para pagamentos acima do limite.")
+    if resultado != "ok":
+        raise HTTPException(status_code=401, detail="Código de verificação inválido ou já utilizado.")

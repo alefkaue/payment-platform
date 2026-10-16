@@ -10,12 +10,26 @@ celular adiantado/atrasado). Implementado aqui para não puxar dependência nova
 import base64
 import hashlib
 import hmac
+import secrets
 import struct
 import time
+from urllib.parse import quote
 
 PASSO_SEG = 30
 DIGITOS = 6
 JANELA = 1  # passos aceitos antes/depois do atual
+
+
+def gerar_segredo() -> str:
+    """Segredo base32 novo (160 bits), para o app autenticador do usuário."""
+    return base64.b32encode(secrets.token_bytes(20)).decode("ascii").rstrip("=")
+
+
+def uri_otpauth(segredo: str, *, conta: str, emissor: str = "ASTRO") -> str:
+    """URI otpauth:// (vira QR no app autenticador)."""
+    rotulo = quote(f"{emissor}:{conta}")
+    return (f"otpauth://totp/{rotulo}?secret={segredo}&issuer={quote(emissor)}"
+            f"&algorithm=SHA1&digits={DIGITOS}&period={PASSO_SEG}")
 
 
 def segredo_valido(segredo: str | None) -> bool:

@@ -10,7 +10,9 @@ class TransferenciaCreate(BaseModel):
     destino: Destino
     valor: Dinheiro
     descricao: str | None = Field(default=None, max_length=140)
-    # Obrigatória quando o valor passa do limite facial.
+    # Confirmação do pagamento: SENHA da conta e, acima do limite, código TOTP.
+    senha: str | None = Field(default=None, max_length=128)
+    codigo_totp: str | None = Field(default=None, max_length=10)
     biometria: ProvaBiometrica | None = None
     idempotency_key: str | None = Field(default=None, max_length=80)
 
@@ -24,7 +26,9 @@ class LoteItem(BaseModel):
 
 class LoteCreate(BaseModel):
     itens: list[LoteItem] = Field(..., min_length=1, max_length=100)
-    # Uma prova só para o lote inteiro, exigida se o TOTAL passar do limite facial.
+    # Uma confirmação para o lote inteiro: senha e, se o TOTAL passar do limite, código TOTP.
+    senha: str | None = Field(default=None, max_length=128)
+    codigo_totp: str | None = Field(default=None, max_length=10)
     biometria: ProvaBiometrica | None = None
 
 

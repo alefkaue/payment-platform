@@ -214,6 +214,51 @@ class Repositorio(RepositorioExtras):
                 return None
             return bytes(u.embedding_facial_cifrado)
 
+    # --- TOTP do usuário (2º fator de pagamento acima do limite) ---
+    def iniciar_totp(self, usuario_id: int, segredo: str) -> None:
+        """Grava o segredo provisório (ainda NÃO ativo até confirmar um código)."""
+        with self._sf() as s:
+            u = s.get(Usuario, usuario_id)
+            if u is None:
+                return
+            u.totp_segredo, u.totp_passo_usado = segredo, None
+            s.commit()
+
+    def confirmar_totp(self, usuario_id: int, codigo: str) -> bool:
+        """Ativa o TOTP: confere um código do segredo provisório e marca o passo usado."""
+        from app.core import totp
+        with self._sf() as s:
+            u = s.get(Usuario, usuario_id)
+            if u is None or not u.totp_segredo:
+                return False
+            passo = totp.passo_do_codigo(u.totp_segredo, codigo)
+            if passo is None:
+                return False
+            u.totp_passo_usado = passo
+            s.commit()
+            return True
+
+    def totp_ativo(self, usuario_id: int) -> bool:
+        with self._sf() as s:
+            u = s.get(Usuario, usuario_id)
+            return bool(u and u.totp_segredo and u.totp_passo_usado is not None)
+
+    def verificar_consumir_totp(self, usuario_id: int, codigo: str) -> str:
+        """'ok' | 'nao_ativo' | 'invalido' | 'reutilizado'. Marca o passo (anti-replay)."""
+        from app.core import totp
+        with self._sf() as s:
+            u = s.get(Usuario, usuario_id)
+            if u is None or not u.totp_segredo or u.totp_passo_usado is None:
+                return "nao_ativo"
+            passo = totp.passo_do_codigo(u.totp_segredo, codigo)
+            if passo is None:
+                return "invalido"
+            if passo <= u.totp_passo_usado:
+                return "reutilizado"
+            u.totp_passo_usado = passo
+            s.commit()
+            return "ok"
+
     def garantir_admin(self, *, email: str, senha_hash: str) -> dict:
         existente = self.obter_usuario_por_email(email)
         if existente:

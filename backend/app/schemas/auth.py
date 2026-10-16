@@ -24,6 +24,10 @@ class LoginTotpRequest(BaseModel):
     codigo: str = Field(..., min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
 
 
+class TotpConfirmar(BaseModel):
+    codigo: str = Field(..., min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
+
+
 class MfaDesafioRequest(BaseModel):
     mfa_token: str = Field(..., min_length=20, max_length=2000)
 

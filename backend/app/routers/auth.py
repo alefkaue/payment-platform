@@ -3,12 +3,13 @@
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 
 from app.core import dpop as dpop_prova
+from app.core import totp as totp_mod
 from app.core.config import get_settings
 from app.core.limites import limitar_por_ip
 from app.deps import get_repo, hash_dispositivo, ip_cliente, usuario_atual
 from app.repositories.repository import Repositorio
 from app.schemas.auth import (LoginMfaRequest, LoginRequest, LoginTotpRequest, LoginResponse, MfaDesafioRequest, RecuperacaoConcluirRequest,
-                              RecuperacaoRequest, RefreshRequest, TokenResponse, TrocarSenhaRequest)
+                              RecuperacaoRequest, RefreshRequest, TokenResponse, TotpConfirmar, TrocarSenhaRequest)
 from app.services import auth_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -161,10 +162,31 @@ def eu(usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_r
         "email": usuario["email"],
         "papel": usuario["papel"],
         "tem_biometria": usuario["tem_biometria"],
+        "tem_totp": repo.totp_ativo(usuario["id"]),
         "kyc_status": usuario.get("kyc_status"),
         "pontos": usuario["pontos"],
         "contas": repo.contas_do_usuario(usuario["id"]),
     }
+
+
+# ------------------------------------------------------------------ 2º fator (TOTP) do usuário
+
+
+@router.post("/totp")
+def iniciar_totp(usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo)):
+    """Começa a ativação do 2º fator: devolve o segredo/URI para o app autenticador.
+    Só fica ATIVO depois de confirmar um código em POST /auth/totp/confirmar."""
+    segredo = totp_mod.gerar_segredo()
+    repo.iniciar_totp(usuario["id"], segredo)
+    return {"segredo": segredo, "uri": totp_mod.uri_otpauth(segredo, conta=usuario["email"])}
+
+
+@router.post("/totp/confirmar", status_code=204)
+def confirmar_totp(dados: TotpConfirmar, usuario: dict = Depends(usuario_atual), repo: Repositorio = Depends(get_repo)):
+    """Confere um código e ATIVA o 2º fator (necessário para pagamentos acima do limite)."""
+    if not repo.confirmar_totp(usuario["id"], dados.codigo):
+        raise HTTPException(status_code=400, detail="Código inválido. Confira o horário do aparelho e tente de novo.")
+    return Response(status_code=204)
 
 
 # ------------------------------------------------------------------ sessões

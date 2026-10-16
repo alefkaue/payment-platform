@@ -44,7 +44,8 @@ def transferir(
     destino = pix_service.resolver_destino(repo, dados.destino)
     r = pagamento_service.transferir(
         repo, usuario=usuario, conta=conta, dispositivo=dispositivo, destino=destino, valor=dados.valor,
-        descricao=dados.descricao, biometria=dados.biometria, idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip,
+        descricao=dados.descricao, senha=dados.senha, codigo_totp=dados.codigo_totp,
+        idempotency_key=escolher_chave(chave_header, dados.idempotency_key), ip=ip,
     )
     return resposta_pendente(r["pendente"]) if "pendente" in r else r["transacao"]
 
@@ -60,7 +61,7 @@ def transferir_lote(
 ):
     """Até 100 transferências. Cada item tem resultado próprio (um erro não para os outros)."""
     return pagamento_service.transferir_lote(repo, usuario=usuario, conta=conta, dispositivo=dispositivo,
-                                             itens=dados.itens, biometria=dados.biometria, ip=ip)
+                                             itens=dados.itens, senha=dados.senha, codigo_totp=dados.codigo_totp, ip=ip)
 
 
 @router.get("/transacoes", response_model=list[TransacaoResponse])

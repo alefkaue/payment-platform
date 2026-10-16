@@ -125,6 +125,10 @@ class Usuario(Base):
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     # Pontos PayFlow (PF): ganha comprando na Loja/Viagens, resgata em passagens.
     pontos: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # 2º fator (TOTP, app autenticador) para pagamentos acima de LIMITE_AUTENTICACAO_ADICIONAL.
+    # Segredo em base32; `totp_passo_usado` guarda o último passo aceito (impede reutilizar o código).
+    totp_segredo: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    totp_passo_usado: Mapped[int | None] = mapped_column(Integer, nullable=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     vinculos: Mapped[list["Vinculo"]] = relationship(back_populates="usuario", foreign_keys="Vinculo.usuario_id")
