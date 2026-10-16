@@ -468,18 +468,30 @@ class Repositorio(RepositorioExtras):
 
     @staticmethod
     def _exigir_identidade_financeira(s: Session, carteira: Carteira) -> None:
-        """Pendência de KYC/KYB permite acompanhamento, não movimentação real."""
-        if not get_settings().em_producao or carteira.titular_tipo == TipoPessoa.SISTEMA:
+        """Pendência de KYC/KYB permite acompanhamento, não movimentação real.
+
+        MODO ACADÊMICO (DEMONSTRACAO_PUBLICA=1 com identidade documental simulada,
+        DOCUMENTO_VERIFICAR_IDENTIDADE=0): a identidade NÃO é verificada de verdade, então
+        exigir KYC 'aprovado' travaria todas as contas. A conta opera imediatamente
+        (`ativo` operacional != `identidade_verificada`). Mesmo assim, o titular/representante
+        precisa EXISTIR e estar ATIVO — a ativação imediata não contorna suspensão/revogação,
+        autenticação nem autorização."""
+        cfg = get_settings()
+        if not cfg.em_producao or carteira.titular_tipo == TipoPessoa.SISTEMA:
             return
+        academico = cfg.demonstracao_publica and not cfg.documento_verificar_identidade
         if carteira.titular_tipo == TipoPessoa.PF:
             u = s.get(Usuario, carteira.usuario_id)
-            if u is None or not u.ativo or u.kyc_status != "aprovado":
+            if u is None or not u.ativo:
+                raise ValueError("Titular inexistente ou inativo para movimentação.")
+            if not academico and u.kyc_status != "aprovado":
                 raise ValueError("Identidade do titular ainda não aprovada para movimentação.")
         else:
             e = s.get(Empresa, carteira.empresa_id)
             u = s.get(Usuario, e.representante_usuario_id) if e and e.representante_usuario_id else None
-            if (e is None or e.kyb_status != "aprovado" or u is None
-                    or not u.ativo or u.kyc_status != "aprovado"):
+            if e is None or u is None or not u.ativo:
+                raise ValueError("Empresa ou representante inexistente/inativo para movimentação.")
+            if not academico and (e.kyb_status != "aprovado" or u.kyc_status != "aprovado"):
                 raise ValueError("Identidade da empresa/representante ainda não aprovada para movimentação.")
 
     def executar_movimento(
