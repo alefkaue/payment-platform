@@ -6,7 +6,7 @@ import socket
 import pytest
 
 from app.services import webhook_service
-from tests.helpers import Pessoa, conta_ref, depositar
+from tests.helpers import SENHA, Pessoa, conta_ref, depositar
 
 # ------------------------------------------------------------------ SSRF (A-04)
 
@@ -210,7 +210,7 @@ def test_falha_na_trilha_atomica_reverte_todo_movimento(cliente, monkeypatch):
 
     monkeypatch.setattr("app.repositories.repository.LogAuditoria", quebrada)
     r = TestClient(app, raise_server_exceptions=False).post("/pagamentos/transferir",
-        json={"destino": conta_ref(b.numero), "valor": "10", "idempotency_key": "pix-atomico"}, headers=a.h())
+        json={"destino": conta_ref(b.numero), "valor": "10", "senha": SENHA, "idempotency_key": "pix-atomico"}, headers=a.h())
     assert r.status_code == 500
     assert a.saldo() == "100.00" and b.saldo() == "0.00"
 

@@ -99,9 +99,9 @@ def test_adv_decimal_equivalente_preserva_valor(cliente, valor, esperado):
 def test_adv_mass_assignment_transferencia_e_conta(cliente):
     a, b = Pessoa(cliente, "mass@ex.com"), Pessoa(cliente, "destino@ex.com")
     depositar(cliente, a.numero, 100)
-    r = cliente.post("/pagamentos/transferir", json={"destino": conta_ref(b.numero), "valor": "10", "saldo": "999999",
-        "origem_carteira_id": b.conta["carteira_id"], "autor_id": "999999", "papel": "admin", "status": "aprovada",
-        "cbs": "-100", "ibs": "-100", "liquido": "10000"}, headers=a.h())
+    r = cliente.post("/pagamentos/transferir", json={"destino": conta_ref(b.numero), "valor": "10", "senha": SENHA,
+        "saldo": "999999", "origem_carteira_id": b.conta["carteira_id"], "autor_id": "999999", "papel": "admin",
+        "status": "aprovada", "cbs": "-100", "ibs": "-100", "liquido": "10000"}, headers=a.h())
     assert r.status_code == 200, r.text
     assert a.saldo() == "90.00" and b.saldo() == "10.00"
     assert r.json()["cbs"] == r.json()["ibs"] == "0.00"

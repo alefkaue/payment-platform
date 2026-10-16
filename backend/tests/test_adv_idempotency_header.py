@@ -1,7 +1,7 @@
 """Contrato do header Idempotency-Key anunciado no CORS e nos documentos."""
 import pytest
 
-from tests.helpers import Pessoa, conta_ref, depositar
+from tests.helpers import SENHA, Pessoa, conta_ref, depositar
 
 
 @pytest.mark.parametrize("segundo_valor", ["10", "20"])
@@ -10,8 +10,8 @@ def test_adv_header_idempotency_key_evitar_debito_repetido(cliente, segundo_valo
     a, b = Pessoa(cliente, "header@ex.com"), Pessoa(cliente, "destino@ex.com")
     depositar(cliente, a.numero, 100)
     h = {**a.h(), "Idempotency-Key": "c1-pagamento-unico"}
-    primeira = cliente.post("/pagamentos/transferir", json={"destino": conta_ref(b.numero), "valor": "10"}, headers=h)
-    segunda = cliente.post("/pagamentos/transferir", json={"destino": conta_ref(b.numero), "valor": segundo_valor}, headers=h)
+    primeira = cliente.post("/pagamentos/transferir", json={"destino": conta_ref(b.numero), "valor": "10", "senha": SENHA}, headers=h)
+    segunda = cliente.post("/pagamentos/transferir", json={"destino": conta_ref(b.numero), "valor": segundo_valor, "senha": SENHA}, headers=h)
     assert primeira.status_code == 200
     if segundo_valor == "10":
         assert segunda.status_code == 200 and primeira.json()["id"] == segunda.json()["id"]
@@ -25,10 +25,10 @@ def test_header_e_corpo_diferentes_e_recusado(cliente):
     a, b = Pessoa(cliente, "ambiguo@ex.com"), Pessoa(cliente, "ambiguo.b@ex.com")
     depositar(cliente, a.numero, 100)
     r = cliente.post("/pagamentos/transferir", headers={**a.h(), "Idempotency-Key": "chave-a"},
-                     json={"destino": conta_ref(b.numero), "valor": "10", "idempotency_key": "chave-b"})
+                     json={"destino": conta_ref(b.numero), "valor": "10", "idempotency_key": "chave-b", "senha": SENHA})
     assert r.status_code == 400 and a.saldo() == "100.00"
     r = cliente.post("/pagamentos/transferir", headers={**a.h(), "Idempotency-Key": "chave-a"},
-                     json={"destino": conta_ref(b.numero), "valor": "10", "idempotency_key": "chave-a"})
+                     json={"destino": conta_ref(b.numero), "valor": "10", "idempotency_key": "chave-a", "senha": SENHA})
     assert r.status_code == 200 and a.saldo() == "90.00"
 
 

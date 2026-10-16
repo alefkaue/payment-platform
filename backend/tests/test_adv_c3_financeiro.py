@@ -4,7 +4,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy import select
 
-from tests.helpers import Pessoa, conta_ref, depositar
+from tests.helpers import SENHA, Pessoa, conta_ref, depositar
 from tests.test_folha_idempotencia import folha  # noqa: F401
 from tests.test_pj_regras_bancarias import pendente, _decidir  # noqa: F401
 from tests.test_conciliar_pendentes import (
@@ -31,7 +31,7 @@ def test_prefixo_cliente_inclusive_lote(cliente, pendente, relogio, monkeypatch,
     destino = repo.obter_conta(repo.obter_pendente(oid)["payload"]["destino_carteira_id"])
     item = {"destino": conta_ref(destino["numero"]), "valor": "3000", "idempotency_key": chave}
     if lote:
-        r = cliente.post("/pagamentos/lote", headers=dono.h(n), json={"itens": [item], "biometria": dono.prova()})
+        r = cliente.post("/pagamentos/lote", headers=dono.h(n), json={"itens": [item], "senha": SENHA})
     else:
         r = dono.transferir(item["destino"], 3000, conta=n, idempotency_key=chave, biometria=dono.prova())
     assert r.status_code == 200, r.text

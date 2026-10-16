@@ -56,13 +56,13 @@ def test_idempotencia_por_conta(cliente):
     assert r3.json()["id"] != r1.json()["id"] and c.saldo() == "270.00"
 
 
-def test_acima_do_limite_facial_exige_biometria(cliente):
+def test_pagamento_normal_confirma_por_senha_sem_facial(cliente):
+    """Prompt #2: pagamento confirma por SENHA (não mais por rosto) abaixo do limite de 2º fator."""
     a, b = Pessoa(cliente, "a@ex.com"), Pessoa(cliente, "b@ex.com")
     depositar(cliente, a.numero, 1000)
-    r = a.transferir(conta_ref(b.numero), 600)
-    assert r.status_code == 400 and "biometria" in r.json()["detail"]
-    r = a.transferir(conta_ref(b.numero), 600, biometria=a.prova())
-    assert r.status_code == 200 and r.json()["auth_metodo"] == "selfie"
+    assert a.transferir(conta_ref(b.numero), 600, senha=None).status_code == 401  # sem senha
+    r = a.transferir(conta_ref(b.numero), 600)                                    # senha certa
+    assert r.status_code == 200 and r.json()["auth_metodo"] == "senha"
 
 
 def test_aparelho_novo_limita_200_por_transacao_e_1000_por_dia(cliente):
@@ -102,13 +102,15 @@ def test_aumento_de_limite_so_vale_depois_da_carencia(cliente, relogio):
     depositar(cliente, a.numero, 20000)
     base = datetime(2026, 10, 7, 15, 0, tzinfo=timezone.utc)
     relogio.definir(base)
-    r = cliente.put("/seguranca/limites", json={"por_transacao": "8000", "noturno": "500"}, headers=a.h())
+    # Reduz para 2000 (vale na hora) e depois aumenta para 4000 (precisa de carência).
+    # Valores <= 5000 para isolar a regra de LIMITE, sem acionar o 2º fator (TOTP).
+    cliente.put("/seguranca/limites", json={"por_transacao": "2000"}, headers=a.h())
+    r = cliente.put("/seguranca/limites", json={"por_transacao": "4000"}, headers=a.h())
     lim = r.json()
-    assert lim["noturno"] == "500.00"  # redução: na hora
-    assert lim["por_transacao"] == "5000.00" and lim["pendente"]["por_transacao"] == "8000.00"
-    assert a.transferir(conta_ref(b.numero), 6000, biometria=a.prova()).status_code == 403
+    assert lim["por_transacao"] == "2000.00" and lim["pendente"]["por_transacao"] == "4000.00"
+    assert a.transferir(conta_ref(b.numero), 3000).status_code == 403   # acima do limite atual (2000)
     relogio.definir(base + timedelta(hours=25))
-    assert a.transferir(conta_ref(b.numero), 6000, biometria=a.prova()).status_code == 200
+    assert a.transferir(conta_ref(b.numero), 3000).status_code == 200   # carência cumprida
 
 
 def test_bloqueio_cautelar_e_contestacao_procedente(cliente):
@@ -156,7 +158,7 @@ def test_contestacao_improcedente_libera(cliente):
 def test_lote(cliente):
     a, b, c = (Pessoa(cliente, f"{x}@ex.com") for x in "abc")
     depositar(cliente, a.numero, 300)
-    r = cliente.post("/pagamentos/lote", headers=a.h(), json={"itens": [
+    r = cliente.post("/pagamentos/lote", headers=a.h(), json={"senha": SENHA, "itens": [
         {"destino": conta_ref(b.numero), "valor": "100"},
         {"destino": {"chave": "naoexiste@ex.com"}, "valor": "10"},
         {"destino": conta_ref(c.numero), "valor": "150"},
@@ -167,12 +169,13 @@ def test_lote(cliente):
     assert "insuficiente" in res[3]["erro"]
 
 
-def test_lote_acima_do_limite_facial_pede_uma_biometria(cliente):
+def test_lote_confirma_por_senha(cliente):
+    """Prompt #2: o lote confirma por SENHA (uma vez para o lote todo), sem facial."""
     a, b = Pessoa(cliente, "a@ex.com"), Pessoa(cliente, "b@ex.com")
     depositar(cliente, a.numero, 2000)
     itens = [{"destino": conta_ref(b.numero), "valor": "300"}] * 2
-    assert cliente.post("/pagamentos/lote", headers=a.h(), json={"itens": itens}).status_code == 400
-    r = cliente.post("/pagamentos/lote", headers=a.h(), json={"itens": itens, "biometria": a.prova()})
+    assert cliente.post("/pagamentos/lote", headers=a.h(), json={"itens": itens}).status_code == 401  # sem senha
+    r = cliente.post("/pagamentos/lote", headers=a.h(), json={"senha": SENHA, "itens": itens})
     assert [x["situacao"] for x in r.json()] == ["concluida", "concluida"]
 
 
@@ -225,10 +228,10 @@ def test_lote_reenviado_no_mesmo_dia_nao_paga_de_novo(cliente):
     a, b, c = Pessoa(cliente, "lote.a@ex.com"), Pessoa(cliente, "lote.b@ex.com"), Pessoa(cliente, "lote.c@ex.com")
     depositar(cliente, a.numero, 1000)
     itens = [{"destino": conta_ref(b.numero), "valor": "100.00"}, {"destino": conta_ref(c.numero), "valor": "50.00"}]
-    r1 = cliente.post("/pagamentos/lote", json={"itens": itens}, headers=a.h()).json()
-    r2 = cliente.post("/pagamentos/lote", json={"itens": itens}, headers=a.h()).json()
+    r1 = cliente.post("/pagamentos/lote", json={"senha": SENHA, "itens": itens}, headers=a.h()).json()
+    r2 = cliente.post("/pagamentos/lote", json={"senha": SENHA, "itens": itens}, headers=a.h()).json()
     assert [x["transacao_id"] for x in r1] == [x["transacao_id"] for x in r2]
     assert a.saldo() == "850.00"
     # outro lote (valor diferente) paga normalmente
-    cliente.post("/pagamentos/lote", json={"itens": [{"destino": conta_ref(b.numero), "valor": "100.01"}]}, headers=a.h())
+    cliente.post("/pagamentos/lote", json={"senha": SENHA, "itens": [{"destino": conta_ref(b.numero), "valor": "100.01"}]}, headers=a.h())
     assert a.saldo() == "749.99"

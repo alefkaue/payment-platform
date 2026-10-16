@@ -83,8 +83,27 @@ class Pessoa:
         return self.cliente.get("/contas/atual", headers=self.h(conta)).json()["saldo"]
 
     def transferir(self, destino: dict, valor, *, conta=None, dispositivo=None, **extra):
-        return self.cliente.post("/pagamentos/transferir", json={"destino": destino, "valor": str(valor), **extra},
-                                 headers=self.h(conta, dispositivo))
+        # Pagamento agora confirma por SENHA (prompt #2). `extra` pode sobrescrever (ex.: senha errada).
+        corpo = {"destino": destino, "valor": str(valor), "senha": SENHA}
+        corpo.update(extra)
+        return self.cliente.post("/pagamentos/transferir", json=corpo, headers=self.h(conta, dispositivo))
+
+    def ativar_totp(self):
+        """Ativa o 2º fator: pega o segredo, confirma com um código e guarda para os pagamentos."""
+        from app.core import totp
+        import time
+        seg = self.cliente.post("/auth/totp", headers=self.h()).json()["segredo"]
+        self._totp = seg
+        r = self.cliente.post("/auth/totp/confirmar", json={"codigo": totp.codigo(seg, int(time.time() // 30))},
+                              headers=self.h())
+        assert r.status_code == 204, r.text
+        return self
+
+    def codigo_totp(self, delta: int = 1) -> str:
+        """Código TOTP de um passo FUTURO (não reusa o da ativação; dentro da janela aceita)."""
+        from app.core import totp
+        import time
+        return totp.codigo(self._totp, int(time.time() // 30) + delta)
 
     def abrir_empresa(self, **dados) -> dict:
         cnpj = dados.pop("cnpj", None) or gerar_cnpj()

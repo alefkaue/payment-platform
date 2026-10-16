@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from tests.helpers import Pessoa, conta_ref, depositar
+from tests.helpers import SENHA, Pessoa, conta_ref, depositar
 from tests.test_v9_seguranca import _aceitar, _convidar
 
 
@@ -62,7 +62,9 @@ def test_admin_da_grande_nao_paga_sozinho_acima_do_limite(cliente, monkeypatch):
 def test_pme_continua_com_admin_sem_limite(cliente):
     dono, n, _ = _empresa(cliente, "PME", [])
     forn = Pessoa(cliente, "forn@ex.com")
-    assert dono.transferir(conta_ref(forn.numero), 50000, conta=n, biometria=dono.prova()).status_code == 200
+    dono.ativar_totp()  # acima do limite exige 2º fator (controle independente da alçada)
+    assert dono.transferir(conta_ref(forn.numero), 50000, conta=n,
+                           codigo_totp=dono.codigo_totp()).status_code == 200
 
 
 # ------------------------------------------------------------------ alçada diária (fracionamento)
@@ -99,7 +101,7 @@ def test_lote_nao_dribla_a_alcada(cliente):
     dono, n, eq = _empresa(cliente, "PME", [("op", "operador", 1000, {})])
     op, forn = eq["op"][0], Pessoa(cliente, "forn@ex.com")
     itens = [{"destino": conta_ref(forn.numero), "valor": "400"} for _ in range(4)]
-    r = cliente.post("/pagamentos/lote", json={"itens": itens, "biometria": op.prova()}, headers=op.h(n))
+    r = cliente.post("/pagamentos/lote", json={"itens": itens, "senha": SENHA}, headers=op.h(n))
     assert r.status_code == 200, r.text
     assert [i["situacao"] for i in r.json()] == ["concluida", "concluida", "pendente_aprovacao", "pendente_aprovacao"]
 

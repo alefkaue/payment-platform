@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import pytest
 from fastapi import HTTPException
 
-from tests.helpers import Pessoa, conta_ref, depositar, gerar_chave_nfe, gerar_cnpj
+from tests.helpers import SENHA, Pessoa, conta_ref, depositar, gerar_chave_nfe, gerar_cnpj
 from tests.test_pj_regras_bancarias import _decidir, _empresa
 
 AMANHA = datetime(2026, 10, 8, 15, 0, tzinfo=timezone.utc)
@@ -131,7 +131,7 @@ def test_r03_conflito_de_chave_vira_erro_do_item_e_o_lote_continua(cliente):
     itens = [{"destino": conta_ref(b.numero), "valor": "2.00", "idempotency_key": "lote-novo-1"},
              {"destino": conta_ref(b.numero), "valor": "3.00", "idempotency_key": "review-conflito"},
              {"destino": conta_ref(b.numero), "valor": "4.00", "idempotency_key": "lote-novo-2"}]
-    r = cliente.post("/pagamentos/lote", json={"itens": itens}, headers=a.h())
+    r = cliente.post("/pagamentos/lote", json={"itens": itens, "senha": SENHA}, headers=a.h())
     assert r.status_code == 200, r.text
     assert [i["situacao"] for i in r.json()] == ["concluida", "erro", "concluida"]
     assert "idempotência" in r.json()[1]["erro"]
