@@ -72,16 +72,22 @@ BLINK_SUBIDA_ABRE = 0.12
 # Rosto virado infla o eyeBlink (pálpebra em perspectiva): esses quadros não contam piscada.
 YAW_PISCADA_MAX = 0.18
 # Piscadas naturais toleradas além do pedido (ninguém controla 100% o piscar).
-PISCADAS_EXTRAS = 1
-PISCADAS_NATURAIS_MAX = 2
+PISCADAS_EXTRAS = 3
+PISCADAS_NATURAIS_MAX = 4
 # Sorriso: neutro abaixo de NEUTRO; sorrindo acima de ALVO (blendshape).
+# AUMENTO_MIN: aceita quem começa com expressão naturalmente levemente sorridente
+# (resting smile) -- basta o sorriso aumentar claramente dentro da janela.
 SORRISO_NEUTRO = 0.20
 SORRISO_ALVO = 0.45
+SORRISO_AUMENTO_MIN = 0.20
 # Giro: frontal se |yaw| < FRONTAL; virado "de verdade" se |yaw| > GIRO em pelo
 # menos GIRO_QUADROS quadros.
 YAW_FRONTAL = 0.08
 YAW_GIRO = 0.22
 GIRO_QUADROS = 2
+# Para detectar AÇÕES NÃO PEDIDAS usa um limiar maior: movimento natural/acidental
+# de cabeça (olhando para o telefone em ângulo) não deve reprovar o desafio inteiro.
+GIRO_QUADROS_NAO_PEDIDO = 5
 
 MIN_QUADROS = 6
 
@@ -203,9 +209,13 @@ def _checar_passo(seq: list[SinaisQuadro], passo: str) -> tuple[bool, str]:
 
     if passo == "sorrir":
         smiles = [s.smile for s in seq]
-        if smiles and min(smiles) < SORRISO_NEUTRO and max(smiles) > SORRISO_ALVO:
-            return True, ""
-        return False, "Não identificamos o sorriso. Fique neutro e depois sorria."
+        if smiles and max(smiles) > SORRISO_ALVO:
+            # Aceita se a pessoa partiu de expressão neutra OU se o sorriso aumentou
+            # claramente dentro da janela (quem tem "resting smile" leve também passa).
+            neutro_ok = min(smiles) < SORRISO_NEUTRO or (max(smiles) - min(smiles)) >= SORRISO_AUMENTO_MIN
+            if neutro_ok:
+                return True, ""
+        return False, "Não identificamos o sorriso. Fique neutro e depois sorria bem."
 
     if passo in ("virar_esquerda", "virar_direita"):
         lado = "esquerda" if passo == "virar_esquerda" else "direita"
@@ -226,11 +236,13 @@ def _fim_do_passo(seq: list[SinaisQuadro], inicio: int, passo: str) -> int | Non
 
 
 def _acoes_nao_pedidas(seq: list[SinaisQuadro], passos: tuple[str, ...]) -> str | None:
-    """Motivo, se a série mostra uma ação que o desafio NÃO pediu."""
+    """Motivo, se a série mostra uma ação INTENCIONAL que o desafio NÃO pediu.
+    Usa limiares mais lenientes (GIRO_QUADROS_NAO_PEDIDO) para não reprovar
+    movimentos naturais de cabeça ou expressões involuntárias."""
     for lado in ("esquerda", "direita"):
-        if f"virar_{lado}" not in passos and _giros(seq, lado) >= GIRO_QUADROS:
+        if f"virar_{lado}" not in passos and _giros(seq, lado) >= GIRO_QUADROS_NAO_PEDIDO:
             return "Faça só o que foi pedido: não vire o rosto para os lados fora do passo."
-    if "sorrir" not in passos and max(s.smile for s in seq) > SORRISO_ALVO:
+    if "sorrir" not in passos and max((s.smile for s in seq), default=0) > SORRISO_ALVO:
         return "Faça só o que foi pedido: mantenha a expressão neutra fora do passo de sorrir."
     pedidas = next((int(m.group(1)) for p in passos if (m := _PISCAR_RE.match(p))), None)
     limite = PISCADAS_NATURAIS_MAX if pedidas is None else pedidas + PISCADAS_EXTRAS

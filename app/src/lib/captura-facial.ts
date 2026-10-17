@@ -94,7 +94,16 @@ export function selecionarQuadros(qs: Quadro[], passo: PassoBiometria, max: numb
     let frontal = -1;
     for (let i = 0; i < primeiroVirado; i++) {
       const y = Math.abs(qs[i]?.yaw ?? 1);
-      if (y < YAW_FRONTAL && (frontal < 0 || y < Math.abs(qs[frontal]?.yaw ?? 1))) frontal = i;
+      if (y < YAW_FRONTAL) {
+        // Prefere frame com expressão neutra (menor smile) para não contaminar
+        // o step de virar com frames de sorriso acidental.
+        const melhor =
+          frontal < 0 ||
+          y < Math.abs(qs[frontal]?.yaw ?? 1) - 0.01 ||
+          (Math.abs(y - Math.abs(qs[frontal]?.yaw ?? 1)) < 0.01 &&
+            (qs[i]?.smile ?? 0) < (qs[frontal]?.smile ?? 0));
+        if (melhor) frontal = i;
+      }
     }
     add(frontal);
     virados.slice(0, 4).forEach(add);

@@ -63,9 +63,10 @@ const YAW_GIRO = 0.26;
 const GIRO_QUADROS = 3;
 const piscadasDo = (id: PassoBiometria) => (id === "piscar2" ? 2 : 3);
 // Depois de ver o movimento, grava mais um instante (o "depois" da ação).
-const POS_MS = 350;
-// Pausa curta entre passos, para a pessoa ler a próxima instrução.
-const ENTRE_PASSOS_MS = 700;
+const POS_MS = 600;
+// Pausa entre passos: tempo para a pessoa ler a instrução E resetar a expressão.
+// Sem pausa suficiente, expressões do passo anterior "vazam" para o próximo.
+const ENTRE_PASSOS_MS = 1500;
 // Medição de luz/distância/óculos no preparo: a cada 120 ms; óculos pela mediana.
 const QUALIDADE_MS = 120;
 const OCULOS_JANELA = 7;
