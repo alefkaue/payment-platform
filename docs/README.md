@@ -22,6 +22,7 @@
 | [SECURITY_AUDIT.md](seguranca/SECURITY_AUDIT.md) | Achados de auditoria e correções |
 | [THREAT_MODEL.md](seguranca/THREAT_MODEL.md) | Modelagem de ameaças |
 | [PENTEST.md](seguranca/PENTEST.md) | Regras e escopo do pentest |
+| [PENTEST-RESULTADOS-2026-10-17.md](seguranca/PENTEST-RESULTADOS-2026-10-17.md) | Resultados do pentest automatizado (7 fases, local + Azure) |
 
 ## ⚙️ Operação / deploy — [`operacao/`](operacao/)
 | Documento | Conteúdo |
