@@ -10,10 +10,20 @@ from decimal import Decimal
 from typing import Annotated
 
 from pydantic import BaseModel, Field, model_validator
+from pydantic.functional_validators import AfterValidator
+
+
+def _sem_notacao_cientifica(v: Decimal) -> Decimal:
+    """Rejeita valores como '1e2' ou '1E100' (expoente positivo na representação Decimal)."""
+    _, _, exp = v.as_tuple()
+    if isinstance(exp, int) and exp > 0:
+        raise ValueError("Notação científica não é aceita (use ex. '100.00')")
+    return v
+
 
 # Até 2 casas e no máximo 12 dígitos (cabe em Numeric(14,2)). gt=0 rejeita zero/negativo.
-Dinheiro = Annotated[Decimal, Field(gt=0, max_digits=12, decimal_places=2)]
-DinheiroOuZero = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2)]
+Dinheiro = Annotated[Decimal, Field(gt=0, max_digits=12, decimal_places=2), AfterValidator(_sem_notacao_cientifica)]
+DinheiroOuZero = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=2), AfterValidator(_sem_notacao_cientifica)]
 
 
 class ProvaBiometrica(BaseModel):

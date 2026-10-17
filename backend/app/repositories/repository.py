@@ -615,6 +615,9 @@ class Repositorio(RepositorioExtras):
             if idempotency_key:
                 # De novo, já com a carteira travada: quem chegou antes com a mesma chave
                 # já fez commit enquanto esperávamos o lock (pedidos repetidos em paralelo).
+                # expire_all() força releitura do DB para que o SQLite (sem MVCC) também
+                # enxergue commits feitos por threads concorrentes entre os dois checks.
+                s.expire_all()
                 ja = s.scalar(select(Transacao).where(Transacao.idempotency_key.in_(_chaves_equivalentes(idempotency_key))))
                 if ja:
                     return repetida(ja)
