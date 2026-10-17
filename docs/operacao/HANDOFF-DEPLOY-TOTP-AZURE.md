@@ -1,5 +1,9 @@
 # Handoff: senha/TOTP pronto no código, falta subir no Azure (16/10/2026)
 
+> **Atualização 17/10/2026:** a versão senha/TOTP (`e17f5c7`) foi implantada do zero na assinatura do
+> Gustavo, sem mexer no ambiente do Alef. Ver [AZURE-GUSTAVO.md](AZURE-GUSTAVO.md). O ambiente do Alef
+> continua na imagem antiga (`7908dcb`), e as seções abaixo ainda valem para ele.
+
 Resumo para continuar de outro PC. O frontend de senha/TOTP está **pronto e testado**. O deploy no Azure
 parou numa **migração de banco** que precisa ser aplicada antes de trocar a API.
 
