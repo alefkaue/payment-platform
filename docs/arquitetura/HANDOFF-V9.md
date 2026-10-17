@@ -15,7 +15,7 @@
 - PJ: cada pessoa com **login próprio** (nunca conta compartilhada entre representante e contador). CNPJ → CPF do
   responsável → dentro do app o admin define **alçadas** de cada pessoa. Regras diferentes para **MEI, PME, Grande**.
 - Pagamento de salário **só para funcionário** da empresa.
-- Arquivo de referência de requisitos: `ASTRO_MELHORIAS_LOGICA_FRONT.md` (está só na máquina do Alef, **não versionado**).
+- Arquivo de referência de requisitos: [`docs/historico/MELHORIAS-LOGICA-FRONT.md`](../historico/MELHORIAS-LOGICA-FRONT.md) (versionado em `docs/historico/`).
 - Responder em português.
 
 ## 1. Estado (honesto)

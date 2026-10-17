@@ -32,6 +32,9 @@
 | [AZURE-IMPLANTACAO-ACADEMICA.md](operacao/AZURE-IMPLANTACAO-ACADEMICA.md) | Sequência atual conforme os três diagramas, orçamento e migrador separado |
 | [RODAR-NO-PC.md](operacao/RODAR-NO-PC.md) | Rodar no PC / emulador Android |
 | [COMO-RODAR-REMOTO.md](operacao/COMO-RODAR-REMOTO.md) | Subir por túneis HTTPS (ambiente de pentest) |
+| [HANDOFF-DEPLOY-TOTP-AZURE.md](operacao/HANDOFF-DEPLOY-TOTP-AZURE.md) | Deploy da autenticação por senha/TOTP no Azure |
+| [HANDOFF-FRONTEND-SENHA-TOTP.md](operacao/HANDOFF-FRONTEND-SENHA-TOTP.md) | Handoff do frontend de confirmação por senha/TOTP |
+| [PAGAMENTO-SENHA-TOTP-E-ATIVACAO-IMEDIATA.md](operacao/PAGAMENTO-SENHA-TOTP-E-ATIVACAO-IMEDIATA.md) | Relatório de autenticação e ativação imediata |
 
 ## 🤖 Colaboração com IAs — [`ia/`](ia/)
 Notas de trabalho com assistentes (GPT, Gemini).
@@ -46,3 +49,7 @@ Relatórios e revisões datados (snapshots), incluindo o HANDOFF antigo. Mantido
 referência atual, use as pastas por tema acima.
 
 - [Análise crítica da arquitetura Azure — 12/10/2026](historico/ANALISE-CRITICA-AZURE-2026-10-12.md): evidências do código, pontos positivos, prioridades P0/P1/P2 e validações pendentes.
+- [Revisão de problemas R01–R10 — 14/10/2026](historico/REVISAO-PROBLEMAS-2026-10-14.md): achados de lógica financeira, idempotência, alçadas e correções aplicadas.
+- [Melhorias de cadastro e facial — 15/10/2026](historico/MELHORIAS-CADASTRO-2026-10-15.md): data de nascimento, rosto do documento, calibração do piscar.
+- [Requisitos de lógica e front — referência](historico/MELHORIAS-LOGICA-FRONT.md): checklist de coerência PF/PJ usado como base durante o desenvolvimento.
+- [Prompt de correção R01–R10](historico/PROMPT-CORRECAO-R01-R10.md): instrução usada para corrigir os achados da revisão de 14/10.

@@ -41,6 +41,7 @@ site/out/
 .idea/
 .vscode/
 .DS_Store
+*.lnk
 
 # === Legados mantidos em disco, fora do repositório ===
 _legacy_backend/
