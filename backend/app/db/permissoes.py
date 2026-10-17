@@ -16,7 +16,9 @@ TABELAS_APPEND_ONLY = frozenset({
 })
 COLUNAS_UPDATE = {
     'transacoes': frozenset({'status', 'bloqueio_ate'}),
-    'usuarios': frozenset({'senha_hash', 'embedding_facial_cifrado', 'kyc_status', 'ativo', 'pontos'}),
+    # totp_*: ativar o 2º fator e o anti-replay (passo usado) gravam pela API.
+    'usuarios': frozenset({'senha_hash', 'embedding_facial_cifrado', 'kyc_status', 'ativo', 'pontos',
+                           'totp_segredo', 'totp_passo_usado'}),
     'carteiras': frozenset({'saldo', 'saldo_bloqueado'}),
 }
 COLUNAS_TRANSACAO_UPDATE = COLUNAS_UPDATE['transacoes']
