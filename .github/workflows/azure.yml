@@ -40,9 +40,16 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      # O build roda dentro do ACR (sem Docker no runner) e a imagem leva o SHA do commit.
-      - name: Build da imagem no ACR
-        run: az acr build -r "$ACR" -t "astro-api:${GITHUB_SHA}" -f backend/Dockerfile backend
+      # Build local no runner (docker está disponível no ubuntu-latest) e push p/ ACR.
+      # az acr build usa ACR Tasks, bloqueado em Azure for Students → docker build + push.
+      - name: Login Docker no ACR
+        run: az acr login -n "$ACR"
+
+      - name: Build e push da imagem
+        run: |
+          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
+          docker build -t "$SERVIDOR/astro-api:${GITHUB_SHA}" -f backend/Dockerfile backend
+          docker push "$SERVIDOR/astro-api:${GITHUB_SHA}"
 
       - name: Migração isolada antes da API
         env:
