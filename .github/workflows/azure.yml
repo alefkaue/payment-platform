@@ -52,10 +52,10 @@ jobs:
           docker push "$SERVIDOR/astro-api:${GITHUB_SHA}"
 
       - name: Migração isolada antes da API
+        if: vars.AZURE_MIGRATION_JOB != ''
         env:
           MIGRATION_JOB: ${{ vars.AZURE_MIGRATION_JOB }}
         run: |
-          : "${MIGRATION_JOB:?configure AZURE_MIGRATION_JOB com o job dedicado (docs/BANCO.md)}"
           SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
           EXECUCAO=$(az containerapp job start -g "$RG" -n "$MIGRATION_JOB" \
             --image "$SERVIDOR/astro-api:${GITHUB_SHA}" --query name -o tsv)
@@ -78,31 +78,13 @@ jobs:
           az containerapp revision list -g "$RG" -n astro-api \
             --query "[?properties.active].{revisao:name, saude:properties.healthState}" -o table
 
-  # App web (o mesmo do APK) para a equipe testar mais fácil, com a página de download do
-  # APK em /baixar. O produto principal é o app Android (Release no GitHub).
+  # App web para a equipe testar — implantado no Container App astro-front.
   front:
     if: vars.AZURE_CLIENT_ID != '' && vars.ASTRO_API_URL != ''
+    needs: api
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Instalar dependências
-        working-directory: app
-        run: npm ci
-
-      # Gera também o staticwebapp.config.json com a CSP (scripts/cabecalhos.mjs).
-      - name: Build (SPA + cabeçalhos de segurança) e página de download em /baixar
-        working-directory: app
-        env:
-          VITE_API_URL: ${{ vars.ASTRO_API_URL }}
-        run: |
-          npm run build
-          mkdir -p dist/client/baixar
-          cp ../download/index.html ../download/estilo.css dist/client/baixar/
 
       - uses: azure/login@v2
         with:
@@ -110,18 +92,19 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      # O token de deploy do Static Web Apps é lido na hora (com o login OIDC), não fica no GitHub.
-      - name: Token de deploy do Static Web Apps
-        id: swa
+      - name: Build e push da imagem do frontend
+        env:
+          VITE_API_URL: ${{ vars.ASTRO_API_URL }}
         run: |
-          TOKEN=$(az staticwebapp secrets list -g "$RG" -n "$SWA" --query properties.apiKey -o tsv)
-          echo "::add-mask::$TOKEN"
-          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
+          az acr login -n "$ACR"
+          docker build \
+            --build-arg VITE_API_URL="$VITE_API_URL" \
+            -t "$SERVIDOR/astro-front:${GITHUB_SHA}" \
+            -f app/Dockerfile.students app
+          docker push "$SERVIDOR/astro-front:${GITHUB_SHA}"
 
-      - uses: Azure/static-web-apps-deploy@v1
-        with:
-          azure_static_web_apps_api_token: ${{ steps.swa.outputs.token }}
-          action: upload
-          app_location: app/dist/client
-          skip_app_build: true
-          skip_api_build: true
+      - name: Nova revisão do frontend
+        run: |
+          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
+          az containerapp update -g "$RG" -n astro-front --image "$SERVIDOR/astro-front:${GITHUB_SHA}"
