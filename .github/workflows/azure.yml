@@ -25,7 +25,8 @@ concurrency:
 env:
   RG: ${{ vars.AZURE_RG }}
   ACR: ${{ vars.AZURE_ACR }}
-  SWA: ${{ vars.AZURE_SWA }}
+  # loginServer é sempre {acr}.azurecr.io — não precisa de az acr show (evita Reader extra)
+  ACR_SERVER: ${{ vars.AZURE_ACR }}.azurecr.io
 
 jobs:
   api:
@@ -47,18 +48,16 @@ jobs:
 
       - name: Build e push da imagem
         run: |
-          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
-          docker build -t "$SERVIDOR/astro-api:${GITHUB_SHA}" -f backend/Dockerfile backend
-          docker push "$SERVIDOR/astro-api:${GITHUB_SHA}"
+          docker build -t "$ACR_SERVER/astro-api:${GITHUB_SHA}" -f backend/Dockerfile backend
+          docker push "$ACR_SERVER/astro-api:${GITHUB_SHA}"
 
       - name: Migração isolada antes da API
         if: vars.AZURE_MIGRATION_JOB != ''
         env:
           MIGRATION_JOB: ${{ vars.AZURE_MIGRATION_JOB }}
         run: |
-          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
           EXECUCAO=$(az containerapp job start -g "$RG" -n "$MIGRATION_JOB" \
-            --image "$SERVIDOR/astro-api:${GITHUB_SHA}" --query name -o tsv)
+            --image "$ACR_SERVER/astro-api:${GITHUB_SHA}" --query name -o tsv)
           for tentativa in $(seq 1 60); do
             ESTADO=$(az containerapp job execution show -g "$RG" -n "$MIGRATION_JOB" \
               --job-execution-name "$EXECUCAO" --query properties.status -o tsv)
@@ -73,8 +72,7 @@ jobs:
 
       - name: Nova revisão da API
         run: |
-          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
-          az containerapp update -g "$RG" -n astro-api --image "$SERVIDOR/astro-api:${GITHUB_SHA}"
+          az containerapp update -g "$RG" -n astro-api --image "$ACR_SERVER/astro-api:${GITHUB_SHA}"
           az containerapp revision list -g "$RG" -n astro-api \
             --query "[?properties.active].{revisao:name, saude:properties.healthState}" -o table
 
@@ -92,19 +90,19 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Login Docker no ACR
+        run: az acr login -n "$ACR"
+
       - name: Build e push da imagem do frontend
         env:
           VITE_API_URL: ${{ vars.ASTRO_API_URL }}
         run: |
-          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
-          az acr login -n "$ACR"
           docker build \
             --build-arg VITE_API_URL="$VITE_API_URL" \
-            -t "$SERVIDOR/astro-front:${GITHUB_SHA}" \
+            -t "$ACR_SERVER/astro-front:${GITHUB_SHA}" \
             -f app/Dockerfile.students app
-          docker push "$SERVIDOR/astro-front:${GITHUB_SHA}"
+          docker push "$ACR_SERVER/astro-front:${GITHUB_SHA}"
 
       - name: Nova revisão do frontend
         run: |
-          SERVIDOR=$(az acr show -n "$ACR" --query loginServer -o tsv)
-          az containerapp update -g "$RG" -n astro-front --image "$SERVIDOR/astro-front:${GITHUB_SHA}"
+          az containerapp update -g "$RG" -n astro-front --image "$ACR_SERVER/astro-front:${GITHUB_SHA}"
