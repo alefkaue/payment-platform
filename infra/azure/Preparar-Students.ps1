@@ -4,13 +4,17 @@ param(
     [string]$ImagemFront = '',
     [switch]$Bootstrap,
     [switch]$SomenteBootstrap,
-    [switch]$AcessoPublico
+    [switch]$AcessoPublico,
+    # Padrão: assinatura do Alef. A do Gustavo é d84028eb-e5bb-426b-ac31-8b5aba3c8adc.
+    [string]$Assinatura = '361ca85d-6fb7-40db-a74c-a8e650633799'
 )
 $ErrorActionPreference = 'Stop'
 $astroRoot = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
+# Azure CLI instalado; senão o portátil (venv em ~/.local/azure-cli, ver AZURE-GUSTAVO.md).
 $astroAz = 'C:/Program Files/Microsoft SDKs/Azure/CLI2/wbin/az.cmd'
+if (-not (Test-Path -LiteralPath $astroAz)) { $astroAz = Join-Path $HOME '.local/azure-cli/Scripts/az.bat' }
 $astroAccount = & $astroAz account show -o json | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0 -or $astroAccount.id -ne '361ca85d-6fb7-40db-a74c-a8e650633799') { throw 'Assinatura Students inesperada.' }
+if ($LASTEXITCODE -ne 0 -or $astroAccount.id -ne $Assinatura) { throw 'Assinatura Students inesperada.' }
 $astroLocal = Join-Path $astroRoot '.azure-local'
 New-Item -ItemType Directory -Force $astroLocal | Out-Null
 $astroVaultFile = Join-Path $astroLocal 'students-secrets.clixml'
