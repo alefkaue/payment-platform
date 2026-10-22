@@ -1,0 +1,367 @@
+Execução: 2026-10-22 22:54:58 UTC
+Servidor: MySQL 8.0.46 | tls_version=TLSv1.2,TLSv1.3 | require_secure_transport=1 | validate_password.policy=STRONG
+
+==================================================================
+C01 conexão SEM TLS (ESPERADO: ERRO 3159)
+==================================================================
+WARNING: no verification of server certificate will be done. Use --ssl-mode=VERIFY_CA or VERIFY_IDENTITY.
+ERROR 1045 (28000): Access denied for user 'svc_astro_api'@'localhost' (using password: YES)
+
+==================================================================
+C02 forçar TLS 1.1 (ESPERADO: falha, só 1.2/1.3 são aceitos)
+==================================================================
+ERROR 2026 (HY000): SSL connection error: TLS version is invalid
+
+==================================================================
+C03 TLS 1.2 com verificação do certificado do servidor (ESPERADO: OK)
+==================================================================
++---------------+-----------------------------+
+| Variable_name | Value                       |
++---------------+-----------------------------+
+| Ssl_cipher    | ECDHE-RSA-AES128-GCM-SHA256 |
+| Ssl_version   | TLSv1.2                     |
++---------------+-----------------------------+
+
+==================================================================
+C04 senha errada até bloquear (conta descartável com FAILED_LOGIN_ATTEMPTS 3)
+==================================================================
+-- tentativa 1 com senha errada:
+ERROR 1045 (28000): Access denied for user 'teste_bloqueio'@'localhost' (using password: YES)
+-- tentativa 2 com senha errada:
+ERROR 1045 (28000): Access denied for user 'teste_bloqueio'@'localhost' (using password: YES)
+-- tentativa 3 com senha errada:
+ERROR 3955 (HY000): Access denied for user 'teste_bloqueio'@'localhost'. Account is blocked for 1 day(s) (1 day(s) remaining) due to 3 consecutive failed logins.
+-- tentativa 4 com senha errada:
+ERROR 3955 (HY000): Access denied for user 'teste_bloqueio'@'localhost'. Account is blocked for 1 day(s) (1 day(s) remaining) due to 3 consecutive failed logins.
+-- agora com a senha CERTA (ESPERADO: continua bloqueada, ERRO 3955):
+ERROR 3955 (HY000): Access denied for user 'teste_bloqueio'@'localhost'. Account is blocked for 1 day(s) (1 day(s) remaining) due to 3 consecutive failed logins.
+
+==================================================================
+C05 contexto válido COPIADO para outra conexão (replay) (ESPERADO: 5 na original, 0 na outra)
+==================================================================
+conexão original enxergou: 5 carteiras
++-----------------------+
+| outra_conexao_enxerga |
++-----------------------+
+|                     0 |
++-----------------------+
+
+==================================================================
+C06 testes SQL da conta da API (07_testes_seguranca.sql)
+==================================================================
++--------------------------------------------------------------------------------+
+| teste                                                                          |
++--------------------------------------------------------------------------------+
+| T00 identidade da sessao (ESPERADO: svc_astro_api, papel astro_app, TLS ativo) |
++--------------------------------------------------------------------------------+
++-------------------------+-----------------+
+| conta                   | papel_ativo     |
++-------------------------+-----------------+
+| svc_astro_api@localhost | `astro_app`@`%` |
++-------------------------+-----------------+
++---------------+------------------------+
+| Variable_name | Value                  |
++---------------+------------------------+
+| Ssl_cipher    | TLS_AES_256_GCM_SHA384 |
+| Ssl_version   | TLSv1.3                |
++---------------+------------------------+
++-----------------------------------------------------+
+| teste                                               |
++-----------------------------------------------------+
+| T01 DROP/CREATE pela API (ESPERADO: ERRO 1142/1044) |
++-----------------------------------------------------+
+ERROR 1142 (42000) at line 28: DROP command denied to user 'svc_astro_api'@'localhost' for table 'carteiras'
+ERROR 1142 (42000) at line 29: DROP command denied to user 'svc_astro_api'@'localhost' for table 'carteiras'
+ERROR 1142 (42000) at line 30: CREATE command denied to user 'svc_astro_api'@'localhost' for table 'invasao'
+ERROR 1044 (42000) at line 31: Access denied for user 'svc_astro_api'@'localhost' to database 'invasao'
+ERROR 1142 (42000) at line 32: ALTER command denied to user 'svc_astro_api'@'localhost' for table 'carteiras'
+ERROR 1142 (42000) at line 33: TRIGGER command denied to user 'svc_astro_api'@'localhost' for table 'carteiras'
++----------------------------------------------------------------------+
+| teste                                                                |
++----------------------------------------------------------------------+
+| T02 ler/alterar tabela REAL, chave e auditoria (ESPERADO: ERRO 1142) |
++----------------------------------------------------------------------+
+ERROR 1142 (42000) at line 37: SELECT command denied to user 'svc_astro_api'@'localhost' for table 'carteiras'
+ERROR 1142 (42000) at line 38: SELECT command denied to user 'svc_astro_api'@'localhost' for table 'usuarios'
+ERROR 1142 (42000) at line 39: UPDATE command denied to user 'svc_astro_api'@'localhost' for table 'carteiras'
+ERROR 1142 (42000) at line 40: SELECT command denied to user 'svc_astro_api'@'localhost' for table 'contexto_chave'
+ERROR 1142 (42000) at line 41: SELECT command denied to user 'svc_astro_api'@'localhost' for table 'trilha'
+ERROR 1142 (42000) at line 42: DELETE command denied to user 'svc_astro_api'@'localhost' for table 'trilha'
++-----------------------------------------------------------------------------+
+| teste                                                                       |
++-----------------------------------------------------------------------------+
+| T03 sem contexto assinado: senha do banco sozinha nao le nada (ESPERADO: 0) |
++-----------------------------------------------------------------------------+
++-----------+----------+------------+------------+
+| carteiras | usuarios | transacoes | chaves_pix |
++-----------+----------+------------+------------+
+|         0 |        0 |          0 |          0 |
++-----------+----------+------------+------------+
++--------------------------------------------------------------------------+
+| teste                                                                    |
++--------------------------------------------------------------------------+
+| T04 contexto FORJADO dizendo modo sistema, prova inventada (ESPERADO: 0) |
++--------------------------------------------------------------------------+
++-----------+----------+
+| carteiras | usuarios |
++-----------+----------+
+|         0 |        0 |
++-----------+----------+
++-------------------------------------------------------------------------------+
+| teste                                                                         |
++-------------------------------------------------------------------------------+
+| T05 contexto valido de Ana, depois ADULTERADO para usuario_id=3 (ESPERADO: 0) |
++-------------------------------------------------------------------------------+
++--------------------+
+| carteiras_visiveis |
++--------------------+
+|                  0 |
++--------------------+
++------------------------------------------------------------------------------------------------+
+| teste                                                                                          |
++------------------------------------------------------------------------------------------------+
+| T06 Ana logada ve SO a propria carteira e as proprias transacoes (ESPERADO: OK, so carteira 3) |
++------------------------------------------------------------------------------------------------+
++----+--------------+------------+--------+
+| id | titular_tipo | usuario_id | saldo  |
++----+--------------+------------+--------+
+|  3 | PF           |          2 | 900.00 |
++----+--------------+------------+--------+
++----+--------------------+---------------------+-------------+
+| id | origem_carteira_id | destino_carteira_id | valor_bruto |
++----+--------------------+---------------------+-------------+
+|  1 |                  1 |                   3 |     1000.00 |
+|  4 |                  3 |                   4 |      100.00 |
++----+--------------------+---------------------+-------------+
++--------------------------------------------------------------------+
+| teste                                                              |
++--------------------------------------------------------------------+
+| T07 Ana tenta LER dados do Bruno e da empresa (IDOR) (ESPERADO: 0) |
++--------------------------------------------------------------------+
++-------------------+--------------------+----------------+------------------+------------------+
+| carteira_do_bruno | aparelhos_do_bruno | extrato_alheio | folha_da_empresa | limites_do_bruno |
++-------------------+--------------------+----------------+------------------+------------------+
+|                 0 |                  0 |              0 |                0 |                0 |
++-------------------+--------------------+----------------+------------------+------------------+
++--------------------------------------------------------------------------------------+
+| teste                                                                                |
++--------------------------------------------------------------------------------------+
+| T08 Ana tenta ALTERAR dados do Bruno (ESPERADO: 0 linhas afetadas ou ERRO 1369/1644) |
++--------------------------------------------------------------------------------------+
++-----------------------------+
+| linhas_afetadas_saldo_bruno |
++-----------------------------+
+|                           0 |
++-----------------------------+
++--------------------------------+
+| linhas_afetadas_aparelho_bruno |
++--------------------------------+
+|                              0 |
++--------------------------------+
++------------------------------+
+| linhas_afetadas_limite_bruno |
++------------------------------+
+|                            0 |
++------------------------------+
+ERROR 1369 (HY000) at line 81: CHECK OPTION failed 'astro.cartoes'
+ERROR 1644 (45000) at line 82: Politica: chave Pix so pelo dono da carteira
+ERROR 1644 (45000) at line 84: Politica: chave Pix so pelo dono da carteira
++---------------------------------------------------------------------------+
+| teste                                                                     |
++---------------------------------------------------------------------------+
+| T09 Ana muda o PROPRIO saldo sem escopo de operacao (ESPERADO: ERRO 1644) |
++---------------------------------------------------------------------------+
+ERROR 1644 (45000) at line 87: Politica: carteira fora do escopo da operacao
++-----------------------------------------------------------------------------+
+| teste                                                                       |
++-----------------------------------------------------------------------------+
+| T10 Ana tenta virar ADMIN ou mudar o dono da carteira (ESPERADO: ERRO 1143) |
++-----------------------------------------------------------------------------+
+ERROR 1143 (42000) at line 90: UPDATE command denied to user 'svc_astro_api'@'localhost' for column 'papel' in table 'usuarios'
+ERROR 1143 (42000) at line 91: UPDATE command denied to user 'svc_astro_api'@'localhost' for column 'usuario_id' in table 'carteiras'
+ERROR 1143 (42000) at line 92: UPDATE command denied to user 'svc_astro_api'@'localhost' for column 'valor_bruto' in table 'transacoes'
++--------------------------------------------------------------------------------+
+| teste                                                                          |
++--------------------------------------------------------------------------------+
+| T11 Ana tenta DEBITAR a carteira do Bruno pela procedure (ESPERADO: ERRO 1644) |
++--------------------------------------------------------------------------------+
+ERROR 1644 (45000) at line 97: Sem permissao para debitar esta carteira
++---------------------------------------------------------------+
+| teste                                                         |
++---------------------------------------------------------------+
+| T12 transferencia LEGITIMA Ana -> Bruno R$ 100 (ESPERADO: OK) |
++---------------------------------------------------------------+
++------------------+------------------+
+| transacao_criada | saldo_ana_depois |
++------------------+------------------+
+|                4 |           900.00 |
++------------------+------------------+
++------------------------------------------------------------------------------------------------+
+| teste                                                                                          |
++------------------------------------------------------------------------------------------------+
+| T13 mesmo pedido REPETIDO (replay) nao debita de novo (ESPERADO: mesma transacao, saldo igual) |
++------------------------------------------------------------------------------------------------+
++-----------------+-----------+
+| mesma_transacao | saldo_ana |
++-----------------+-----------+
+|               1 |    900.00 |
++-----------------+-----------+
++--------------------------------------------------------------------------------------+
+| teste                                                                                |
++--------------------------------------------------------------------------------------+
+| T14 gastar mais que o saldo / valor negativo / acima do limite (ESPERADO: ERRO 1644) |
++--------------------------------------------------------------------------------------+
+ERROR 1644 (45000) at line 108: Saldo insuficiente
+ERROR 1644 (45000) at line 109: Valor invalido
+ERROR 1644 (45000) at line 110: Acima do limite por transacao
++-----------------------------------------------------------------------------------+
+| teste                                                                             |
++-----------------------------------------------------------------------------------+
+| T15 Diego (operador, alcada R$ 500) tenta R$ 600 da empresa (ESPERADO: ERRO 1644) |
++-----------------------------------------------------------------------------------+
+ERROR 1644 (45000) at line 114: Sem permissao para debitar esta carteira
++------------------------------------------------------------------------------------+
+| teste                                                                              |
++------------------------------------------------------------------------------------+
+| T15b ...e ve a carteira da empresa, mas nao a da Ana (ESPERADO: OK, so carteira 5) |
++------------------------------------------------------------------------------------+
++----+--------------+------------+
+| id | titular_tipo | empresa_id |
++----+--------------+------------+
+|  5 | PJ           |          1 |
++----+--------------+------------+
++-----------------------------------------------------------------+
+| teste                                                           |
++-----------------------------------------------------------------+
+| T16 cadastro publico tentando criar ADMIN (ESPERADO: ERRO 1644) |
++-----------------------------------------------------------------+
+ERROR 1644 (45000) at line 124: Politica: cadastro de usuario negado
++-----------------------------------------------------------------------------------------------+
+| teste                                                                                         |
++-----------------------------------------------------------------------------------------------+
+| T17 cadastro publico criando carteira PARA OUTRA pessoa ou JA COM SALDO (ESPERADO: ERRO 1644) |
++-----------------------------------------------------------------------------------------------+
+ERROR 1644 (45000) at line 129: Politica: criacao de carteira negada
+ERROR 1062 (23000) at line 130: Duplicate entry 'ac0f09c0f8bf5e7a4b063d863255f16d8ce9abe600e288d934cf313bcbff63eb' for key 'usuarios.ix_usuarios_email'
+ERROR 1644 (45000) at line 133: Politica: criacao de carteira negada
++-----------------------------------------------------------------+
+| teste                                                           |
++-----------------------------------------------------------------+
+| T18 apagar ou alterar trilhas append-only (ESPERADO: ERRO 1142) |
++-----------------------------------------------------------------+
+ERROR 1142 (42000) at line 138: DELETE command denied to user 'svc_astro_api'@'localhost' for table 'historico_saldo'
+ERROR 1142 (42000) at line 139: UPDATE command denied to user 'svc_astro_api'@'localhost' for table 'historico_saldo'
+ERROR 1142 (42000) at line 140: DELETE command denied to user 'svc_astro_api'@'localhost' for table 'logs_auditoria'
+ERROR 1142 (42000) at line 141: DROP command denied to user 'svc_astro_api'@'localhost' for table 'logs_auditoria'
+ERROR 1142 (42000) at line 142: DELETE command denied to user 'svc_astro_api'@'localhost' for table 'transacoes'
++----------------------------------------------------------------------------------------------------+
+| teste                                                                                              |
++----------------------------------------------------------------------------------------------------+
+| T19 CHECK constraints: saldo negativo, conservacao do dinheiro, CPF em claro (ESPERADO: ERRO 3819) |
++----------------------------------------------------------------------------------------------------+
+ERROR 3819 (HY000) at line 146: Check constraint 'ck_carteira_saldo' is violated.
+ERROR 3819 (HY000) at line 147: Check constraint 'ck_transacao_conservacao' is violated.
+ERROR 3819 (HY000) at line 149: Check constraint 'ck_pii_usuarios_cpf' is violated.
++-------------------------------------------------------------------------------------+
+| teste                                                                               |
++-------------------------------------------------------------------------------------+
+| T20 SQL injection: consulta MONTADA com texto (vulneravel) x PARAMETRIZADA (segura) |
++-------------------------------------------------------------------------------------+
++--------------------+
+| vulneravel_retorna |
++--------------------+
+|                  6 |
++--------------------+
++-----------------------+
+| parametrizada_retorna |
++-----------------------+
+|                     0 |
++-----------------------+
++--------------------------------------------------+
+| teste                                            |
++--------------------------------------------------+
+| T21 contexto VENCIDO (espera 31 s) (ESPERADO: 0) |
++--------------------------------------------------+
++-----------------+
+| antes_de_vencer |
++-----------------+
+|               5 |
++-----------------+
++------------------+
+| depois_de_vencer |
++------------------+
+|                0 |
++------------------+
++--------------------------------+
+| teste                          |
++--------------------------------+
+| FIM dos testes da conta da API |
++--------------------------------+
+
+==================================================================
+C07 auditor: confere a corrente e lê a trilha; NÃO lê cliente nem altera a trilha
+==================================================================
++--------------------+---------------------+---------+
+| eventos_conferidos | primeira_quebra_seq | integra |
++--------------------+---------------------+---------+
+|                 33 |                NULL |       1 |
++--------------------+---------------------+---------+
++-----+----------------------------+------------------------------+----------+-------------+-----------+----------+-------------+--------------+------------------+
+| seq | ocorrido_em                | usuario_bd                   | modo_app | usuario_app | tabela    | operacao | registro_id | saldo_depois | hash             |
++-----+----------------------------+------------------------------+----------+-------------+-----------+----------+-------------+--------------+------------------+
+|  32 | 2026-10-22 22:53:16.534360 | svc_astro_api@localhost      | usuario  |           2 | carteiras | UPDATE   | 4           | 600.00       | 9fefeaeb28e9c8d9 |
+|  31 | 2026-10-22 22:53:16.533271 | svc_astro_api@localhost      | usuario  |           2 | carteiras | UPDATE   | 3           | 900.00       | 4874c634d17efb10 |
+|  23 | 2026-10-22 22:51:48.773025 | svc_astro_migrator@localhost | NULL     |        NULL | carteiras | UPDATE   | 5           | 5000.00      | 94918b56cd811a95 |
+|  22 | 2026-10-22 22:51:48.773025 | svc_astro_migrator@localhost | NULL     |        NULL | carteiras | UPDATE   | 4           | 500.00       | c4d8a3b835affb74 |
++-----+----------------------------+------------------------------+----------+-------------+-----------+----------+-------------+--------------+------------------+
+ERROR 1142 (42000) at line 1: SELECT command denied to user 'auditor_astro'@'localhost' for table 'usuarios'
+
+==================================================================
+C08 somente leitura: só agregados, nenhum dado pessoal
+==================================================================
++--------------+------------+-------------+-----------------+
+| titular_tipo | quantidade | saldo_total | bloqueado_total |
++--------------+------------+-------------+-----------------+
+| SISTEMA      |          2 |    -6500.00 |            0.00 |
+| PF           |          2 |     1500.00 |            0.00 |
+| PJ           |          1 |     5000.00 |            0.00 |
++--------------+------------+-------------+-----------------+
+ERROR 1142 (42000) at line 1: SELECT command denied to user 'leitura_astro'@'localhost' for table 'carteiras'
+
+==================================================================
+C09 até o ADMIN: apagar a trilha é barrado; adulterar sem o trigger é DETECTADO
+==================================================================
+ERROR 1644 (45000) at line 1: Trilha de auditoria imutavel
+-- auditor confere depois da adulteração (ESPERADO: integra = 0, quebra na seq 3):
++--------------------+---------------------+---------+
+| eventos_conferidos | primeira_quebra_seq | integra |
++--------------------+---------------------+---------+
+|                  3 |                   3 |       0 |
++--------------------+---------------------+---------+
+-- valor original restaurado (ESPERADO: integra = 1):
++--------------------+---------------------+---------+
+| eventos_conferidos | primeira_quebra_seq | integra |
++--------------------+---------------------+---------+
+|                 33 |                NULL |       1 |
++--------------------+---------------------+---------+
+
+==================================================================
+C10 conciliação financeira depois de todos os testes (ESPERADO: tudo 0)
+==================================================================
++--------------------------+---------------------+---------------------------+------------------------------------+------------------+
+| historicos_sem_transacao | carteiras_negativas | transacoes_desbalanceadas | carteiras_divergentes_do_historico | total_financeiro |
++--------------------------+---------------------+---------------------------+------------------------------------+------------------+
+|                        0 |                   0 |                         0 |                                  0 |             0.00 |
++--------------------------+---------------------+---------------------------+------------------------------------+------------------+
+
+==================================================================
+C11 fecha a janela de migração (99) e tenta logar como migrador (ESPERADO: ERRO 3118)
+==================================================================
++--------------------+-----------+----------------+
+| user               | host      | account_locked |
++--------------------+-----------+----------------+
+| svc_astro_api      | localhost | N              |
+| svc_astro_migrator | localhost | Y              |
++--------------------+-----------+----------------+
+ERROR 3118 (HY000): Access denied for user 'svc_astro_migrator'@'localhost'. Account is locked.
+rotinas de laboratorio restantes: 0
