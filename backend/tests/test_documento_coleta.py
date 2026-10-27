@@ -23,7 +23,9 @@ def test_coleta_academica_nao_confere_a_pessoa(monkeypatch):
         nome="Pessoa Teste", cpf="52998224725", data_nascimento=date(1990, 1, 1), template_selfie={"vetor": [1]})
     assert conferidas == [2]
     assert resultado["provedor"] == "coleta_academica"
-    assert resultado["status"] == "em_analise"
+    # Aprovação automática (26/10/2026): sem fila de análise humana.
+    assert resultado["status"] == "aprovado"
+    assert resultado["motivos"] == []
     assert resultado["verificacoes"]["rosto"] == "nao_comparado"
 
 

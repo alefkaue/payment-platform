@@ -23,18 +23,15 @@ describe("orientação do rosto", () => {
   it.each([
     [{ rostos: 0 }, "Posicione"],
     [{ rostos: 2 }, "sozinho"],
-    [{ altura: 0.39 }, "Aproxime"],
-    [{ altura: 0.86 }, "Afaste"],
-    [{ centroX: 0.7 }, "Centralize"],
-    [{ centroY: 0.7 }, "Centralize"],
-    [{ brilho: 54 }, "escuro"],
-    [{ estourado: 0.26 }, "forte demais"],
-    [{ contraluz: 86 }, "atrás"],
-    [{ oculos: OCULOS_LIMIAR }, "óculos"],
+    [{ altura: 0.24 }, "Aproxime"],
+    [{ altura: 0.96 }, "Afaste"],
+    [{ centroX: 0.8 }, "Centralize"],
+    [{ centroY: 0.8 }, "Centralize"],
+    [{ brilho: 29 }, "escuro"],
   ] as const)("orienta para %j", (mudanca, texto) => {
     expect(orientarRosto({ ...boa, ...mudanca }, true)).toContain(texto);
   });
-  it("respeita a prioridade rosto, distância, centro, luz e óculos", () => {
+  it("respeita a prioridade rosto, distância, centro e luz", () => {
     const ruim = {
       ...boa,
       rostos: 0,
@@ -52,16 +49,13 @@ describe("orientação do rosto", () => {
     expect(orientarRosto(ruim, true)).toContain("Centralize");
     ruim.centroX = 0.5;
     expect(orientarRosto(ruim, true)).toContain("escuro");
+    // Facilitado em 26/10/2026: luz forte, contraluz e óculos não bloqueiam mais.
     ruim.brilho = 120;
-    expect(orientarRosto(ruim, true)).toContain("forte demais");
-    ruim.estourado = 0;
-    expect(orientarRosto(ruim, true)).toContain("atrás");
-    ruim.contraluz = 0;
-    expect(orientarRosto(ruim, true)).toContain("óculos");
+    expect(orientarRosto(ruim, true)).toBeNull();
   });
-  it("aceita os limites de luz e só verifica óculos no cadastro", () => {
-    expect(orientarRosto({ ...boa, brilho: 55, estourado: 0.25, contraluz: 85 }, true)).toBeNull();
-    expect(orientarRosto({ ...boa, oculos: 3 }, false)).toBeNull();
+  it("aceita os limites de luz e não bloqueia por óculos", () => {
+    expect(orientarRosto({ ...boa, brilho: 30, estourado: 0.8, contraluz: 120 }, true)).toBeNull();
+    expect(orientarRosto({ ...boa, oculos: OCULOS_LIMIAR }, true)).toBeNull();
   });
   it.each([
     "Está escuro",

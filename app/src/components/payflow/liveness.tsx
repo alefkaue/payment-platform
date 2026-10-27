@@ -56,11 +56,11 @@ const MODELO =
 // Limiares do GUIA (blendshapes 0..1 e giro). Só servem para o passo acabar assim que o
 // movimento aparece, com folga sobre os do servidor; sem eles, o passo acaba pelo tempo.
 // Piscar usa limiares calibrados pela pessoa (lib/piscadas).
-const SORRISO_NEUTRO = 0.15;
-const SORRISO_ALVO = 0.5;
-const YAW_FRONTAL = 0.06;
-const YAW_GIRO = 0.26;
-const GIRO_QUADROS = 3;
+const SORRISO_NEUTRO = 0.25;
+const SORRISO_ALVO = 0.4;
+const YAW_FRONTAL = 0.1;
+const YAW_GIRO = 0.18;
+const GIRO_QUADROS = 2;
 const piscadasDo = (id: PassoBiometria) => (id === "piscar2" ? 2 : 3);
 // Depois de ver o movimento, grava mais um instante (o "depois" da ação).
 const POS_MS = 600;

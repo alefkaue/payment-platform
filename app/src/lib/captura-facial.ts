@@ -33,8 +33,8 @@ export const TEMPO_PASSO_MS: Record<PassoBiometria, number> = {
 // Mesmos limiares do servidor (backend/app/services/liveness_logic.py).
 const BLINK_FECHADO = 0.45;
 const BLINK_ABERTO = 0.3;
-const YAW_FRONTAL = 0.08;
-const YAW_GIRO = 0.22;
+const YAW_FRONTAL = 0.12;
+const YAW_GIRO = 0.15;
 
 export function cotaPorPasso(passos: number): number {
   return Math.max(3, Math.floor(MAX_QUADROS / Math.max(1, passos)));

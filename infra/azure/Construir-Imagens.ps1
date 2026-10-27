@@ -5,6 +5,7 @@
 param(
     [Parameter(Mandatory)][ValidateSet('api','front')][string]$Alvo,
     [string]$Sha = '',
+    [string]$Ramo = 'main',
     [string]$Grupo = 'rg-astro-academico'
 )
 $ErrorActionPreference = 'Stop'
@@ -14,7 +15,7 @@ if (-not (Test-Path -LiteralPath $py)) { $py = Join-Path $HOME '.local/azure-cli
 function az { & $py -m azure.cli @args }
 function Checar($t) { if ($LASTEXITCODE -ne 0) { throw "Falhou: $t" } }
 
-if (-not $Sha) { $Sha = (git -C (Join-Path $PSScriptRoot '../..') rev-parse origin/main).Trim() }
+if (-not $Sha) { $Sha = (git -C (Join-Path $PSScriptRoot '../..') rev-parse "origin/$Ramo").Trim() }
 $acrNome = az acr list -g $Grupo --query '[0].name' -o tsv; Checar 'ACR'
 $acr = "$acrNome.azurecr.io"
 $ambiente = az containerapp env show -g $Grupo -n cae-astro --query '{id:id,dominio:properties.defaultDomain,local:location}' -o json | ConvertFrom-Json; Checar 'ambiente'
@@ -22,7 +23,7 @@ $apiUrl = "https://astro-api.$($ambiente.dominio)"
 $job = "astro-build-$Alvo"
 $token = "kaniko-$Alvo"
 
-$git = "git://github.com/alefkaue/payment-platform.git#refs/heads/main#$Sha"
+$git = "git://github.com/alefkaue/payment-platform.git#refs/heads/$Ramo#$Sha"
 if ($Alvo -eq 'api') {
     $kaniko = "--context=$git --context-sub-path=backend --dockerfile=Dockerfile --destination=$acr/astro-api:$Sha --snapshot-mode=redo --use-new-run"
     $cpu = 4.0; $mem = '8Gi'

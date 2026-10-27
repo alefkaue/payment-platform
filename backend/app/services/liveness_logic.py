@@ -77,14 +77,14 @@ PISCADAS_NATURAIS_MAX = 4
 # Sorriso: neutro abaixo de NEUTRO; sorrindo acima de ALVO (blendshape).
 # AUMENTO_MIN: aceita quem começa com expressão naturalmente levemente sorridente
 # (resting smile) -- basta o sorriso aumentar claramente dentro da janela.
-SORRISO_NEUTRO = 0.20
-SORRISO_ALVO = 0.45
-SORRISO_AUMENTO_MIN = 0.20
+SORRISO_NEUTRO = 0.25
+SORRISO_ALVO = 0.35
+SORRISO_AUMENTO_MIN = 0.12
 # Giro: frontal se |yaw| < FRONTAL; virado "de verdade" se |yaw| > GIRO em pelo
 # menos GIRO_QUADROS quadros.
-YAW_FRONTAL = 0.08
-YAW_GIRO = 0.22
-GIRO_QUADROS = 2
+YAW_FRONTAL = 0.12
+YAW_GIRO = 0.15
+GIRO_QUADROS = 1
 # Para detectar AÇÕES NÃO PEDIDAS usa um limiar maior: movimento natural/acidental
 # de cabeça (olhando para o telefone em ângulo) não deve reprovar o desafio inteiro.
 GIRO_QUADROS_NAO_PEDIDO = 5
@@ -101,14 +101,13 @@ _PISCAR_RE = re.compile(r"^piscar([23])$")
 
 
 def sortear_passos(modo: str, rng=_rng) -> tuple[str, ...]:
-    """Passos do desafio, sorteados com gerador criptográfico."""
-    piscar = rng.choice(("piscar2", "piscar3"))
-    acoes = [piscar, "sorrir", "virar_esquerda", "virar_direita"]
+    """Passos do desafio, sorteados com gerador criptográfico.
+    Facilitado em 26/10/2026: cadastro com 2 ações e login com 1 (piscar sempre 2x)."""
+    acoes = ["piscar2", "sorrir", "virar_esquerda", "virar_direita"]
     if modo == "cadastro":
-        rng.shuffle(acoes)
-        return tuple(acoes)
-    if modo == "login":
         return tuple(rng.sample(acoes, 2))
+    if modo == "login":
+        return (rng.choice(acoes),)
     raise ValueError(f"modo desconhecido: {modo}")
 
 
@@ -265,20 +264,10 @@ def verificar_sequencia(seq: list[SinaisQuadro], passos: tuple[str, ...] | str) 
     if not all(s.tem_rosto for s in seq):
         return False, "Mantenha o rosto visível na câmera durante toda a verificação."
 
-    inicio = 0
+    # Facilitado em 26/10/2026: cada passo só precisa aparecer na gravação (sem
+    # exigir a ordem exata nem recusar movimentos naturais fora do passo).
     for passo in passos:
-        fim = _fim_do_passo(seq, inicio, passo)
-        if fim is None:
-            # Diz o que faltou; se o passo existe na série inteira, foi fora de ordem.
-            ok_fora_de_ordem = _checar_passo(seq, passo)[0]
-            if ok_fora_de_ordem:
-                return False, "Faça os passos na ordem pedida."
-            return False, _checar_passo(seq[inicio:], passo)[1]
-        # O passo seguinte pode começar no último quadro deste (ex.: o quadro
-        # frontal que encerra uma virada abre a próxima).
-        inicio = max(fim - 1, inicio)
-
-    motivo = _acoes_nao_pedidas(seq, passos)
-    if motivo:
-        return False, motivo
+        ok, motivo = _checar_passo(seq, passo)
+        if not ok:
+            return False, motivo
     return True, ""

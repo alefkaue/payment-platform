@@ -27,16 +27,14 @@ export interface MedidasRosto {
 export function orientarRosto(m: MedidasRosto, cadastro: boolean): string | null {
   if (!m.rostos) return "Posicione o rosto no círculo";
   if (m.rostos > 1) return "Fique sozinho na câmera";
-  if (m.altura < 0.4) return "Aproxime o rosto";
-  if (m.altura > 0.85) return "Afaste um pouco";
-  if (Math.abs(m.centroX - 0.5) > 0.12 || Math.abs(m.centroY - 0.5) > 0.15)
+  // Facilitado em 26/10/2026: só distância/centro bem folgados e luz muito ruim;
+  // óculos não bloqueiam mais.
+  void cadastro;
+  if (m.altura < 0.25) return "Aproxime o rosto";
+  if (m.altura > 0.95) return "Afaste um pouco";
+  if (Math.abs(m.centroX - 0.5) > 0.25 || Math.abs(m.centroY - 0.5) > 0.25)
     return "Centralize o rosto no círculo";
-  if (m.brilho < 55) return "Está escuro: vá para um lugar com mais luz, de frente para a luz.";
-  if (m.estourado > 0.25)
-    return "Luz forte demais no rosto: saia do sol direto ou afaste a lâmpada.";
-  if (m.contraluz > 85)
-    return "Há muita luz atrás de você: fique de costas para a janela ou para a lâmpada.";
-  if (cadastro && m.oculos >= OCULOS_LIMIAR) return "Tire os óculos para a verificação do rosto.";
+  if (m.brilho < 30) return "Está escuro: vá para um lugar com mais luz, de frente para a luz.";
   return null;
 }
 

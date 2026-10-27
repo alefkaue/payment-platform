@@ -167,7 +167,7 @@ def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...], *, checar_o
         raise HTTPException(status_code=401, detail=motivo)
 
     frontais = liveness_logic.melhores_frontais(sinais, n=2)
-    if len(frontais) < 2 or any(abs(sinais[i].yaw) >= liveness_logic.YAW_FRONTAL for i in frontais):
+    if not frontais or abs(sinais[frontais[0]].yaw) >= 2 * liveness_logic.YAW_FRONTAL:
         raise HTTPException(status_code=400, detail="Mantenha o rosto de frente entre os movimentos, com boa luz, e tente novamente.")
 
     m = face_engine.motor()
@@ -182,9 +182,10 @@ def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...], *, checar_o
             # orienta a pessoa em vez de reprovar sem dizer o porquê.
             q = qualidade_rosto.medir(imagens[i], (int(rosto.x), int(rosto.y), int(rosto.w), int(rosto.h)),
                                       sinais[i].pontos)
+            # Facilitado em 26/10/2026: luz ruim só vai para o log, não recusa.
             msg = qualidade_rosto.problema(q, checar_oculos=False)
             if msg:
-                raise HTTPException(status_code=400, detail=msg)
+                logger.info("biometria_qualidade_baixa", extra={"motivo": msg})
             oculos.append(q.oculos)
         if i in frontais:
             # Textura frontal para o classificador passivo; movimentos e identidade
@@ -203,8 +204,6 @@ def _analisar_sequencia(quadros: list[str], passos: tuple[str, ...], *, checar_o
             templates.append(t)
     # Óculos: só no cadastro (grava o rosto de referência) e só se TODOS os quadros
     # frontais mostram a armação -- um quadro ruim não acusa óculos sozinho.
-    if checar_oculos and oculos and min(oculos) >= get_settings().rosto_oculos_limiar:
-        raise HTTPException(status_code=400, detail="Tire os óculos para a verificação do rosto.")
     return {"templates": templates, "modelo": m.nome, "prob_real_min": round(prob_real_min, 4)}
 
 

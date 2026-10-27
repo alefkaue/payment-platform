@@ -202,7 +202,7 @@ class Settings(BaseSettings):
     rosto_oculos_limiar: float = Field(default=0.6, alias="ROSTO_OCULOS_LIMIAR")     # 0..1 barra na ponte
     # Anti-spoof passivo (MiniFAS): probabilidade mínima de "real". Sem o modelo,
     # produção recusa subir; dev só avisa.
-    antispoof_limiar: float = Field(default=0.5, alias="ANTISPOOF_LIMIAR")
+    antispoof_limiar: float = Field(default=0.3, alias="ANTISPOOF_LIMIAR")
 
     # ---------- KYC / documentos ----------
     # "auto" = Tesseract se o binário existir, senão "sem_ocr" (o documento é

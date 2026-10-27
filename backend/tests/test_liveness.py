@@ -2,9 +2,10 @@
 Testes das regras de prova de vida (liveness_logic) -- funções puras, sem câmera
 nem IA. Montamos séries de SinaisQuadro na mão.
 
-O desafio é SORTEADO pelo servidor: os testes conferem que cada passo precisa
-acontecer na ordem pedida, que ação não pedida reprova (vídeo "universal" não
-serve) e que uma gravação feita para um desafio não serve para outro (replay).
+O desafio é SORTEADO pelo servidor. Desde 26/10/2026 a prova de vida é facilitada:
+cadastro com 2 ações, login com 1, cada passo só precisa aparecer na gravação (a ordem
+e movimentos naturais fora do passo não reprovam). Uma gravação que não mostra a ação
+pedida continua reprovando.
 """
 
 import random
@@ -47,15 +48,14 @@ def test_sorteio_de_login_e_cadastro():
     vistos = set()
     for _ in range(200):
         login = L.sortear_passos("login", rng)
-        assert len(login) == 2 and len(set(login)) == 2
-        assert all(p in L.PASSOS_VALIDOS for p in login)
-        assert sum(p.startswith("piscar") for p in login) <= 1
-        vistos.add(login)
+        assert len(login) == 1 and login[0] in L.PASSOS_VALIDOS
+        assert login[0] != "piscar3"
         cad = L.sortear_passos("cadastro", rng)
-        assert len(cad) == 4
-        assert {"sorrir", "virar_esquerda", "virar_direita"} <= set(cad)
-    # 4 ações x 2 contagens de piscada, 2 na ordem: 18 combinações possíveis
-    assert len(vistos) >= 15
+        assert len(cad) == 2 and len(set(cad)) == 2
+        assert all(p in L.PASSOS_VALIDOS and p != "piscar3" for p in cad)
+        vistos.add(cad)
+    # 4 ações, 2 na ordem: 12 combinações possíveis
+    assert len(vistos) >= 10
 
 
 def test_codificar_e_decodificar():
@@ -76,35 +76,23 @@ def test_quem_faz_o_que_foi_pedido_passa():
             assert ok, (passos, motivo)
 
 
-def test_fora_de_ordem_reprova():
+def test_fora_de_ordem_passa():
     passos = ("sorrir", "virar_esquerda")
-    ok, motivo = L.verificar_sequencia(gravar(("virar_esquerda", "sorrir")), passos)
-    assert ok is False and "ordem" in motivo
+    assert L.verificar_sequencia(gravar(("virar_esquerda", "sorrir")), passos) == (True, "")
 
 
-def test_replay_de_outro_desafio_reprova():
-    """Gravação feita para um desafio de login não serve para outro sorteio."""
+def test_gravacao_sem_a_acao_pedida_reprova():
+    """Gravação feita para outro desafio, sem a ação pedida, não serve."""
     gravacao = gravar(("piscar3", "virar_direita"))
-    for outro in [("sorrir", "virar_esquerda"), ("virar_direita", "piscar3"), ("piscar2", "sorrir"),
-                  ("virar_esquerda", "virar_direita")]:
+    for outro in [("sorrir", "virar_esquerda"), ("piscar2", "sorrir"), ("virar_esquerda", "virar_direita")]:
         assert L.verificar_sequencia(gravacao, outro)[0] is False, outro
 
 
-def test_video_universal_reprova():
-    """Um vídeo que faz TUDO (para servir a qualquer desafio) não passa no login."""
-    tudo = gravar(("piscar3", "sorrir", "virar_esquerda", "virar_direita"))
-    ok, motivo = L.verificar_sequencia(tudo, ("piscar3", "sorrir"))
-    assert ok is False and "pedido" in motivo
-
-
-def test_acao_nao_pedida_reprova():
-    ok, motivo = L.verificar_sequencia(gravar(("sorrir", "virar_esquerda")) + VIRAR_DIR, ("sorrir", "virar_esquerda"))
-    assert ok is False and "lados" in motivo
-    ok, motivo = L.verificar_sequencia(gravar(("piscar2", "virar_esquerda")) + SORRIR, ("piscar2", "virar_esquerda"))
-    assert ok is False and "neutra" in motivo
-    # piscar demais além da folga natural
-    ok, motivo = L.verificar_sequencia(gravar(("piscar2", "sorrir")) + PISCAR2, ("piscar2", "sorrir"))
-    assert ok is False and "Pisque" in motivo
+def test_movimentos_fora_do_passo_sao_tolerados():
+    passos = ("sorrir", "virar_esquerda")
+    assert L.verificar_sequencia(gravar(passos) + VIRAR_DIR, passos)[0] is True
+    assert L.verificar_sequencia(gravar(("piscar2", "virar_esquerda")) + SORRIR, ("piscar2", "virar_esquerda"))[0] is True
+    assert L.verificar_sequencia(gravar(("piscar2", "sorrir")) + PISCAR2, ("piscar2", "sorrir"))[0] is True
 
 
 def test_piscadas_naturais_sao_toleradas():
@@ -126,11 +114,11 @@ def test_rosto_ausente_em_qualquer_quadro_reprova():
     assert ok is False and "rosto" in motivo.lower()
 
 
-def test_giro_leve_ou_de_um_quadro_nao_conta():
-    leve = list(NEUTRO) + [q(yaw=0.0), q(yaw=0.15), q(yaw=0.15)] + SORRISO_E_FIM()
+def test_giro_leve_nao_conta_mas_um_quadro_virado_basta():
+    leve = list(NEUTRO) + [q(yaw=0.0), q(yaw=0.10), q(yaw=0.10)] + SORRISO_E_FIM()
     assert L.verificar_sequencia(leve, ("virar_esquerda", "sorrir"))[0] is False
     um_so = list(NEUTRO) + [q(yaw=0.0), q(yaw=0.30)] + SORRISO_E_FIM()
-    assert L.verificar_sequencia(um_so, ("virar_esquerda", "sorrir"))[0] is False
+    assert L.verificar_sequencia(um_so, ("virar_esquerda", "sorrir"))[0] is True
 
 
 def SORRISO_E_FIM():
@@ -175,7 +163,6 @@ def test_blendshape_sem_fechar_de_verdade_nao_conta():
     assert L.piscadas_da_serie([b(0.05), b(0.80), b(0.60), b(0.50)]) == 0
 
 
-def test_blendshape_continua_barrando_piscar_demais():
+def test_blendshape_tolera_piscar_a_mais():
     seq = [b(0.05)] * 3 + [b(0.8), b(0.05)] * 5  # pediu 2, piscou 5
-    ok, motivo = L.verificar_sequencia(seq, ("piscar2",))
-    assert not ok and "Pisque só" in motivo
+    assert L.verificar_sequencia(seq, ("piscar2",)) == (True, "")

@@ -75,14 +75,15 @@ def analisar_documento_pessoa(*, tipo: str, frente_b64: str, verso_b64: str | No
     # recusada), mesmo quando a identidade da pessoa não é conferida.
     forma = documento_forma.conferir(imagens, prov)
     if not s.documento_verificar_identidade:
-        # Coleta acadêmica: arquivos continuam validados; documento não autentica
-        # a pessoa, não gera template e não recebe aprovação de identidade.
-        return {"tipo": tipo, "status": "em_analise", "provedor": "coleta_academica", "sha256": sha,
+        # Coleta acadêmica (26/10/2026): basta a foto PARECER um documento de identidade
+        # (documento_forma); não precisa ser real nem ter o rosto da prova de vida.
+        # Aprovação automática, sem fila de análise humana.
+        return {"tipo": tipo, "status": "aprovado", "provedor": "coleta_academica", "sha256": sha,
                 "campos": {"nome": mascarar_nome(nome), "cpf": mascarar_cpf(cpf)},
                 "verificacoes": {"identidade": "nao_verificada", "rosto": "nao_comparado",
                                  "documento": forma.resumo()},
-                "motivos": ["Documento recebido para o trabalho acadêmico; identidade documental não verificada."],
-                "nivel_risco": "medio"}
+                "motivos": [],
+                "nivel_risco": "baixo"}
     v: dict = {"documento": forma.resumo()}
     motivos: list[str] = []
     campos: dict = {"nome": mascarar_nome(nome), "cpf": mascarar_cpf(cpf)}

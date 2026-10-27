@@ -48,8 +48,8 @@ TERMOS_FRACOS = (
     "BRASIL", "NOME", "NASCIMENTO", "VALIDADE", "CPF", "ASSINATURA", "CATEGORIA",
     "EXPEDICAO", "EMISSAO", "PERMISSAO", "REGISTRO", "MINISTERIO", "SEXO", "NACIONALIDADE",
 )
-PONTOS_SO_TEXTO = 3
-PONTOS_COM_ROSTO = 2
+PONTOS_SO_TEXTO = 2
+PONTOS_COM_ROSTO = 1
 
 _CPF_FORMATO = re.compile(r"\d{3}\.?\d{3}\.?\d{3}\s?-?\s?\d{2}")
 _DATA_FORMATO = re.compile(r"\b\d{2}[/.-]\d{2}[/.-]\d{4}\b")
