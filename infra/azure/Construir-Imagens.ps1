@@ -12,6 +12,7 @@ $ErrorActionPreference = 'Stop'
 # Chama o Python do CLI direto: o az.bat/az.cmd estraga aspas e '%' vindos do PowerShell 5.1.
 $py = 'C:/Program Files/Microsoft SDKs/Azure/CLI2/python.exe'
 if (-not (Test-Path -LiteralPath $py)) { $py = Join-Path $HOME '.local/azure-cli/Scripts/python.exe' }
+if (-not (Test-Path -LiteralPath $py)) { $py = Join-Path $HOME '.local/azure-cli/python.exe' }  # CLI em zip
 function az { & $py -m azure.cli @args }
 function Checar($t) { if ($LASTEXITCODE -ne 0) { throw "Falhou: $t" } }
 
