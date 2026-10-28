@@ -1,10 +1,16 @@
 # ASTRO — plataforma de pagamentos PF/PJ
 
-Banco digital (protótipo acadêmico) para pessoas e empresas, preparado para o **split de IBS/CBS** da
+**Área do portfólio:** [Desenvolvimento de Software](https://github.com/alefkaue#desenvolvimento-de-software) · **Contexto:** Protótipo acadêmico em equipe
+
+Protótipo acadêmico de aplicação de pagamentos para pessoas e empresas, preparado para o **split de IBS/CBS** da
 Reforma Tributária (LC 214/2025): a empresa cobra com a nota fiscal e, no pagamento, a CBS e o IBS
 destacados na nota são separados e enviados ao Fisco.
 
 > ⚠️ **Protótipo acadêmico / ambiente de simulação** — não movimenta dinheiro real.
+
+## Contexto de portfólio
+
+Projeto em equipe e ambiente de simulação. Minha participação inclui definição de fluxos e interação entre interface e APIs, com apoio de IA. A presença de infraestrutura Azure e de workflows não comprova operação comercial, segurança certificada ou aprovação de todos os testes.
 
 ## Estrutura do repositório
 
